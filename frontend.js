@@ -29,6 +29,8 @@ const state = {
   }
 };
 
+let didSyncUserFromServer = false;
+
 const app = document.getElementById("app");
 
 if (state.token) {
@@ -157,12 +159,34 @@ async function api(url, options = {}) {
       logout();
       location.hash = "#/auth";
     }
+    if (response.status === 403) {
+      throw new Error(data.message || "Нет доступа");
+    }
     throw new Error(data.message || "Ошибка запроса");
   }
   return data;
 }
 
-function topbar() {
+const adminButtonHtml = () =>
+  state.user?.isAdmin
+    ? `<button type="button" class="top-action" id="adminBtn">Админка</button>`
+    : "";
+
+function topbar(options = {}) {
+  if (options.slim) {
+    return `
+    <header class="topbar topbar-slim">
+      <div class="brand">BrokerMap</div>
+      <div class="auth">
+        ${adminButtonHtml()}
+        <button type="button" class="top-action" id="toMapBtn">На карту</button>
+        <button type="button" class="top-action" id="cabinetBtn">
+          <span class="cabinet-btn-long">Личный кабинет</span>
+          <span class="cabinet-btn-short">Кабинет</span>
+        </button>
+      </div>
+    </header>`;
+  }
   return `
     <header class="topbar">
       <div class="brand">BrokerMap</div>
@@ -194,6 +218,7 @@ function topbar() {
         <button id="resetFilters">Сброс</button>
       </div>
       <div class="auth">
+        ${adminButtonHtml()}
         <button id="cabinetBtn" class="top-action" type="button">
           <span class="cabinet-btn-long">Личный кабинет</span>
           <span class="cabinet-btn-short">Кабинет</span>
@@ -295,6 +320,9 @@ function renderMapPage() {
 
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
     location.hash = state.user ? "#/cabinet" : "#/auth";
+  });
+  document.getElementById("adminBtn")?.addEventListener("click", () => {
+    location.hash = "#/admin";
   });
   document.getElementById("moreFilters").addEventListener("click", () => {
     document.getElementById("filtersModal").classList.add("open");
@@ -873,6 +901,7 @@ async function renderPropertyPage(id) {
     location.hash = state.user ? "#/cabinet/add" : "#/auth";
   });
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
+  document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
 
   let currentGalleryIndex = 0;
   const lightbox = document.getElementById("galleryLightbox");
@@ -1070,11 +1099,13 @@ function collectAuth() {
 function setAuth(data) {
   state.token = data.token;
   state.user = data.user;
+  didSyncUserFromServer = true;
   localStorage.setItem("token", data.token);
   localStorage.setItem("user", JSON.stringify(data.user));
 }
 
 async function logout() {
+  didSyncUserFromServer = false;
   try {
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
   } catch {
@@ -1236,6 +1267,7 @@ async function renderCabinetPage(openForm = false) {
     setupAddressSuggest();
   });
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
+  document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
   document.getElementById("closeCabinetPanel").addEventListener("click", () => {
     location.hash = "#/";
   });
@@ -1601,10 +1633,158 @@ function setupAddressSuggest() {
   initSuggest();
 }
 
+async function renderAdminPage() {
+  setMapBodyClass(false);
+  let summary;
+  let users;
+  let properties;
+  try {
+    [summary, users, properties] = await Promise.all([
+      api("/api/admin/summary"),
+      api("/api/admin/users"),
+      api("/api/admin/properties")
+    ]);
+  } catch (err) {
+    app.innerHTML = `
+      <section class="page">
+        <p>${escapeHtml(err.message || "Ошибка")}</p>
+        <p><button class="btn" type="button" id="adminErrToMap">На карту</button></p>
+      </section>
+    `;
+    document.getElementById("adminErrToMap").addEventListener("click", () => {
+      location.hash = "#/";
+    });
+    return;
+  }
+
+  const usersRows = users
+    .map(
+      (u) => `<tr>
+      <td>${escapeHtml(u.email)}</td>
+      <td>${escapeHtml(u.name || "—")}</td>
+      <td>${escapeHtml(u.phone || "—")}</td>
+      <td>${u.role === "admin" ? "admin" : "брокер"}</td>
+      <td class="muted">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
+    </tr>`
+    )
+    .join("");
+
+  const propRows = properties
+    .map(
+      (p) => `<tr>
+      <td><code>${escapeHtml(p.id)}</code></td>
+      <td>${escapeHtml(p.address || "—")}</td>
+      <td>${money(p.price)} ₽</td>
+      <td>${escapeHtml(p.ownerEmail)}</td>
+      <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
+      <td><button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button></td>
+    </tr>`
+    )
+    .join("");
+
+  app.innerHTML = `
+    ${topbar({ slim: true })}
+    <section class="page admin-page">
+      <h1>Админка</h1>
+      <p class="muted">Сводка и управление размещёнными объектами (удаление — из базы и с диска для локальных файлов).</p>
+      <div class="admin-stat-grid">
+        <div class="panel admin-stat">
+          <div class="admin-stat-value">${summary.users}</div>
+          <div class="muted">пользователей</div>
+        </div>
+        <div class="panel admin-stat">
+          <div class="admin-stat-value">${summary.properties}</div>
+          <div class="muted">объектов</div>
+        </div>
+      </div>
+      <h2>Пользователи</h2>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Имя</th>
+              <th>Телефон</th>
+              <th>Роль</th>
+              <th>Регистрация</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${usersRows || `<tr><td colspan="5" class="muted">Нет данных</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+      <h2>Объекты</h2>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Адрес</th>
+              <th>Цена</th>
+              <th>Владелец (email)</th>
+              <th>Создан</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${propRows || `<tr><td colspan="6" class="muted">Нет объектов</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+
+  document.getElementById("adminBtn")?.addEventListener("click", () => {
+    location.hash = "#/admin";
+  });
+  document.getElementById("toMapBtn")?.addEventListener("click", () => {
+    location.hash = "#/";
+  });
+  document.getElementById("cabinetBtn")?.addEventListener("click", () => {
+    location.hash = "#/cabinet";
+  });
+
+  document.querySelectorAll(".admin-del-prop").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      if (!id || !window.confirm("Удалить объект из базы? Файлы фото/PDF в uploads будут удалены, если путь начинается с /uploads/.")) {
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await api(`/api/admin/properties/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await renderAdminPage();
+      } catch (e) {
+        alert(e.message);
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
 async function router() {
   const hash = location.hash || "#/";
   if (!state.token) {
     renderAuthPage();
+    return;
+  }
+  if (!didSyncUserFromServer) {
+    didSyncUserFromServer = true;
+    try {
+      const me = await api("/api/auth/me");
+      state.user = me;
+      localStorage.setItem("user", JSON.stringify(me));
+    } catch {
+      return;
+    }
+  }
+  if (hash === "#/admin") {
+    if (!state.user?.isAdmin) {
+      location.hash = "#/";
+      return;
+    }
+    await renderAdminPage();
     return;
   }
   if (hash.startsWith("#/property/")) {

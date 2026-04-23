@@ -24,7 +24,9 @@ const {
   deletePropertyByOwner,
   countAllProperties,
   countAllUsers,
-  stripContacts
+  stripContacts,
+  listAllPropertiesForAdmin,
+  deletePropertyById
 } = require("./lib/db");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -38,6 +40,27 @@ const UPLOADS_DIR = path.join(__dirname, "uploads");
 const PHOTOS_DIR = path.join(UPLOADS_DIR, "photos");
 const PDFS_DIR = path.join(UPLOADS_DIR, "pdfs");
 const app = express();
+
+function unlinkUploadMaybe(url) {
+  if (!url || typeof url !== "string" || !url.startsWith("/uploads/")) {
+    return;
+  }
+  const abs = path.join(__dirname, url.replace(/^\//, ""));
+  if (abs.startsWith(UPLOADS_DIR) && fs.existsSync(abs)) {
+    try {
+      fs.unlinkSync(abs);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function deletePropertyFilesOnDisk(property) {
+  for (const u of property.photos || []) {
+    unlinkUploadMaybe(u);
+  }
+  unlinkUploadMaybe(property.pdfUrl);
+}
 
 initDb({ adminEmails: adminEmailList });
 
@@ -431,6 +454,22 @@ app.get("/api/admin/summary", auth, requireAdmin, (_req, res) => {
 
 app.get("/api/admin/users", auth, requireAdmin, (_req, res) => {
   return res.json(listAllUsersForAdmin());
+});
+
+app.get("/api/admin/properties", auth, requireAdmin, (_req, res) => {
+  return res.json(listAllPropertiesForAdmin());
+});
+
+app.delete("/api/admin/properties/:id", auth, requireAdmin, (req, res) => {
+  const property = findPropertyById(req.params.id);
+  if (!property) {
+    return res.status(404).json({ message: "Объект не найден" });
+  }
+  deletePropertyFilesOnDisk(property);
+  if (!deletePropertyById(req.params.id)) {
+    return res.status(500).json({ message: "Не удалось удалить из базы" });
+  }
+  return res.json({ success: true });
 });
 
 app.post(
