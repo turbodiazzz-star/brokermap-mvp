@@ -1,0 +1,9 @@
+.DS_Store
+node_modules/
+.env
+uploads/
+# База с телефонами и пользователями — только на сервере / локально, не в GitHub
+db.json
+db.json.migrated-*
+# SQLite (prod/local)
+data/
