@@ -32,7 +32,8 @@ const {
   listBrokersByAgencyOwner,
   countBrokersByAgencyOwner,
   listAgenciesForAdmin,
-  updateAgencyBrokerLimit
+  updateAgencyBrokerLimit,
+  updateUserPasswordHash
 } = require("./lib/db");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -443,6 +444,32 @@ app.get("/api/auth/me", auth, (req, res) => {
     return res.status(404).json({ message: "Пользователь не найден" });
   }
   return res.json(publicUser(user));
+});
+
+app.post("/api/auth/change-password", auth, async (req, res) => {
+  const { oldPassword, newPassword, confirmPassword } = req.body || {};
+  if (!oldPassword || !newPassword || !confirmPassword) {
+    return res.status(400).json({ message: "Заполните все поля смены пароля" });
+  }
+  if (String(newPassword).length < 6) {
+    return res.status(400).json({ message: "Новый пароль должен быть не менее 6 символов" });
+  }
+  if (newPassword !== confirmPassword) {
+    return res.status(400).json({ message: "Новый пароль и подтверждение не совпадают" });
+  }
+  const user = findUserById(req.userId);
+  if (!user) {
+    return res.status(404).json({ message: "Пользователь не найден" });
+  }
+  const ok = await bcrypt.compare(String(oldPassword), user.passwordHash);
+  if (!ok) {
+    return res.status(400).json({ message: "Старый пароль введен неверно" });
+  }
+  const newHash = await bcrypt.hash(String(newPassword), 10);
+  if (!updateUserPasswordHash(user.id, newHash)) {
+    return res.status(500).json({ message: "Не удалось сохранить новый пароль" });
+  }
+  return res.json({ success: true });
 });
 
 // Список на карту — только для авторизованных; без полей contacts (телефоны в карточке списка не отдаём)

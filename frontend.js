@@ -1054,13 +1054,11 @@ function renderAuthPage() {
         !payload.password ||
         !payload.firstName ||
         !payload.lastName ||
+        !payload.agency ||
         !payload.inn ||
         !payload.phone
       ) {
         throw new Error("Заполните все обязательные поля");
-      }
-      if (payload.accountType === "agency_owner" && !payload.agency) {
-        throw new Error("Для аккаунта агентства укажите название агентства");
       }
       if (!/^\+7\d{10}$/.test(payload.phone)) {
         throw new Error("Телефон должен быть в формате +7 и 10 цифр");
@@ -1196,6 +1194,25 @@ async function renderCabinetPage(openForm = false) {
             : "<p class='muted'>Пока нет объектов.</p>"
         }
       </div>
+      <div class="panel">
+        <h3>Смена пароля</h3>
+        <div class="form-grid">
+          <div class="field-block field-span-2">
+            <label class="field-label" for="oldPasswordInput">Старый пароль</label>
+            <input id="oldPasswordInput" type="password" placeholder="Введите текущий пароль" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="newPasswordInput">Новый пароль</label>
+            <input id="newPasswordInput" type="password" placeholder="Минимум 6 символов" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="newPasswordConfirmInput">Повтор нового пароля</label>
+            <input id="newPasswordConfirmInput" type="password" placeholder="Повторите новый пароль" />
+          </div>
+        </div>
+        <p><button class="btn" type="button" id="changePasswordBtn">Сменить пароль</button></p>
+        <p class="muted" id="passwordStatus"></p>
+      </div>
       <div class="panel" id="propertyFormWrap" style="display:none;">
         <div class="panel-head">
           <h3 id="propertyFormTitle">Новый объект</h3>
@@ -1308,6 +1325,37 @@ async function renderCabinetPage(openForm = false) {
   document.getElementById("logoutCabinet").addEventListener("click", () => {
     logout();
     location.hash = "#/auth";
+  });
+  document.getElementById("changePasswordBtn")?.addEventListener("click", async () => {
+    const oldPassword = document.getElementById("oldPasswordInput").value;
+    const newPassword = document.getElementById("newPasswordInput").value;
+    const confirmPassword = document.getElementById("newPasswordConfirmInput").value;
+    const status = document.getElementById("passwordStatus");
+    status.textContent = "";
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      status.textContent = "Заполните все поля смены пароля";
+      return;
+    }
+    if (newPassword.length < 6) {
+      status.textContent = "Новый пароль должен быть не менее 6 символов";
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      status.textContent = "Новый пароль и подтверждение не совпадают";
+      return;
+    }
+    try {
+      await api("/api/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ oldPassword, newPassword, confirmPassword })
+      });
+      status.textContent = "Пароль успешно изменен";
+      document.getElementById("oldPasswordInput").value = "";
+      document.getElementById("newPasswordInput").value = "";
+      document.getElementById("newPasswordConfirmInput").value = "";
+    } catch (err) {
+      status.textContent = err.message || "Ошибка смены пароля";
+    }
   });
   let editingPropertyId = null;
   let pendingPhotoFiles = [];
@@ -1848,6 +1896,7 @@ async function renderAdminPage() {
     .join("");
 
   const usersRows = users
+    .filter((u) => u.accountType !== "agency_owner" && !u.agencyOwnerId)
     .map(
       (u) => `<tr>
       <td>${escapeHtml(u.email)}</td>
@@ -1905,9 +1954,9 @@ async function renderAdminPage() {
       </div>
 
       <div class="admin-tab-panel active" id="adminUsersPanel">
-      <h2>Пользователи</h2>
+      <h2>Агентства</h2>
       <div class="panel">
-        <h3>Агентства</h3>
+        <h3>Список агентств</h3>
         <div class="address-row">
           <input id="adminAgencySearchInput" placeholder="Поиск агентства: email, имя, название" />
           <button class="btn" type="button" id="adminAgencySearchBtn">Найти</button>
@@ -1929,6 +1978,7 @@ async function renderAdminPage() {
           </table>
         </div>
       </div>
+      <h2>Частные брокеры</h2>
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
@@ -1943,7 +1993,7 @@ async function renderAdminPage() {
             </tr>
           </thead>
           <tbody>
-            ${usersRows || `<tr><td colspan="7" class="muted">Нет данных</td></tr>`}
+            ${usersRows || `<tr><td colspan="7" class="muted">Нет частных брокеров</td></tr>`}
           </tbody>
         </table>
       </div>
