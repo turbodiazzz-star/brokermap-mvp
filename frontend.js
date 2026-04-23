@@ -1662,9 +1662,18 @@ async function renderAdminPage() {
       (u) => `<tr>
       <td>${escapeHtml(u.email)}</td>
       <td>${escapeHtml(u.name || "—")}</td>
+      <td>${escapeHtml(u.agency || "—")}</td>
       <td>${escapeHtml(u.phone || "—")}</td>
       <td>${u.role === "admin" ? "admin" : "брокер"}</td>
       <td class="muted">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
+      <td>
+        <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
+        ${
+          u.role === "admin"
+            ? `<span class="muted">—</span>`
+            : `<button class="btn danger-btn admin-del-user" data-id="${escapeHtml(u.id)}" data-email="${escapeHtml(u.email)}" type="button">Удалить</button>`
+        }
+      </td>
     </tr>`
     )
     .join("");
@@ -1677,7 +1686,10 @@ async function renderAdminPage() {
       <td>${money(p.price)} ₽</td>
       <td>${escapeHtml(p.ownerEmail)}</td>
       <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
-      <td><button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button></td>
+      <td>
+        <button class="btn admin-open-prop" data-id="${escapeHtml(p.id)}" type="button">Открыть</button>
+        <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+      </td>
     </tr>`
     )
     .join("");
@@ -1686,7 +1698,7 @@ async function renderAdminPage() {
     ${topbar({ slim: true })}
     <section class="page admin-page">
       <h1>Админка</h1>
-      <p class="muted">Сводка и управление размещёнными объектами (удаление — из базы и с диска для локальных файлов).</p>
+      <p class="muted">Управление пользователями и размещёнными объектами. Удаление чистит записи из базы и локальные файлы в uploads.</p>
       <div class="admin-stat-grid">
         <div class="panel admin-stat">
           <div class="admin-stat-value">${summary.users}</div>
@@ -1697,6 +1709,12 @@ async function renderAdminPage() {
           <div class="muted">объектов</div>
         </div>
       </div>
+      <div class="admin-tabs" role="tablist" aria-label="Разделы админки">
+        <button class="btn admin-tab-btn active" type="button" id="adminUsersTabBtn" role="tab" aria-selected="true">Пользователи</button>
+        <button class="btn admin-tab-btn" type="button" id="adminPropertiesTabBtn" role="tab" aria-selected="false">Объекты</button>
+      </div>
+
+      <div class="admin-tab-panel active" id="adminUsersPanel">
       <h2>Пользователи</h2>
       <div class="admin-table-wrap">
         <table class="admin-table">
@@ -1704,16 +1722,21 @@ async function renderAdminPage() {
             <tr>
               <th>Email</th>
               <th>Имя</th>
+              <th>Организация</th>
               <th>Телефон</th>
               <th>Роль</th>
               <th>Регистрация</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
-            ${usersRows || `<tr><td colspan="5" class="muted">Нет данных</td></tr>`}
+            ${usersRows || `<tr><td colspan="7" class="muted">Нет данных</td></tr>`}
           </tbody>
         </table>
       </div>
+      </div>
+
+      <div class="admin-tab-panel" id="adminPropertiesPanel">
       <h2>Объекты</h2>
       <div class="admin-table-wrap">
         <table class="admin-table">
@@ -1732,6 +1755,16 @@ async function renderAdminPage() {
           </tbody>
         </table>
       </div>
+      </div>
+      <div class="modal" id="adminInfoModal">
+        <div class="modal-card admin-modal-card">
+          <div class="panel-head">
+            <h3 id="adminInfoTitle">Детали</h3>
+            <button class="close-panel-action" id="adminInfoCloseBtn" aria-label="Закрыть">×</button>
+          </div>
+          <div id="adminInfoBody"></div>
+        </div>
+      </div>
     </section>
   `;
 
@@ -1743,6 +1776,119 @@ async function renderAdminPage() {
   });
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
     location.hash = "#/cabinet";
+  });
+
+  const usersTabBtn = document.getElementById("adminUsersTabBtn");
+  const propertiesTabBtn = document.getElementById("adminPropertiesTabBtn");
+  const usersPanel = document.getElementById("adminUsersPanel");
+  const propertiesPanel = document.getElementById("adminPropertiesPanel");
+  const setAdminTab = (tab) => {
+    const isUsers = tab === "users";
+    usersTabBtn.classList.toggle("active", isUsers);
+    propertiesTabBtn.classList.toggle("active", !isUsers);
+    usersTabBtn.setAttribute("aria-selected", isUsers ? "true" : "false");
+    propertiesTabBtn.setAttribute("aria-selected", !isUsers ? "true" : "false");
+    usersPanel.classList.toggle("active", isUsers);
+    propertiesPanel.classList.toggle("active", !isUsers);
+  };
+  usersTabBtn?.addEventListener("click", () => setAdminTab("users"));
+  propertiesTabBtn?.addEventListener("click", () => setAdminTab("properties"));
+
+  const adminModal = document.getElementById("adminInfoModal");
+  const adminInfoTitle = document.getElementById("adminInfoTitle");
+  const adminInfoBody = document.getElementById("adminInfoBody");
+  const closeAdminModal = () => adminModal?.classList.remove("open");
+  document.getElementById("adminInfoCloseBtn")?.addEventListener("click", closeAdminModal);
+  adminModal?.addEventListener("click", (event) => {
+    if (event.target === adminModal) closeAdminModal();
+  });
+
+  document.querySelectorAll(".admin-open-user").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      if (!id) return;
+      btn.disabled = true;
+      try {
+        const data = await api(`/api/admin/users/${encodeURIComponent(id)}`);
+        const user = data.user || {};
+        const userProps = Array.isArray(data.properties) ? data.properties : [];
+        adminInfoTitle.textContent = `Пользователь: ${user.email || "—"}`;
+        adminInfoBody.innerHTML = `
+          <p><strong>Имя:</strong> ${escapeHtml(user.name || "—")}</p>
+          <p><strong>Фамилия:</strong> ${escapeHtml(user.lastName || "—")}</p>
+          <p><strong>Телефон:</strong> ${escapeHtml(user.phone || "—")}</p>
+          <p><strong>Организация:</strong> ${escapeHtml(user.agency || "—")}</p>
+          <p><strong>ИНН:</strong> ${escapeHtml(user.inn || "—")}</p>
+          <p><strong>Роль:</strong> ${escapeHtml(user.role || "user")}</p>
+          <hr />
+          <p><strong>Объектов у пользователя:</strong> ${userProps.length}</p>
+          <div class="admin-mini-list">
+            ${
+              userProps.length
+                ? userProps
+                    .map(
+                      (p) =>
+                        `<div class="admin-mini-list-item"><code>${escapeHtml(p.id)}</code> — ${escapeHtml(p.address || "—")} (${money(p.price)} ₽)</div>`
+                    )
+                    .join("")
+                : `<p class="muted">Нет объектов</p>`
+            }
+          </div>
+        `;
+        adminModal.classList.add("open");
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll(".admin-open-prop").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      if (!id) return;
+      btn.disabled = true;
+      try {
+        const p = await api(`/api/properties/${encodeURIComponent(id)}`);
+        adminInfoTitle.textContent = `Объект: ${p.id || "—"}`;
+        adminInfoBody.innerHTML = `
+          <p><strong>Адрес:</strong> ${escapeHtml(p.address || "—")}</p>
+          <p><strong>Цена:</strong> ${money(p.price)} ₽</p>
+          <p><strong>Площадь:</strong> ${escapeHtml(p.area)} м²</p>
+          <p><strong>Комиссия:</strong> ${escapeHtml(p.commissionTotal)}%</p>
+          <p><strong>Партнеру:</strong> ${escapeHtml(p.commissionPartner)}%</p>
+          <p><strong>Контакты:</strong> ${escapeHtml(p.contacts?.phone || "—")}, ${escapeHtml(p.contacts?.telegram || "—")}</p>
+          <p><button class="btn primary" type="button" id="adminGoPropCardBtn">Открыть карточку</button></p>
+        `;
+        document.getElementById("adminGoPropCardBtn")?.addEventListener("click", () => {
+          location.hash = `#/property/${encodeURIComponent(id)}`;
+        });
+        adminModal.classList.add("open");
+      } catch (e) {
+        alert(e.message);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  document.querySelectorAll(".admin-del-user").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      const email = btn.getAttribute("data-email") || "этого пользователя";
+      if (!id || !window.confirm(`Удалить пользователя ${email}? Будут удалены и все его объекты.`)) {
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await api(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await renderAdminPage();
+      } catch (e) {
+        alert(e.message);
+        btn.disabled = false;
+      }
+    });
   });
 
   document.querySelectorAll(".admin-del-prop").forEach((btn) => {

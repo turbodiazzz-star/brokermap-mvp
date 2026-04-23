@@ -864,6 +864,50 @@ textarea {
   font-size: 1.1rem;
 }
 
+.admin-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 14px 0 6px;
+}
+
+.admin-tab-btn {
+  background: #fff;
+  border-color: var(--border);
+}
+
+.admin-tab-btn.active {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.admin-tab-panel {
+  display: none;
+}
+
+.admin-tab-panel.active {
+  display: block;
+}
+
+.admin-modal-card {
+  width: min(720px, 94vw);
+  max-height: 86vh;
+  overflow-y: auto;
+}
+
+.admin-mini-list {
+  display: grid;
+  gap: 6px;
+}
+
+.admin-mini-list-item {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  font-size: 13px;
+}
+
 .admin-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

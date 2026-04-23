@@ -26,7 +26,9 @@ const {
   countAllUsers,
   stripContacts,
   listAllPropertiesForAdmin,
-  deletePropertyById
+  deletePropertyById,
+  deletePropertiesByOwner,
+  deleteUserById
 } = require("./lib/db");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -454,6 +456,54 @@ app.get("/api/admin/summary", auth, requireAdmin, (_req, res) => {
 
 app.get("/api/admin/users", auth, requireAdmin, (_req, res) => {
   return res.json(listAllUsersForAdmin());
+});
+
+app.get("/api/admin/users/:id", auth, requireAdmin, (req, res) => {
+  const user = findUserById(req.params.id);
+  if (!user) {
+    return res.status(404).json({ message: "Пользователь не найден" });
+  }
+  const userProperties = listPropertiesByOwner(user.id).map((p) => ({
+    id: p.id,
+    address: p.address,
+    price: p.price,
+    createdAt: p.createdAt
+  }));
+  return res.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      firstName: user.firstName || "",
+      lastName: user.lastName || "",
+      phone: user.phone || "",
+      agency: user.agency || "",
+      inn: user.inn || "",
+      role: user.role || "user",
+      createdAt: user.createdAt
+    },
+    properties: userProperties
+  });
+});
+
+app.delete("/api/admin/users/:id", auth, requireAdmin, (req, res) => {
+  const userId = req.params.id;
+  const user = findUserById(userId);
+  if (!user) {
+    return res.status(404).json({ message: "Пользователь не найден" });
+  }
+  if (user.role === "admin") {
+    return res.status(400).json({ message: "Нельзя удалить администратора через панель." });
+  }
+  const owned = listPropertiesByOwner(userId);
+  for (const property of owned) {
+    deletePropertyFilesOnDisk(property);
+  }
+  deletePropertiesByOwner(userId);
+  if (!deleteUserById(userId)) {
+    return res.status(500).json({ message: "Не удалось удалить пользователя" });
+  }
+  return res.json({ success: true, deletedProperties: owned.length });
 });
 
 app.get("/api/admin/properties", auth, requireAdmin, (_req, res) => {
