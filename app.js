@@ -28,7 +28,8 @@ const {
   listAllPropertiesForAdmin,
   deletePropertyById,
   deletePropertiesByOwner,
-  deleteUserById
+  deleteUserById,
+  listBrokersByAgencyOwner
 } = require("./lib/db");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -192,7 +193,9 @@ function publicUser(user) {
     whatsapp: user.whatsapp || "",
     vk: user.vk || "",
     max: user.max || "",
-    isAdmin: user.role === "admin"
+    isAdmin: user.role === "admin",
+    accountType: user.accountType || "broker",
+    isAgencyOwner: user.accountType === "agency_owner"
   };
 }
 
@@ -244,6 +247,15 @@ function requireAdmin(req, res, next) {
   if (req.userRole !== "admin") {
     return res.status(403).json({ message: "Недостаточно прав" });
   }
+  next();
+}
+
+function requireAgencyOwner(req, res, next) {
+  const user = findUserById(req.userId);
+  if (!user || user.accountType !== "agency_owner") {
+    return res.status(403).json({ message: "Доступно только для аккаунта агентства" });
+  }
+  req.currentUser = user;
   next();
 }
 
@@ -333,8 +345,10 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 app.post("/api/auth/register", async (req, res) => {
-  const { firstName, lastName, name, email, password, phone, agency, inn, marketingConsent, agree } = req.body;
-  if (!email || !password || !firstName || !lastName || !agency || !inn || !phone) {
+  const { firstName, lastName, name, email, password, phone, agency, inn, marketingConsent, agree, accountType } = req.body;
+  const normalizedType = accountType === "agency_owner" ? "agency_owner" : "broker";
+  const agencyRequired = normalizedType === "agency_owner";
+  if (!email || !password || !firstName || !lastName || !inn || !phone || (agencyRequired && !agency)) {
     return res.status(400).json({ message: "Заполните все обязательные поля регистрации" });
   }
   if (!/^\+7\d{10}$/.test(String(phone))) {
@@ -368,6 +382,8 @@ app.post("/api/auth/register", async (req, res) => {
     vk: "",
     max: "",
     role,
+    accountType: normalizedType,
+    agencyOwnerId: null,
     createdAt: new Date().toISOString()
   };
   createUserRecord(user);
@@ -520,6 +536,73 @@ app.delete("/api/admin/properties/:id", auth, requireAdmin, (req, res) => {
     return res.status(500).json({ message: "Не удалось удалить из базы" });
   }
   return res.json({ success: true });
+});
+
+app.get("/api/agency/brokers", auth, requireAgencyOwner, (req, res) => {
+  return res.json(listBrokersByAgencyOwner(req.userId));
+});
+
+app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
+  const { firstName, lastName, email, password, phone } = req.body;
+  if (!firstName || !lastName || !email || !password || !phone) {
+    return res.status(400).json({ message: "Заполните все поля брокера" });
+  }
+  if (!/^\+7\d{10}$/.test(String(phone))) {
+    return res.status(400).json({ message: "Телефон брокера должен быть в формате +7 и 10 цифр" });
+  }
+  if (String(password).length < 6) {
+    return res.status(400).json({ message: "Пароль брокера должен быть не менее 6 символов" });
+  }
+  if (findUserByEmail(email)) {
+    return res.status(409).json({ message: "Пользователь с таким email уже есть" });
+  }
+  const owner = req.currentUser || findUserById(req.userId);
+  const passwordHash = await bcrypt.hash(password, 10);
+  const broker = {
+    id: `u-${Date.now()}-${Math.round(Math.random() * 1e5)}`,
+    name: `${String(firstName).trim()} ${String(lastName).trim()}`.trim(),
+    email: String(email).trim(),
+    passwordHash,
+    firstName: String(firstName).trim(),
+    lastName: String(lastName).trim(),
+    agency: owner?.agency || "",
+    inn: owner?.inn || "",
+    phone: String(phone).trim(),
+    marketingConsent: false,
+    telegram: "",
+    whatsapp: "",
+    vk: "",
+    max: "",
+    role: "user",
+    accountType: "broker",
+    agencyOwnerId: req.userId,
+    createdAt: new Date().toISOString()
+  };
+  createUserRecord(broker);
+  return res.status(201).json({
+    id: broker.id,
+    email: broker.email,
+    name: broker.name,
+    phone: broker.phone,
+    agency: broker.agency,
+    createdAt: broker.createdAt
+  });
+});
+
+app.delete("/api/agency/brokers/:id", auth, requireAgencyOwner, (req, res) => {
+  const broker = findUserById(req.params.id);
+  if (!broker || broker.agencyOwnerId !== req.userId || broker.accountType !== "broker") {
+    return res.status(404).json({ message: "Брокер не найден" });
+  }
+  const owned = listPropertiesByOwner(broker.id);
+  for (const property of owned) {
+    deletePropertyFilesOnDisk(property);
+  }
+  deletePropertiesByOwner(broker.id);
+  if (!deleteUserById(broker.id)) {
+    return res.status(500).json({ message: "Не удалось удалить брокера" });
+  }
+  return res.json({ success: true, deletedProperties: owned.length });
 });
 
 app.post(

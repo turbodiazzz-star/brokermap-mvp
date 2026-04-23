@@ -172,6 +172,11 @@ const adminButtonHtml = () =>
     ? `<button type="button" class="top-action" id="adminBtn">Админка</button>`
     : "";
 
+const agencyButtonHtml = () =>
+  state.user?.isAgencyOwner
+    ? `<button type="button" class="top-action" id="agencyBtn">Агентство</button>`
+    : "";
+
 function topbar(options = {}) {
   if (options.slim) {
     return `
@@ -179,6 +184,7 @@ function topbar(options = {}) {
       <div class="brand">BrokerMap</div>
       <div class="auth">
         ${adminButtonHtml()}
+        ${agencyButtonHtml()}
         <button type="button" class="top-action" id="toMapBtn">На карту</button>
         <button type="button" class="top-action" id="cabinetBtn">
           <span class="cabinet-btn-long">Личный кабинет</span>
@@ -219,6 +225,7 @@ function topbar(options = {}) {
       </div>
       <div class="auth">
         ${adminButtonHtml()}
+        ${agencyButtonHtml()}
         <button id="cabinetBtn" class="top-action" type="button">
           <span class="cabinet-btn-long">Личный кабинет</span>
           <span class="cabinet-btn-short">Кабинет</span>
@@ -323,6 +330,9 @@ function renderMapPage() {
   });
   document.getElementById("adminBtn")?.addEventListener("click", () => {
     location.hash = "#/admin";
+  });
+  document.getElementById("agencyBtn")?.addEventListener("click", () => {
+    location.hash = "#/agency";
   });
   document.getElementById("moreFilters").addEventListener("click", () => {
     document.getElementById("filtersModal").classList.add("open");
@@ -902,6 +912,7 @@ async function renderPropertyPage(id) {
   });
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
   document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
+  document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
 
   let currentGalleryIndex = 0;
   const lightbox = document.getElementById("galleryLightbox");
@@ -961,6 +972,11 @@ function renderAuthPage() {
       <div class="auth-modal" id="registerModal">
         <div class="auth-modal-content">
           <h3>Регистрация</h3>
+          <label class="field-label" for="accountType">Тип аккаунта</label>
+          <select id="accountType">
+            <option value="broker">Частный брокер</option>
+            <option value="agency_owner">Агентство</option>
+          </select>
           <input id="lastName" placeholder="Фамилия (обязательно)" autocomplete="family-name" />
           <input id="firstName" placeholder="Имя (обязательно)" autocomplete="given-name" />
           <input id="email" placeholder="Email (обязательно)" type="email" autocomplete="email" />
@@ -969,7 +985,7 @@ function renderAuthPage() {
             <input id="phone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
           </div>
           <input id="password" placeholder="Пароль (мин 6)" type="password" autocomplete="new-password" />
-          <input id="agency" placeholder="Агентство / ИП (обязательно)" />
+          <input id="agency" placeholder="Агентство / ИП (обязательно для агентства)" />
           <p class="note">* ИП / юрлица должны иметь соответствующие ОКВЭД для операций с недвижимостью</p>
           <input id="inn" placeholder="ИНН (10 или 12 цифр)" inputmode="numeric" />
           <label class="checkbox-line">
@@ -1016,6 +1032,15 @@ function renderAuthPage() {
     document.getElementById("resetModal").classList.remove("active");
   });
 
+  const updateRegisterFormByType = () => {
+    const type = document.getElementById("accountType").value;
+    const agencyInput = document.getElementById("agency");
+    agencyInput.placeholder =
+      type === "agency_owner" ? "Название агентства (обязательно)" : "Агентство / ИП (необязательно)";
+  };
+  document.getElementById("accountType").addEventListener("change", updateRegisterFormByType);
+  updateRegisterFormByType();
+
   document.getElementById("register").addEventListener("click", async () => {
     try {
       const payload = collectAuth();
@@ -1024,11 +1049,13 @@ function renderAuthPage() {
         !payload.password ||
         !payload.firstName ||
         !payload.lastName ||
-        !payload.agency ||
         !payload.inn ||
         !payload.phone
       ) {
         throw new Error("Заполните все обязательные поля");
+      }
+      if (payload.accountType === "agency_owner" && !payload.agency) {
+        throw new Error("Для аккаунта агентства укажите название агентства");
       }
       if (!/^\+7\d{10}$/.test(payload.phone)) {
         throw new Error("Телефон должен быть в формате +7 и 10 цифр");
@@ -1083,6 +1110,7 @@ function collectAuth() {
   const phoneDigits = toDigits(document.getElementById("phone").value);
   const innDigits = toDigits(document.getElementById("inn").value);
   return {
+    accountType: document.getElementById("accountType").value === "agency_owner" ? "agency_owner" : "broker",
     firstName: document.getElementById("firstName").value.trim(),
     lastName: document.getElementById("lastName").value.trim(),
     name: `${document.getElementById("firstName").value.trim()} ${document.getElementById("lastName").value.trim()}`.trim(),
@@ -1130,7 +1158,7 @@ async function renderCabinetPage(openForm = false) {
       <div class="panel">
         <div class="panel-head">
           <div class="cabinet-head-main">
-            <h2>Личный кабинет брокера</h2>
+            <h2>${state.user?.isAgencyOwner ? "Личный кабинет агентства" : "Личный кабинет брокера"}</h2>
             <button class="btn" id="logoutCabinet">Выйти из личного кабинета</button>
           </div>
           <button class="close-panel-action" id="closeCabinetPanel" aria-label="Закрыть кабинет">×</button>
@@ -1268,6 +1296,7 @@ async function renderCabinetPage(openForm = false) {
   });
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
   document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
+  document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
   document.getElementById("closeCabinetPanel").addEventListener("click", () => {
     location.hash = "#/";
   });
@@ -1633,6 +1662,146 @@ function setupAddressSuggest() {
   initSuggest();
 }
 
+async function renderAgencyPage() {
+  setMapBodyClass(false);
+  if (!state.user?.isAgencyOwner) {
+    location.hash = "#/";
+    return;
+  }
+  let brokers = [];
+  try {
+    brokers = await api("/api/agency/brokers");
+  } catch (err) {
+    app.innerHTML = `
+      <section class="page">
+        <p>${escapeHtml(err.message || "Ошибка загрузки панели агентства")}</p>
+        <p><button class="btn" type="button" id="agencyErrToMap">На карту</button></p>
+      </section>
+    `;
+    document.getElementById("agencyErrToMap").addEventListener("click", () => (location.hash = "#/"));
+    return;
+  }
+
+  const rows = brokers
+    .map(
+      (b) => `<tr>
+      <td>${escapeHtml(b.email)}</td>
+      <td>${escapeHtml(b.name || "—")}</td>
+      <td>${escapeHtml(b.phone || "—")}</td>
+      <td class="muted">${escapeHtml((b.createdAt || "").slice(0, 10))}</td>
+      <td><button type="button" class="btn danger-btn agency-del-broker" data-id="${escapeHtml(b.id)}" data-email="${escapeHtml(
+        b.email
+      )}">Удалить</button></td>
+    </tr>`
+    )
+    .join("");
+
+  app.innerHTML = `
+    ${topbar({ slim: true })}
+    <section class="page admin-page">
+      <h1>Панель агентства</h1>
+      <p class="muted">Вы можете добавлять логины брокеров агентства и удалять их при необходимости.</p>
+
+      <div class="panel">
+        <h3>Добавить брокера</h3>
+        <div class="form-grid">
+          <div class="field-block">
+            <label class="field-label" for="agencyBrokerFirstName">Имя</label>
+            <input id="agencyBrokerFirstName" placeholder="Иван" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="agencyBrokerLastName">Фамилия</label>
+            <input id="agencyBrokerLastName" placeholder="Иванов" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="agencyBrokerEmail">Email</label>
+            <input id="agencyBrokerEmail" type="email" placeholder="broker@agency.ru" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="agencyBrokerPassword">Пароль</label>
+            <input id="agencyBrokerPassword" type="password" placeholder="минимум 6 символов" />
+          </div>
+          <div class="field-block field-span-2">
+            <label class="field-label" for="agencyBrokerPhone">Телефон</label>
+            <div class="phone-group">
+              <span>+7</span>
+              <input id="agencyBrokerPhone" placeholder="9991234567" maxlength="10" inputmode="numeric" />
+            </div>
+          </div>
+        </div>
+        <p><button class="btn primary" type="button" id="agencyCreateBrokerBtn">Создать брокера</button></p>
+        <p class="muted" id="agencyStatus"></p>
+      </div>
+
+      <div class="panel">
+        <h3>Брокеры агентства: ${brokers.length}</h3>
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Email</th>
+                <th>Имя</th>
+                <th>Телефон</th>
+                <th>Создан</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows || `<tr><td colspan="5" class="muted">Пока нет брокеров</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  `;
+
+  document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
+  document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
+  document.getElementById("toMapBtn")?.addEventListener("click", () => (location.hash = "#/"));
+  document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
+
+  document.getElementById("agencyCreateBrokerBtn")?.addEventListener("click", async () => {
+    const firstName = document.getElementById("agencyBrokerFirstName").value.trim();
+    const lastName = document.getElementById("agencyBrokerLastName").value.trim();
+    const email = document.getElementById("agencyBrokerEmail").value.trim();
+    const password = document.getElementById("agencyBrokerPassword").value;
+    const phone = `+7${toDigits(document.getElementById("agencyBrokerPhone").value)}`;
+    const status = document.getElementById("agencyStatus");
+    status.textContent = "";
+    if (!firstName || !lastName || !email || !password || !/^\+7\d{10}$/.test(phone)) {
+      status.textContent = "Заполните все поля и укажите корректный телефон";
+      return;
+    }
+    try {
+      await api("/api/agency/brokers", {
+        method: "POST",
+        body: JSON.stringify({ firstName, lastName, email, password, phone })
+      });
+      await renderAgencyPage();
+    } catch (err) {
+      status.textContent = err.message || "Ошибка создания брокера";
+    }
+  });
+
+  document.querySelectorAll(".agency-del-broker").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      const email = btn.getAttribute("data-email") || "этого брокера";
+      if (!id || !window.confirm(`Удалить брокера ${email}? Его объекты тоже будут удалены.`)) {
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await api(`/api/agency/brokers/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await renderAgencyPage();
+      } catch (err) {
+        alert(err.message || "Ошибка удаления");
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
 async function renderAdminPage() {
   setMapBodyClass(false);
   let summary;
@@ -1770,6 +1939,9 @@ async function renderAdminPage() {
 
   document.getElementById("adminBtn")?.addEventListener("click", () => {
     location.hash = "#/admin";
+  });
+  document.getElementById("agencyBtn")?.addEventListener("click", () => {
+    location.hash = "#/agency";
   });
   document.getElementById("toMapBtn")?.addEventListener("click", () => {
     location.hash = "#/";
@@ -1931,6 +2103,14 @@ async function router() {
       return;
     }
     await renderAdminPage();
+    return;
+  }
+  if (hash === "#/agency") {
+    if (!state.user?.isAgencyOwner) {
+      location.hash = "#/";
+      return;
+    }
+    await renderAgencyPage();
     return;
   }
   if (hash.startsWith("#/property/")) {
