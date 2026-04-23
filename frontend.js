@@ -1162,6 +1162,7 @@ async function renderCabinetPage(openForm = false) {
         <div class="panel-head">
           <div class="cabinet-head-main">
             <h2>${state.user?.isAgencyOwner ? "Личный кабинет агентства" : "Личный кабинет брокера"}</h2>
+            <button class="btn" id="openChangePasswordModal">Сменить пароль</button>
             <button class="btn" id="logoutCabinet">Выйти из личного кабинета</button>
           </div>
           <button class="close-panel-action" id="closeCabinetPanel" aria-label="Закрыть кабинет">×</button>
@@ -1193,25 +1194,6 @@ async function renderCabinetPage(openForm = false) {
                 .join("")
             : "<p class='muted'>Пока нет объектов.</p>"
         }
-      </div>
-      <div class="panel">
-        <h3>Смена пароля</h3>
-        <div class="form-grid">
-          <div class="field-block field-span-2">
-            <label class="field-label" for="oldPasswordInput">Старый пароль</label>
-            <input id="oldPasswordInput" type="password" placeholder="Введите текущий пароль" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="newPasswordInput">Новый пароль</label>
-            <input id="newPasswordInput" type="password" placeholder="Минимум 6 символов" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="newPasswordConfirmInput">Повтор нового пароля</label>
-            <input id="newPasswordConfirmInput" type="password" placeholder="Повторите новый пароль" />
-          </div>
-        </div>
-        <p><button class="btn" type="button" id="changePasswordBtn">Сменить пароль</button></p>
-        <p class="muted" id="passwordStatus"></p>
       </div>
       <div class="panel" id="propertyFormWrap" style="display:none;">
         <div class="panel-head">
@@ -1311,6 +1293,30 @@ async function renderCabinetPage(openForm = false) {
         <p id="cabinetStatus" class="muted"></p>
       </div>
     </section>
+    <div class="modal" id="changePasswordModal">
+      <div class="modal-card">
+        <div class="panel-head">
+          <h3>Смена пароля</h3>
+          <button class="close-panel-action" id="closeChangePasswordModal" aria-label="Закрыть">×</button>
+        </div>
+        <div class="form-grid">
+          <div class="field-block field-span-2">
+            <label class="field-label" for="oldPasswordInput">Старый пароль</label>
+            <input id="oldPasswordInput" type="password" placeholder="Введите текущий пароль" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="newPasswordInput">Новый пароль</label>
+            <input id="newPasswordInput" type="password" placeholder="Минимум 6 символов" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="newPasswordConfirmInput">Повтор нового пароля</label>
+            <input id="newPasswordConfirmInput" type="password" placeholder="Повторите новый пароль" />
+          </div>
+        </div>
+        <p><button class="btn primary" type="button" id="changePasswordBtn">Сменить пароль</button></p>
+        <p class="muted" id="passwordStatus"></p>
+      </div>
+    </div>
   `;
   document.getElementById("addObjectBtn")?.addEventListener("click", () => {
     document.getElementById("propertyFormWrap").style.display = "block";
@@ -1325,6 +1331,18 @@ async function renderCabinetPage(openForm = false) {
   document.getElementById("logoutCabinet").addEventListener("click", () => {
     logout();
     location.hash = "#/auth";
+  });
+  const changePasswordModal = document.getElementById("changePasswordModal");
+  const closeChangePasswordModal = () => {
+    changePasswordModal?.classList.remove("open");
+  };
+  document.getElementById("openChangePasswordModal")?.addEventListener("click", () => {
+    changePasswordModal?.classList.add("open");
+    document.getElementById("passwordStatus").textContent = "";
+  });
+  document.getElementById("closeChangePasswordModal")?.addEventListener("click", closeChangePasswordModal);
+  changePasswordModal?.addEventListener("click", (event) => {
+    if (event.target === changePasswordModal) closeChangePasswordModal();
   });
   document.getElementById("changePasswordBtn")?.addEventListener("click", async () => {
     const oldPassword = document.getElementById("oldPasswordInput").value;
@@ -1353,6 +1371,9 @@ async function renderCabinetPage(openForm = false) {
       document.getElementById("oldPasswordInput").value = "";
       document.getElementById("newPasswordInput").value = "";
       document.getElementById("newPasswordConfirmInput").value = "";
+      setTimeout(() => {
+        closeChangePasswordModal();
+      }, 500);
     } catch (err) {
       status.textContent = err.message || "Ошибка смены пароля";
     }
@@ -1860,13 +1881,13 @@ async function renderAgencyPage() {
 async function renderAdminPage() {
   setMapBodyClass(false);
   let summary;
-  let users;
+  let privateBrokers;
   let properties;
   let agencies;
   try {
-    [summary, users, properties, agencies] = await Promise.all([
+    [summary, privateBrokers, properties, agencies] = await Promise.all([
       api("/api/admin/summary"),
-      api("/api/admin/users"),
+      api("/api/admin/private-brokers"),
       api("/api/admin/properties"),
       api("/api/admin/agencies")
     ]);
@@ -1890,13 +1911,15 @@ async function renderAdminPage() {
       <td>${escapeHtml(a.email || "—")}</td>
       <td>${a.brokerCount}</td>
       <td>${a.brokerLimit}</td>
-      <td><button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button></td>
+      <td>
+        <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
+        <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
+      </td>
     </tr>`
     )
     .join("");
 
-  const usersRows = users
-    .filter((u) => u.accountType !== "agency_owner" && !u.agencyOwnerId)
+  const usersRows = privateBrokers
     .map(
       (u) => `<tr>
       <td>${escapeHtml(u.email)}</td>
@@ -1979,6 +2002,10 @@ async function renderAdminPage() {
         </div>
       </div>
       <h2>Частные брокеры</h2>
+      <div class="address-row" style="margin-bottom:10px;">
+        <input id="adminPrivateBrokerSearchInput" placeholder="Поиск частного брокера: email, имя, телефон, ИП/самозанятый" />
+        <button class="btn" type="button" id="adminPrivateBrokerSearchBtn">Найти</button>
+      </div>
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
@@ -1992,7 +2019,7 @@ async function renderAdminPage() {
               <th></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="adminPrivateBrokerTableBody">
             ${usersRows || `<tr><td colspan="7" class="muted">Нет частных брокеров</td></tr>`}
           </tbody>
         </table>
@@ -2098,12 +2125,16 @@ async function renderAdminPage() {
           <td>${escapeHtml(a.email || "—")}</td>
           <td>${a.brokerCount}</td>
           <td>${a.brokerLimit}</td>
-          <td><button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button></td>
+          <td>
+            <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
+            <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
+          </td>
         </tr>`
           )
           .join("")
       : `<tr><td colspan="5" class="muted">Нет агентств</td></tr>`;
     bindAgencyOpenButtons();
+    bindAgencyDeleteButtons();
   };
 
   const bindAgencyOpenButtons = () => {
@@ -2141,7 +2172,9 @@ async function renderAdminPage() {
                         (b) =>
                           `<div class="admin-mini-list-item">${escapeHtml(b.name || "—")} — ${escapeHtml(b.email || "—")} (${escapeHtml(
                             b.phone || "—"
-                          )})</div>`
+                          )}) <button class="btn danger-btn admin-del-agency-broker" type="button" data-id="${escapeHtml(
+                            b.id
+                          )}" data-email="${escapeHtml(b.email || "")}">Удалить</button></div>`
                       )
                       .join("")
                   : `<p class="muted">Пока нет брокеров</p>`
@@ -2168,10 +2201,48 @@ async function renderAdminPage() {
               status.textContent = e.message || "Ошибка обновления лимита";
             }
           });
+          document.querySelectorAll(".admin-del-agency-broker").forEach((brokerBtn) => {
+            brokerBtn.addEventListener("click", async () => {
+              const brokerId = brokerBtn.getAttribute("data-id");
+              const brokerEmail = brokerBtn.getAttribute("data-email") || "этого брокера";
+              if (!brokerId || !window.confirm(`Удалить брокера ${brokerEmail} из агентства?`)) {
+                return;
+              }
+              brokerBtn.disabled = true;
+              try {
+                await api(`/api/admin/users/${encodeURIComponent(brokerId)}`, { method: "DELETE" });
+                closeAgencyModal();
+                await renderAdminPage();
+              } catch (e) {
+                alert(e.message || "Ошибка удаления брокера");
+                brokerBtn.disabled = false;
+              }
+            });
+          });
           agencyModal.classList.add("open");
         } catch (e) {
           alert(e.message || "Ошибка загрузки агентства");
         } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  };
+
+  const bindAgencyDeleteButtons = () => {
+    document.querySelectorAll(".admin-del-agency").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        const email = btn.getAttribute("data-email") || "это агентство";
+        if (!id || !window.confirm(`Удалить агентство ${email} целиком? Будут удалены все брокеры и объекты.`)) {
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await api(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+          await renderAdminPage();
+        } catch (e) {
+          alert(e.message || "Ошибка удаления агентства");
           btn.disabled = false;
         }
       });
@@ -2193,8 +2264,10 @@ async function renderAdminPage() {
     document.getElementById("adminAgencySearchBtn")?.click();
   });
   bindAgencyOpenButtons();
+  bindAgencyDeleteButtons();
 
-  document.querySelectorAll(".admin-open-user").forEach((btn) => {
+  const bindUserRowHandlers = () => {
+    document.querySelectorAll(".admin-open-user").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-id");
       if (!id) return;
@@ -2264,22 +2337,70 @@ async function renderAdminPage() {
     });
   });
 
-  document.querySelectorAll(".admin-del-user").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-id");
-      const email = btn.getAttribute("data-email") || "этого пользователя";
-      if (!id || !window.confirm(`Удалить пользователя ${email}? Будут удалены и все его объекты.`)) {
-        return;
-      }
-      btn.disabled = true;
-      try {
-        await api(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" });
-        await renderAdminPage();
-      } catch (e) {
-        alert(e.message);
-        btn.disabled = false;
-      }
+    document.querySelectorAll(".admin-del-user").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        const email = btn.getAttribute("data-email") || "этого пользователя";
+        if (!id || !window.confirm(`Удалить пользователя ${email}? Будут удалены и все его объекты.`)) {
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await api(`/api/admin/users/${encodeURIComponent(id)}`, { method: "DELETE" });
+          await renderAdminPage();
+        } catch (e) {
+          alert(e.message);
+          btn.disabled = false;
+        }
+      });
     });
+  };
+  bindUserRowHandlers();
+
+  const renderPrivateBrokerRows = (list) => {
+    const tbody = document.getElementById("adminPrivateBrokerTableBody");
+    if (!tbody) return;
+    tbody.innerHTML =
+      list.length
+        ? list
+            .map(
+              (u) => `<tr>
+          <td>${escapeHtml(u.email)}</td>
+          <td>${escapeHtml(u.name || "—")}</td>
+          <td>${escapeHtml(u.agency || "—")}</td>
+          <td>${escapeHtml(u.phone || "—")}</td>
+          <td>${u.role === "admin" ? "admin" : "брокер"}</td>
+          <td class="muted">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
+          <td>
+            <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
+            ${
+              u.role === "admin"
+                ? `<span class="muted">—</span>`
+                : `<button class="btn danger-btn admin-del-user" data-id="${escapeHtml(u.id)}" data-email="${escapeHtml(
+                    u.email
+                  )}" type="button">Удалить</button>`
+            }
+          </td>
+        </tr>`
+            )
+            .join("")
+        : `<tr><td colspan="7" class="muted">Нет частных брокеров</td></tr>`;
+    bindUserRowHandlers();
+  };
+
+  document.getElementById("adminPrivateBrokerSearchBtn")?.addEventListener("click", async () => {
+    const query = document.getElementById("adminPrivateBrokerSearchInput").value.trim();
+    try {
+      const filtered = await api(`/api/admin/private-brokers?query=${encodeURIComponent(query)}`);
+      renderPrivateBrokerRows(filtered);
+    } catch (e) {
+      alert(e.message || "Ошибка поиска частных брокеров");
+    }
+  });
+  document.getElementById("adminPrivateBrokerSearchInput")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    document.getElementById("adminPrivateBrokerSearchBtn")?.click();
   });
 
   document.querySelectorAll(".admin-del-prop").forEach((btn) => {

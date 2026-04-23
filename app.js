@@ -33,7 +33,8 @@ const {
   countBrokersByAgencyOwner,
   listAgenciesForAdmin,
   updateAgencyBrokerLimit,
-  updateUserPasswordHash
+  updateUserPasswordHash,
+  listPrivateBrokersForAdmin
 } = require("./lib/db");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -388,7 +389,7 @@ app.post("/api/auth/register", async (req, res) => {
     role,
     accountType: normalizedType,
     agencyOwnerId: null,
-    brokerLimit: normalizedType === "agency_owner" ? 10 : 0,
+    brokerLimit: normalizedType === "agency_owner" ? 100 : 0,
     createdAt: new Date().toISOString()
   };
   createUserRecord(user);
@@ -505,6 +506,11 @@ app.get("/api/admin/users", auth, requireAdmin, (_req, res) => {
   return res.json(listAllUsersForAdmin());
 });
 
+app.get("/api/admin/private-brokers", auth, requireAdmin, (req, res) => {
+  const query = String(req.query.query || "").trim();
+  return res.json(listPrivateBrokersForAdmin(query));
+});
+
 app.get("/api/admin/agencies", auth, requireAdmin, (req, res) => {
   const query = String(req.query.query || "").trim();
   return res.json(listAgenciesForAdmin(query));
@@ -582,15 +588,33 @@ app.delete("/api/admin/users/:id", auth, requireAdmin, (req, res) => {
   if (user.role === "admin") {
     return res.status(400).json({ message: "Нельзя удалить администратора через панель." });
   }
-  const owned = listPropertiesByOwner(userId);
-  for (const property of owned) {
-    deletePropertyFilesOnDisk(property);
+  const purgeUserData = (targetUserId) => {
+    const owned = listPropertiesByOwner(targetUserId);
+    for (const property of owned) {
+      deletePropertyFilesOnDisk(property);
+    }
+    deletePropertiesByOwner(targetUserId);
+    return owned.length;
+  };
+
+  let deletedPropertiesCount = purgeUserData(userId);
+  let deletedBrokersCount = 0;
+  if (user.accountType === "agency_owner") {
+    const agencyBrokers = listBrokersByAgencyOwner(userId);
+    for (const broker of agencyBrokers) {
+      deletedPropertiesCount += purgeUserData(broker.id);
+      deleteUserById(broker.id);
+      deletedBrokersCount += 1;
+    }
   }
-  deletePropertiesByOwner(userId);
   if (!deleteUserById(userId)) {
     return res.status(500).json({ message: "Не удалось удалить пользователя" });
   }
-  return res.json({ success: true, deletedProperties: owned.length });
+  return res.json({
+    success: true,
+    deletedProperties: deletedPropertiesCount,
+    deletedBrokers: deletedBrokersCount
+  });
 });
 
 app.get("/api/admin/properties", auth, requireAdmin, (_req, res) => {
