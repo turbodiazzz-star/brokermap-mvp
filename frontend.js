@@ -1800,7 +1800,11 @@ async function renderAgencyPage() {
           ${optionsHtml}
         </select>
       </td>
-      <td><button type="button" class="btn agency-prop-owner-save" data-id="${escapeHtml(p.id)}">Сохранить</button></td>
+      <td>
+        <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
+        <button type="button" class="btn agency-prop-owner-save" data-id="${escapeHtml(p.id)}">Сохранить</button>
+        <button type="button" class="btn danger-btn agency-prop-del" data-id="${escapeHtml(p.id)}">Удалить</button>
+      </td>
     </tr>`;
         })
         .join("")
@@ -1956,6 +1960,23 @@ async function renderAgencyPage() {
       }
     });
   });
+
+  document.querySelectorAll(".agency-prop-del").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      if (!id || !window.confirm("Удалить объект агентства?")) {
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await api(`/api/agency/properties/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await renderAgencyPage();
+      } catch (err) {
+        alert(err.message || "Ошибка удаления объекта");
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 async function renderAdminPage() {
@@ -2029,7 +2050,7 @@ async function renderAdminPage() {
       <td>${escapeHtml(p.ownerEmail)}</td>
       <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
       <td>
-        <button class="btn admin-open-prop" data-id="${escapeHtml(p.id)}" type="button">Открыть</button>
+        <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
         <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
       </td>
     </tr>`
@@ -2393,14 +2414,6 @@ async function renderAdminPage() {
   });
 
   const bindPropertyRowHandlers = () => {
-    document.querySelectorAll(".admin-open-prop").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const id = btn.getAttribute("data-id");
-        if (!id) return;
-        location.hash = `#/property/${encodeURIComponent(id)}`;
-      });
-    });
-
     document.querySelectorAll(".admin-del-prop").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const id = btn.getAttribute("data-id");
@@ -2498,7 +2511,7 @@ async function renderAdminPage() {
           <td>${escapeHtml(p.ownerEmail)}</td>
           <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
           <td>
-            <button class="btn admin-open-prop" data-id="${escapeHtml(p.id)}" type="button">Открыть</button>
+            <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
             <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
           </td>
         </tr>`

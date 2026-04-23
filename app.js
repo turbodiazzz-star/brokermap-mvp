@@ -673,6 +673,23 @@ app.patch("/api/agency/properties/:id/owner", auth, requireAgencyOwner, (req, re
   return res.json({ success: true, propertyId: property.id, ownerId: targetOwnerId });
 });
 
+app.delete("/api/agency/properties/:id", auth, requireAgencyOwner, (req, res) => {
+  const property = findPropertyById(req.params.id);
+  if (!property) {
+    return res.status(404).json({ message: "Объект не найден" });
+  }
+  const brokers = listBrokersByAgencyOwner(req.userId);
+  const allowedOwnerIds = new Set([req.userId, ...brokers.map((b) => b.id)]);
+  if (!allowedOwnerIds.has(property.ownerId)) {
+    return res.status(403).json({ message: "Этот объект не относится к вашему агентству" });
+  }
+  deletePropertyFilesOnDisk(property);
+  if (!deletePropertyById(property.id)) {
+    return res.status(500).json({ message: "Не удалось удалить объект" });
+  }
+  return res.json({ success: true });
+});
+
 app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
   const { firstName, lastName, email, password, phone } = req.body;
   if (!firstName || !lastName || !email || !password || !phone) {
