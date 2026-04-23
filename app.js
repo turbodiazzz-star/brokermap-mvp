@@ -28,13 +28,16 @@ const {
   listAllPropertiesForAdmin,
   deletePropertyById,
   deletePropertiesByOwner,
+  reassignPropertiesToOwner,
+  reassignPropertyOwner,
   deleteUserById,
   listBrokersByAgencyOwner,
   countBrokersByAgencyOwner,
   listAgenciesForAdmin,
   updateAgencyBrokerLimit,
   updateUserPasswordHash,
-  listPrivateBrokersForAdmin
+  listPrivateBrokersForAdmin,
+  listPropertiesForAgencyOwner
 } = require("./lib/db");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -643,6 +646,33 @@ app.get("/api/agency/brokers", auth, requireAgencyOwner, (req, res) => {
   });
 });
 
+app.get("/api/agency/properties", auth, requireAgencyOwner, (req, res) => {
+  return res.json(listPropertiesForAgencyOwner(req.userId));
+});
+
+app.patch("/api/agency/properties/:id/owner", auth, requireAgencyOwner, (req, res) => {
+  const property = findPropertyById(req.params.id);
+  if (!property) {
+    return res.status(404).json({ message: "Объект не найден" });
+  }
+  const targetOwnerId = String(req.body.ownerId || "").trim();
+  if (!targetOwnerId) {
+    return res.status(400).json({ message: "ownerId обязателен" });
+  }
+  const brokers = listBrokersByAgencyOwner(req.userId);
+  const allowedOwnerIds = new Set([req.userId, ...brokers.map((b) => b.id)]);
+  if (!allowedOwnerIds.has(property.ownerId)) {
+    return res.status(403).json({ message: "Этот объект не относится к вашему агентству" });
+  }
+  if (!allowedOwnerIds.has(targetOwnerId)) {
+    return res.status(400).json({ message: "Можно назначить только брокера вашего агентства или само агентство" });
+  }
+  if (!reassignPropertyOwner(property.id, targetOwnerId)) {
+    return res.status(500).json({ message: "Не удалось обновить ответственного брокера" });
+  }
+  return res.json({ success: true, propertyId: property.id, ownerId: targetOwnerId });
+});
+
 app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
   const { firstName, lastName, email, password, phone } = req.body;
   if (!firstName || !lastName || !email || !password || !phone) {
@@ -700,15 +730,11 @@ app.delete("/api/agency/brokers/:id", auth, requireAgencyOwner, (req, res) => {
   if (!broker || broker.agencyOwnerId !== req.userId || broker.accountType !== "broker") {
     return res.status(404).json({ message: "Брокер не найден" });
   }
-  const owned = listPropertiesByOwner(broker.id);
-  for (const property of owned) {
-    deletePropertyFilesOnDisk(property);
-  }
-  deletePropertiesByOwner(broker.id);
+  const transferredProperties = reassignPropertiesToOwner(broker.id, req.userId);
   if (!deleteUserById(broker.id)) {
     return res.status(500).json({ message: "Не удалось удалить брокера" });
   }
-  return res.json({ success: true, deletedProperties: owned.length });
+  return res.json({ success: true, transferredProperties });
 });
 
 app.post(
@@ -744,7 +770,6 @@ app.post(
       req.body.commissionTotal &&
       req.body.commissionPartner &&
       req.body.phone &&
-      req.body.telegram &&
       req.body.description;
     if (!hasRequiredFields || !(req.files.photos || []).length) {
       return res.status(400).json({ message: "Заполните все обязательные поля объекта, включая фото." });
