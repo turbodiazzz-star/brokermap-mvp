@@ -2028,6 +2028,10 @@ async function renderAdminPage() {
 
       <div class="admin-tab-panel" id="adminPropertiesPanel">
       <h2>Объекты</h2>
+      <div class="address-row" style="margin-bottom:10px;">
+        <input id="adminPropertySearchInput" placeholder="Поиск объекта: ID, адрес, email владельца" />
+        <button class="btn" type="button" id="adminPropertySearchBtn">Найти</button>
+      </div>
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
@@ -2040,7 +2044,7 @@ async function renderAdminPage() {
               <th></th>
             </tr>
           </thead>
-          <tbody>
+          <tbody id="adminPropertyTableBody">
             ${propRows || `<tr><td colspan="6" class="muted">Нет объектов</td></tr>`}
           </tbody>
         </table>
@@ -2308,34 +2312,53 @@ async function renderAdminPage() {
     });
   });
 
-  document.querySelectorAll(".admin-open-prop").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-id");
-      if (!id) return;
-      btn.disabled = true;
-      try {
-        const p = await api(`/api/properties/${encodeURIComponent(id)}`);
-        adminInfoTitle.textContent = `Объект: ${p.id || "—"}`;
-        adminInfoBody.innerHTML = `
-          <p><strong>Адрес:</strong> ${escapeHtml(p.address || "—")}</p>
-          <p><strong>Цена:</strong> ${money(p.price)} ₽</p>
-          <p><strong>Площадь:</strong> ${escapeHtml(p.area)} м²</p>
-          <p><strong>Комиссия:</strong> ${escapeHtml(p.commissionTotal)}%</p>
-          <p><strong>Партнеру:</strong> ${escapeHtml(p.commissionPartner)}%</p>
-          <p><strong>Контакты:</strong> ${escapeHtml(p.contacts?.phone || "—")}, ${escapeHtml(p.contacts?.telegram || "—")}</p>
-          <p><button class="btn primary" type="button" id="adminGoPropCardBtn">Открыть карточку</button></p>
-        `;
-        document.getElementById("adminGoPropCardBtn")?.addEventListener("click", () => {
-          location.hash = `#/property/${encodeURIComponent(id)}`;
-        });
-        adminModal.classList.add("open");
-      } catch (e) {
-        alert(e.message);
-      } finally {
-        btn.disabled = false;
-      }
+  const bindPropertyRowHandlers = () => {
+    document.querySelectorAll(".admin-open-prop").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        if (!id) return;
+        btn.disabled = true;
+        try {
+          const p = await api(`/api/properties/${encodeURIComponent(id)}`);
+          adminInfoTitle.textContent = `Объект: ${p.id || "—"}`;
+          adminInfoBody.innerHTML = `
+            <p><strong>Адрес:</strong> ${escapeHtml(p.address || "—")}</p>
+            <p><strong>Цена:</strong> ${money(p.price)} ₽</p>
+            <p><strong>Площадь:</strong> ${escapeHtml(p.area)} м²</p>
+            <p><strong>Комиссия:</strong> ${escapeHtml(p.commissionTotal)}%</p>
+            <p><strong>Партнеру:</strong> ${escapeHtml(p.commissionPartner)}%</p>
+            <p><strong>Контакты:</strong> ${escapeHtml(p.contacts?.phone || "—")}, ${escapeHtml(p.contacts?.telegram || "—")}</p>
+            <p><button class="btn primary" type="button" id="adminGoPropCardBtn">Открыть карточку</button></p>
+          `;
+          document.getElementById("adminGoPropCardBtn")?.addEventListener("click", () => {
+            location.hash = `#/property/${encodeURIComponent(id)}`;
+          });
+          adminModal.classList.add("open");
+        } catch (e) {
+          alert(e.message);
+        } finally {
+          btn.disabled = false;
+        }
+      });
     });
-  });
+
+    document.querySelectorAll(".admin-del-prop").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        if (!id || !window.confirm("Удалить объект из базы? Файлы фото/PDF в uploads будут удалены, если путь начинается с /uploads/.")) {
+          return;
+        }
+        btn.disabled = true;
+        try {
+          await api(`/api/admin/properties/${encodeURIComponent(id)}`, { method: "DELETE" });
+          await renderAdminPage();
+        } catch (e) {
+          alert(e.message);
+          btn.disabled = false;
+        }
+      });
+    });
+  };
 
     document.querySelectorAll(".admin-del-user").forEach((btn) => {
       btn.addEventListener("click", async () => {
@@ -2403,22 +2426,50 @@ async function renderAdminPage() {
     document.getElementById("adminPrivateBrokerSearchBtn")?.click();
   });
 
-  document.querySelectorAll(".admin-del-prop").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-id");
-      if (!id || !window.confirm("Удалить объект из базы? Файлы фото/PDF в uploads будут удалены, если путь начинается с /uploads/.")) {
-        return;
-      }
-      btn.disabled = true;
-      try {
-        await api(`/api/admin/properties/${encodeURIComponent(id)}`, { method: "DELETE" });
-        await renderAdminPage();
-      } catch (e) {
-        alert(e.message);
-        btn.disabled = false;
-      }
+  const renderPropertyRows = (list) => {
+    const tbody = document.getElementById("adminPropertyTableBody");
+    if (!tbody) return;
+    tbody.innerHTML = list.length
+      ? list
+          .map(
+            (p) => `<tr>
+          <td><code>${escapeHtml(p.id)}</code></td>
+          <td>${escapeHtml(p.address || "—")}</td>
+          <td>${money(p.price)} ₽</td>
+          <td>${escapeHtml(p.ownerEmail)}</td>
+          <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
+          <td>
+            <button class="btn admin-open-prop" data-id="${escapeHtml(p.id)}" type="button">Открыть</button>
+            <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+          </td>
+        </tr>`
+          )
+          .join("")
+      : `<tr><td colspan="6" class="muted">Нет объектов</td></tr>`;
+    bindPropertyRowHandlers();
+  };
+
+  document.getElementById("adminPropertySearchBtn")?.addEventListener("click", () => {
+    const query = String(document.getElementById("adminPropertySearchInput").value || "")
+      .trim()
+      .toLowerCase();
+    if (!query) {
+      renderPropertyRows(properties);
+      return;
+    }
+    const filtered = properties.filter((p) => {
+      const haystack = `${p.id || ""} ${p.address || ""} ${p.ownerEmail || ""}`.toLowerCase();
+      return haystack.includes(query);
     });
+    renderPropertyRows(filtered);
   });
+  document.getElementById("adminPropertySearchInput")?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    document.getElementById("adminPropertySearchBtn")?.click();
+  });
+
+  bindPropertyRowHandlers();
 }
 
 async function router() {
