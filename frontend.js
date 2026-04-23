@@ -985,6 +985,7 @@ function renderAuthPage() {
             <input id="phone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
           </div>
           <input id="password" placeholder="Пароль (мин 6)" type="password" autocomplete="new-password" />
+          <label class="field-label" for="agency" id="agencyFieldLabel">Самозанятый/ИП (обязательно)</label>
           <input id="agency" placeholder="Агентство / ИП (обязательно для агентства)" />
           <p class="note">* ИП / юрлица должны иметь соответствующие ОКВЭД для операций с недвижимостью</p>
           <input id="inn" placeholder="ИНН (10 или 12 цифр)" inputmode="numeric" />
@@ -1035,8 +1036,12 @@ function renderAuthPage() {
   const updateRegisterFormByType = () => {
     const type = document.getElementById("accountType").value;
     const agencyInput = document.getElementById("agency");
+    const label = document.getElementById("agencyFieldLabel");
     agencyInput.placeholder =
-      type === "agency_owner" ? "Название агентства (обязательно)" : "Агентство / ИП (необязательно)";
+      type === "agency_owner" ? "Название агентства (обязательно)" : "Самозанятый/ИП (обязательно)";
+    if (label) {
+      label.textContent = type === "agency_owner" ? "Название агентства (обязательно)" : "Самозанятый/ИП (обязательно)";
+    }
   };
   document.getElementById("accountType").addEventListener("change", updateRegisterFormByType);
   updateRegisterFormByType();
@@ -1668,9 +1673,9 @@ async function renderAgencyPage() {
     location.hash = "#/";
     return;
   }
-  let brokers = [];
+  let agencyData = { brokerLimit: 0, brokerCount: 0, brokers: [] };
   try {
-    brokers = await api("/api/agency/brokers");
+    agencyData = await api("/api/agency/brokers");
   } catch (err) {
     app.innerHTML = `
       <section class="page">
@@ -1682,6 +1687,7 @@ async function renderAgencyPage() {
     return;
   }
 
+  const brokers = Array.isArray(agencyData.brokers) ? agencyData.brokers : [];
   const rows = brokers
     .map(
       (b) => `<tr>
@@ -1701,6 +1707,7 @@ async function renderAgencyPage() {
     <section class="page admin-page">
       <h1>Панель агентства</h1>
       <p class="muted">Вы можете добавлять логины брокеров агентства и удалять их при необходимости.</p>
+      <p class="muted">Лимит: <strong>${agencyData.brokerCount} / ${agencyData.brokerLimit || "∞"}</strong></p>
 
       <div class="panel">
         <h3>Добавить брокера</h3>
@@ -1807,11 +1814,13 @@ async function renderAdminPage() {
   let summary;
   let users;
   let properties;
+  let agencies;
   try {
-    [summary, users, properties] = await Promise.all([
+    [summary, users, properties, agencies] = await Promise.all([
       api("/api/admin/summary"),
       api("/api/admin/users"),
-      api("/api/admin/properties")
+      api("/api/admin/properties"),
+      api("/api/admin/agencies")
     ]);
   } catch (err) {
     app.innerHTML = `
@@ -1825,6 +1834,18 @@ async function renderAdminPage() {
     });
     return;
   }
+
+  const agencyRows = agencies
+    .map(
+      (a) => `<tr>
+      <td>${escapeHtml(a.agency || "—")}</td>
+      <td>${escapeHtml(a.email || "—")}</td>
+      <td>${a.brokerCount}</td>
+      <td>${a.brokerLimit}</td>
+      <td><button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button></td>
+    </tr>`
+    )
+    .join("");
 
   const usersRows = users
     .map(
@@ -1885,6 +1906,29 @@ async function renderAdminPage() {
 
       <div class="admin-tab-panel active" id="adminUsersPanel">
       <h2>Пользователи</h2>
+      <div class="panel">
+        <h3>Агентства</h3>
+        <div class="address-row">
+          <input id="adminAgencySearchInput" placeholder="Поиск агентства: email, имя, название" />
+          <button class="btn" type="button" id="adminAgencySearchBtn">Найти</button>
+        </div>
+        <div class="admin-table-wrap" style="margin-top:10px;">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>Агентство</th>
+                <th>Email</th>
+                <th>Брокеров</th>
+                <th>Лимит</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="adminAgencyTableBody">
+              ${agencyRows || `<tr><td colspan="5" class="muted">Нет агентств</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
       <div class="admin-table-wrap">
         <table class="admin-table">
           <thead>
@@ -1934,6 +1978,15 @@ async function renderAdminPage() {
           <div id="adminInfoBody"></div>
         </div>
       </div>
+      <div class="modal" id="adminAgencyModal">
+        <div class="modal-card admin-modal-card">
+          <div class="panel-head">
+            <h3 id="adminAgencyModalTitle">Агентство</h3>
+            <button class="close-panel-action" id="adminAgencyCloseBtn" aria-label="Закрыть">×</button>
+          </div>
+          <div id="adminAgencyModalBody"></div>
+        </div>
+      </div>
     </section>
   `;
 
@@ -1974,6 +2027,122 @@ async function renderAdminPage() {
   adminModal?.addEventListener("click", (event) => {
     if (event.target === adminModal) closeAdminModal();
   });
+
+  const agencyModal = document.getElementById("adminAgencyModal");
+  const agencyModalTitle = document.getElementById("adminAgencyModalTitle");
+  const agencyModalBody = document.getElementById("adminAgencyModalBody");
+  const closeAgencyModal = () => agencyModal?.classList.remove("open");
+  document.getElementById("adminAgencyCloseBtn")?.addEventListener("click", closeAgencyModal);
+  agencyModal?.addEventListener("click", (event) => {
+    if (event.target === agencyModal) closeAgencyModal();
+  });
+
+  const renderAgencyRows = (list) => {
+    const tbody = document.getElementById("adminAgencyTableBody");
+    if (!tbody) return;
+    tbody.innerHTML = list.length
+      ? list
+          .map(
+            (a) => `<tr>
+          <td>${escapeHtml(a.agency || "—")}</td>
+          <td>${escapeHtml(a.email || "—")}</td>
+          <td>${a.brokerCount}</td>
+          <td>${a.brokerLimit}</td>
+          <td><button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button></td>
+        </tr>`
+          )
+          .join("")
+      : `<tr><td colspan="5" class="muted">Нет агентств</td></tr>`;
+    bindAgencyOpenButtons();
+  };
+
+  const bindAgencyOpenButtons = () => {
+    document.querySelectorAll(".admin-open-agency").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        if (!id) return;
+        btn.disabled = true;
+        try {
+          const details = await api(`/api/admin/agencies/${encodeURIComponent(id)}`);
+          const agency = details.agency || {};
+          const brokers = Array.isArray(details.brokers) ? details.brokers : [];
+          agencyModalTitle.textContent = `Агентство: ${agency.agency || agency.email || "—"}`;
+          agencyModalBody.innerHTML = `
+            <p><strong>Email:</strong> ${escapeHtml(agency.email || "—")}</p>
+            <p><strong>Телефон:</strong> ${escapeHtml(agency.phone || "—")}</p>
+            <p><strong>ИНН:</strong> ${escapeHtml(agency.inn || "—")}</p>
+            <div class="address-row">
+              <div style="flex:1;">
+                <label class="field-label" for="adminAgencyLimitInput">Лимит брокеров</label>
+                <input id="adminAgencyLimitInput" type="number" min="0" step="1" value="${Number(agency.brokerLimit || 0)}" />
+              </div>
+              <div style="display:flex;align-items:flex-end;">
+                <button class="btn primary" type="button" id="adminAgencySaveLimitBtn">Сохранить лимит</button>
+              </div>
+            </div>
+            <p class="muted" id="adminAgencyLimitStatus">Текущее количество брокеров: ${brokers.length}</p>
+            <hr />
+            <p><strong>Брокеры агентства:</strong></p>
+            <div class="admin-mini-list">
+              ${
+                brokers.length
+                  ? brokers
+                      .map(
+                        (b) =>
+                          `<div class="admin-mini-list-item">${escapeHtml(b.name || "—")} — ${escapeHtml(b.email || "—")} (${escapeHtml(
+                            b.phone || "—"
+                          )})</div>`
+                      )
+                      .join("")
+                  : `<p class="muted">Пока нет брокеров</p>`
+              }
+            </div>
+          `;
+          document.getElementById("adminAgencySaveLimitBtn")?.addEventListener("click", async () => {
+            const input = document.getElementById("adminAgencyLimitInput");
+            const status = document.getElementById("adminAgencyLimitStatus");
+            const brokerLimit = Number(input.value);
+            if (!Number.isInteger(brokerLimit) || brokerLimit < 0) {
+              status.textContent = "Лимит должен быть целым числом >= 0";
+              return;
+            }
+            try {
+              await api(`/api/admin/agencies/${encodeURIComponent(id)}/broker-limit`, {
+                method: "PATCH",
+                body: JSON.stringify({ brokerLimit })
+              });
+              status.textContent = `Лимит обновлён: ${brokerLimit}`;
+              const refreshed = await api("/api/admin/agencies");
+              renderAgencyRows(refreshed);
+            } catch (e) {
+              status.textContent = e.message || "Ошибка обновления лимита";
+            }
+          });
+          agencyModal.classList.add("open");
+        } catch (e) {
+          alert(e.message || "Ошибка загрузки агентства");
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    });
+  };
+
+  document.getElementById("adminAgencySearchBtn")?.addEventListener("click", async () => {
+    const query = document.getElementById("adminAgencySearchInput").value.trim();
+    try {
+      const filtered = await api(`/api/admin/agencies?query=${encodeURIComponent(query)}`);
+      renderAgencyRows(filtered);
+    } catch (e) {
+      alert(e.message || "Ошибка поиска");
+    }
+  });
+  document.getElementById("adminAgencySearchInput")?.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    document.getElementById("adminAgencySearchBtn")?.click();
+  });
+  bindAgencyOpenButtons();
 
   document.querySelectorAll(".admin-open-user").forEach((btn) => {
     btn.addEventListener("click", async () => {

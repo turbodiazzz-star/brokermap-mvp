@@ -29,7 +29,10 @@ const {
   deletePropertyById,
   deletePropertiesByOwner,
   deleteUserById,
-  listBrokersByAgencyOwner
+  listBrokersByAgencyOwner,
+  countBrokersByAgencyOwner,
+  listAgenciesForAdmin,
+  updateAgencyBrokerLimit
 } = require("./lib/db");
 
 const PORT = Number(process.env.PORT || 3000);
@@ -195,7 +198,8 @@ function publicUser(user) {
     max: user.max || "",
     isAdmin: user.role === "admin",
     accountType: user.accountType || "broker",
-    isAgencyOwner: user.accountType === "agency_owner"
+    isAgencyOwner: user.accountType === "agency_owner",
+    brokerLimit: Number(user.brokerLimit || 0)
   };
 }
 
@@ -347,8 +351,7 @@ const upload = multer({ storage });
 app.post("/api/auth/register", async (req, res) => {
   const { firstName, lastName, name, email, password, phone, agency, inn, marketingConsent, agree, accountType } = req.body;
   const normalizedType = accountType === "agency_owner" ? "agency_owner" : "broker";
-  const agencyRequired = normalizedType === "agency_owner";
-  if (!email || !password || !firstName || !lastName || !inn || !phone || (agencyRequired && !agency)) {
+  if (!email || !password || !firstName || !lastName || !inn || !phone || !agency) {
     return res.status(400).json({ message: "Заполните все обязательные поля регистрации" });
   }
   if (!/^\+7\d{10}$/.test(String(phone))) {
@@ -384,6 +387,7 @@ app.post("/api/auth/register", async (req, res) => {
     role,
     accountType: normalizedType,
     agencyOwnerId: null,
+    brokerLimit: normalizedType === "agency_owner" ? 10 : 0,
     createdAt: new Date().toISOString()
   };
   createUserRecord(user);
@@ -474,6 +478,46 @@ app.get("/api/admin/users", auth, requireAdmin, (_req, res) => {
   return res.json(listAllUsersForAdmin());
 });
 
+app.get("/api/admin/agencies", auth, requireAdmin, (req, res) => {
+  const query = String(req.query.query || "").trim();
+  return res.json(listAgenciesForAdmin(query));
+});
+
+app.get("/api/admin/agencies/:id", auth, requireAdmin, (req, res) => {
+  const agencyUser = findUserById(req.params.id);
+  if (!agencyUser || agencyUser.accountType !== "agency_owner") {
+    return res.status(404).json({ message: "Агентство не найдено" });
+  }
+  const brokers = listBrokersByAgencyOwner(agencyUser.id);
+  return res.json({
+    agency: {
+      id: agencyUser.id,
+      email: agencyUser.email,
+      name: agencyUser.name,
+      agency: agencyUser.agency || "",
+      phone: agencyUser.phone || "",
+      inn: agencyUser.inn || "",
+      brokerLimit: Number(agencyUser.brokerLimit || 0)
+    },
+    brokers
+  });
+});
+
+app.patch("/api/admin/agencies/:id/broker-limit", auth, requireAdmin, (req, res) => {
+  const agencyUser = findUserById(req.params.id);
+  if (!agencyUser || agencyUser.accountType !== "agency_owner") {
+    return res.status(404).json({ message: "Агентство не найдено" });
+  }
+  const value = Number(req.body.brokerLimit);
+  if (!Number.isInteger(value) || value < 0 || value > 1000) {
+    return res.status(400).json({ message: "brokerLimit должен быть целым числом от 0 до 1000" });
+  }
+  if (!updateAgencyBrokerLimit(agencyUser.id, value)) {
+    return res.status(500).json({ message: "Не удалось обновить лимит" });
+  }
+  return res.json({ success: true, brokerLimit: value });
+});
+
 app.get("/api/admin/users/:id", auth, requireAdmin, (req, res) => {
   const user = findUserById(req.params.id);
   if (!user) {
@@ -539,7 +583,13 @@ app.delete("/api/admin/properties/:id", auth, requireAdmin, (req, res) => {
 });
 
 app.get("/api/agency/brokers", auth, requireAgencyOwner, (req, res) => {
-  return res.json(listBrokersByAgencyOwner(req.userId));
+  const owner = req.currentUser || findUserById(req.userId);
+  const brokers = listBrokersByAgencyOwner(req.userId);
+  return res.json({
+    brokerLimit: Number(owner?.brokerLimit || 0),
+    brokerCount: brokers.length,
+    brokers
+  });
 });
 
 app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
@@ -557,6 +607,11 @@ app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
     return res.status(409).json({ message: "Пользователь с таким email уже есть" });
   }
   const owner = req.currentUser || findUserById(req.userId);
+  const brokerLimit = Number(owner?.brokerLimit || 0);
+  const currentBrokerCount = countBrokersByAgencyOwner(req.userId);
+  if (brokerLimit > 0 && currentBrokerCount >= brokerLimit) {
+    return res.status(400).json({ message: `Достигнут лимит брокеров для агентства (${brokerLimit}).` });
+  }
   const passwordHash = await bcrypt.hash(password, 10);
   const broker = {
     id: `u-${Date.now()}-${Math.round(Math.random() * 1e5)}`,
