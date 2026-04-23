@@ -77,6 +77,11 @@ body.view-map #app {
 .filters button,
 .auth button,
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  color: var(--text);
   height: 40px;
   border-radius: 10px;
   border: 1px solid var(--border);
