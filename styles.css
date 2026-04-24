@@ -45,6 +45,53 @@ body.view-map #app {
   overflow: hidden;
 }
 
+.demo-page {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+  flex: 1;
+  min-height: 0;
+}
+
+.demo-map-wrap {
+  position: relative;
+  min-height: 100%;
+}
+
+.demo-hero {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: min(540px, calc(100% - 32px));
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.16);
+  z-index: 9;
+}
+
+.demo-hero h1 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.demo-hero p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.demo-hero-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.demo-list {
+  overflow: auto;
+  border-radius: 0;
+  border-left: 1px solid var(--border);
+}
+
 .cabinet-btn-short {
   display: none;
 }
@@ -758,6 +805,28 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  .demo-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(320px, 44vh) minmax(260px, 1fr);
+  }
+
+  .demo-hero {
+    width: calc(100% - 24px);
+    left: 12px;
+    right: 12px;
+    top: 10px;
+    padding: 12px;
+  }
+
+  .demo-hero h1 {
+    font-size: 18px;
+  }
+
+  .demo-list {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+
   .map-layout {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(160px, 40vh) minmax(220px, 1fr);

@@ -284,6 +284,120 @@ function setMapBodyClass(isMap) {
   document.body.classList.toggle("view-map", Boolean(isMap));
 }
 
+function createDemoProperties(count = 100) {
+  const streets = [
+    "Ленинский проспект",
+    "Кутузовский проспект",
+    "Проспект Мира",
+    "Тверская улица",
+    "Профсоюзная улица",
+    "Ленинградский проспект",
+    "Мосфильмовская улица",
+    "Улица Академика Королева",
+    "Пятницкая улица",
+    "Новослободская улица"
+  ];
+  const demo = [];
+  for (let i = 0; i < count; i++) {
+    const lat = 55.55 + Math.random() * 0.33;
+    const lon = 37.35 + Math.random() * 0.55;
+    const priceBase = 11_000_000 + Math.round(Math.random() * 65_000_000);
+    const street = streets[i % streets.length];
+    const house = 1 + (i % 130);
+    demo.push({
+      id: `demo-${i + 1}`,
+      title: `Квартира в Москве #${i + 1}`,
+      address: `Москва, ${street}, ${house}`,
+      lat,
+      lon,
+      price: priceBase,
+      area: 28 + (i % 9) * 6,
+      bedrooms: (i % 4) + 1,
+      commissionPartner: 2 + (i % 5),
+      photos: [PLACEHOLDER_IMAGE_URL]
+    });
+  }
+  return demo;
+}
+
+function renderPublicDemoPage() {
+  setMapBodyClass(true);
+  const demoItems = createDemoProperties(100);
+  const listMarkup = demoItems
+    .slice(0, 12)
+    .map(
+      (item) => `
+      <article class="card">
+        <img src="${photoUrlWithFallback(item.photos?.[0])}" alt="Демо объект">
+        <div class="card-body">
+          <div class="price">${money(item.price)} ₽</div>
+          <div>${item.address}</div>
+          <div class="muted">${item.area} м² · ${item.bedrooms} спальни</div>
+        </div>
+      </article>
+    `
+    )
+    .join("");
+
+  app.innerHTML = `
+    <section class="demo-page">
+      <div class="demo-map-wrap">
+        <div id="demoMap" class="map"></div>
+        <div class="demo-hero">
+          <h1>BrokerMap — платформа для брокеров недвижимости</h1>
+          <p>Показываем демо-карту из 100 объектов по Москве. Зарегистрируйтесь, чтобы публиковать свои объекты и получать лиды.</p>
+          <div class="demo-hero-actions">
+            <button class="btn primary" id="demoLoginBtn">Войти</button>
+            <button class="btn" id="demoRegisterBtn">Регистрация</button>
+          </div>
+        </div>
+      </div>
+      <div class="demo-list panel">
+        <div class="panel-head">
+          <h3>Пример объектов на платформе</h3>
+          <span class="muted">100 объектов на карте</span>
+        </div>
+        ${listMarkup}
+      </div>
+    </section>
+  `;
+
+  const initDemoMap = () => {
+    if (!window.ymaps) {
+      setTimeout(initDemoMap, 300);
+      return;
+    }
+    ymaps.ready(() => {
+      const map = new ymaps.Map("demoMap", {
+        center: [55.751244, 37.618423],
+        zoom: 10,
+        controls: ["zoomControl"]
+      });
+      demoItems.forEach((item) => {
+        const placemark = new ymaps.Placemark(
+          [item.lat, item.lon],
+          {
+            balloonContent: `${item.address}<br>${money(item.price)} ₽`
+          },
+          { preset: "islands#blueCircleDotIcon" }
+        );
+        map.geoObjects.add(placemark);
+      });
+    });
+  };
+  initDemoMap();
+
+  document.getElementById("demoLoginBtn")?.addEventListener("click", () => {
+    location.hash = "#/auth";
+  });
+  document.getElementById("demoRegisterBtn")?.addEventListener("click", () => {
+    location.hash = "#/auth";
+    setTimeout(() => {
+      document.getElementById("openRegister")?.click();
+    }, 0);
+  });
+}
+
 function renderMapPage() {
   setMapBodyClass(true);
   app.innerHTML = `
@@ -2764,7 +2878,11 @@ async function renderAdminPage() {
 async function router() {
   const hash = location.hash || "#/";
   if (!state.token) {
-    renderAuthPage();
+    if (hash === "#/auth") {
+      renderAuthPage();
+      return;
+    }
+    renderPublicDemoPage();
     return;
   }
   if (!didSyncUserFromServer) {
@@ -2776,6 +2894,10 @@ async function router() {
     } catch {
       return;
     }
+  }
+  if (hash === "#/auth") {
+    renderAuthPage();
+    return;
   }
   if (hash === "#/admin") {
     if (!state.user?.isAdmin) {
@@ -2796,10 +2918,6 @@ async function router() {
   if (hash.startsWith("#/property/")) {
     const id = hash.split("/")[2];
     await renderPropertyPage(id);
-    return;
-  }
-  if (hash === "#/auth") {
-    renderAuthPage();
     return;
   }
   if (hash === "#/cabinet") {
