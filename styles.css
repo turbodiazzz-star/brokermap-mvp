@@ -111,6 +111,79 @@ body.view-map #app {
   z-index: 9;
 }
 
+/* Моб. демо: краткая полоска под шапкой; плашки .demo-float-desktop — только десктоп (поверх карты) */
+.demo-top-strip {
+  display: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.demo-top-strip__line {
+  margin: 0;
+  flex: 1 1 min(0, 360px);
+}
+
+.demo-top-strip__line strong {
+  font-weight: 600;
+}
+
+.demo-top-strip__open {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.demo-about-card {
+  width: min(520px, 92vw);
+  max-height: min(88dvh, 88vh);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.demo-about-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.demo-about-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.demo-about-body {
+  padding: 12px 16px 16px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.demo-about-body h3 {
+  margin: 14px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.demo-about-body h3:first-of-type {
+  margin-top: 0;
+}
+
 /* Ручка свайпа (показ только в моб. демо, см. max-width: 900px) */
 .left-panel-handle-wrap {
   display: none;
@@ -895,51 +968,45 @@ textarea {
     min-height: 100%;
   }
 
-  .demo-hero {
-    top: 8px;
-    left: 10px;
-    right: 10px;
-    bottom: auto;
-    width: auto;
-    max-width: none;
-    max-height: min(30dvh, 260px);
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: 10px 12px;
+  .demo-top-strip {
+    display: flex;
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
   }
 
-  .demo-hero h1 {
-    font-size: 18px;
-  }
-
-  .demo-list {
-    top: auto;
-    left: 10px;
-    right: 10px;
-    bottom: calc(72px + max(0px, env(safe-area-inset-bottom, 0px)));
-    width: auto;
-    max-height: min(22dvh, 180px);
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
+  .demo-float-desktop {
+    display: none !important;
   }
 
   .demo-page .map-wrap .open-left-panel-btn--demo {
-    left: 50% !important;
-    right: auto !important;
+    left: auto !important;
+    right: max(12px, env(safe-area-inset-right, 0px)) !important;
     top: auto !important;
     bottom: max(10px, env(safe-area-inset-bottom, 0px)) !important;
-    transform: translateX(-50%) !important;
-    width: auto;
-    min-width: min(280px, calc(100vw - 32px));
-    min-height: 48px;
-    height: auto;
-    padding: 10px 20px;
-    font-size: 15px;
+    transform: none !important;
+    width: 52px;
+    min-width: 52px;
+    height: 52px;
+    min-height: 52px;
+    padding: 0;
+    font-size: 20px;
     font-weight: 600;
-    border-radius: 999px;
+    border-radius: 50%;
     box-shadow: 0 4px 20px rgba(23, 96, 255, 0.42);
     touch-action: manipulation;
     z-index: 20;
+  }
+
+  .demo-page .map-wrap .open-left-panel-btn--demo .open-left-panel-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .map-layout.collapsed .map-wrap .open-left-panel-btn--demo {

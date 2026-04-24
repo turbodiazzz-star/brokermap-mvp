@@ -606,6 +606,12 @@ function renderPublicDemoPage() {
   app.innerHTML = `
     <section class="demo-page">
       ${demoPublicTopbar()}
+      <div class="demo-top-strip" id="demoTopStrip" aria-label="Справка по демо">
+        <p class="demo-top-strip__line">
+          <strong>Демо</strong> · 100 точек на карте · нажмите на метку, откройте <strong>Список</strong> внизу или обведите район ✍
+        </p>
+        <button type="button" class="btn demo-top-strip__open" id="demoAboutOpen">О демо</button>
+      </div>
       <main class="map-layout demo-map-layout ${state.panelCollapsed ? "collapsed" : ""}" id="demoMapLayout">
         <aside class="left-panel" id="demoLeftPanel"></aside>
         <div class="map-wrap demo-map-wrap">
@@ -630,17 +636,33 @@ function renderPublicDemoPage() {
           <div class="demo-left-panel-scrim" id="demoLeftPanelScrim" aria-hidden="true"></div>
         </div>
       </main>
-      <div class="demo-hero">
+      <div class="demo-hero demo-float-desktop">
         <h1>Демо BrokerMap</h1>
         <p>100 объектов по Москве. Сверху — те же фильтры, что в сервисе. Нажмите на <strong>точку на карте</strong>, откройте карточку или обведите район кистью.</p>
         <p class="demo-hero-hint">После рисования область в приоритете над видимой частью карты (как в рабочей версии).</p>
       </div>
-      <div class="demo-list panel">
+      <div class="demo-list panel demo-float-desktop">
         <div class="panel-head">
           <h3>Что внутри платформы</h3>
           <span class="muted">Карта · Фильтры · Карточки · Галереи · PDF · Личный кабинет</span>
         </div>
         <p class="muted">Сначала посмотрите демо, затем зарегистрируйтесь — чтобы публиковать свои объекты и находить на карте объекты с комиссией от партнёров.</p>
+      </div>
+      <div class="modal" id="demoAboutModal" role="dialog" aria-modal="true" aria-labelledby="demoAboutTitle">
+        <div class="modal-card demo-about-card">
+          <div class="demo-about-head">
+            <h2 id="demoAboutTitle">Демо BrokerMap</h2>
+            <button type="button" class="close-left-panel" id="demoAboutClose" aria-label="Закрыть">×</button>
+          </div>
+          <div class="demo-about-body">
+            <h3>Как пользоваться</h3>
+            <p class="muted">100 объектов по Москве. Сверху — те же фильтры, что в сервисе. Нажмите на <strong>точку на карте</strong>, откройте карточку или обведите район кистью.</p>
+            <p class="muted">После рисования область в приоритете над видимой частью карты (как в рабочей версии).</p>
+            <h3>Что внутри платформы</h3>
+            <p class="muted">Карта · Фильтры · Карточки · Галереи · PDF · Личный кабинет</p>
+            <p class="muted">Сначала посмотрите демо, затем зарегистрируйтесь — чтобы публиковать свои объекты и находить на карте объекты с комиссией от партнёров.</p>
+          </div>
+        </div>
       </div>
       ${moreFiltersModalHtml()}
     </section>
@@ -655,6 +677,14 @@ function renderPublicDemoPage() {
   });
   document.getElementById("closeModal")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.remove("open");
+  });
+  const demoAbout = document.getElementById("demoAboutModal");
+  const openAbout = () => demoAbout?.classList.add("open");
+  const closeAbout = () => demoAbout?.classList.remove("open");
+  document.getElementById("demoAboutOpen")?.addEventListener("click", openAbout);
+  document.getElementById("demoAboutClose")?.addEventListener("click", closeAbout);
+  demoAbout?.addEventListener("click", (e) => {
+    if (e.target === demoAbout) closeAbout();
   });
   document.getElementById("applyMoreFilters")?.addEventListener("click", () => {
     state.filters.floorMin = document.getElementById("filterFloorMin")?.value.trim() || "";
@@ -1504,6 +1534,16 @@ function initDemoMap() {
       }, 120);
     });
 
+    let clusterer = null;
+    try {
+      clusterer = new ymaps.Clusterer({
+        groupByCoordinates: false,
+        gridSize: 72,
+        hasBalloon: false
+      });
+    } catch (_) {
+      /* без кластера, если API недоступен */
+    }
     grouped.forEach((group) => {
       const top = group.sort((a, b) => b.commissionPartner - a.commissionPartner)[0];
       const placemark = new ymaps.Placemark(
@@ -1518,8 +1558,15 @@ function initDemoMap() {
         }
       );
       placemark.events.add("click", () => showDemoGroup(group));
-      map.geoObjects.add(placemark);
+      if (clusterer) {
+        clusterer.add(placemark);
+      } else {
+        map.geoObjects.add(placemark);
+      }
     });
+    if (clusterer) {
+      map.geoObjects.add(clusterer);
+    }
 
     if (state.areaPolygonCoords?.length) {
       const polygon = new ymaps.Polygon(
