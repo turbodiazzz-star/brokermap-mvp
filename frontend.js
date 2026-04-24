@@ -907,7 +907,7 @@ async function renderPropertyPage(id) {
           <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
           ${
             property.pdfUrl
-              ? `<p><a href="${property.pdfUrl}?v=${encodeURIComponent(property.id || "")}-${Date.now()}" target="_blank" class="btn">Скачать презентацию PDF</a></p>`
+              ? `<p><a href="${property.pdfUrl}?v=${encodeURIComponent(property.id || "")}-${Date.now()}" target="_blank" class="btn" id="downloadPdfBtn">Скачать презентацию PDF</a></p>`
               : `<p><button class="btn" id="generatePdfBtn">Сгенерировать презентацию PDF</button></p>`
           }
           <hr />
@@ -944,6 +944,23 @@ async function renderPropertyPage(id) {
     } catch (_error) {
       button.disabled = false;
       button.textContent = "Сгенерировать презентацию PDF";
+    }
+  });
+  document.getElementById("downloadPdfBtn")?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    const link = document.getElementById("downloadPdfBtn");
+    if (!link) return;
+    const originalText = link.textContent;
+    link.textContent = "Обновление PDF...";
+    link.style.pointerEvents = "none";
+    try {
+      const data = await api(`/api/my/properties/${id}/generate-pdf`, { method: "POST" });
+      const freshUrl = `${data.pdfUrl}?v=${encodeURIComponent(id || "")}-${Date.now()}`;
+      window.open(freshUrl, "_blank", "noopener,noreferrer");
+      await renderPropertyPage(id);
+    } catch (_error) {
+      link.textContent = originalText || "Скачать презентацию PDF";
+      link.style.pointerEvents = "";
     }
   });
   document.getElementById("addObjectBtn")?.addEventListener("click", () => {
