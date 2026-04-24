@@ -67,15 +67,16 @@ body.view-map #app {
 
 .demo-hero {
   position: absolute;
-  top: 16px;
+  top: 86px;
   right: 16px;
   width: min(540px, calc(100% - 32px));
+  max-width: calc(100vw - 220px);
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 14px 16px;
   box-shadow: 0 8px 24px rgba(16, 24, 40, 0.16);
-  z-index: 9;
+  z-index: 6;
 }
 
 .demo-hero h1 {
@@ -203,6 +204,17 @@ body.view-map #app {
 .top-action:hover {
   border-color: var(--border);
   background: #fff;
+}
+
+.topbar-demo .auth .top-action.primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+}
+
+.topbar-demo .auth .top-action.primary:hover {
+  background: var(--brand-dark);
+  border-color: var(--brand-dark);
 }
 
 .filters button,
@@ -842,7 +854,9 @@ textarea {
     width: calc(100% - 24px);
     left: 12px;
     right: 12px;
-    top: 10px;
+    top: auto;
+    bottom: calc(28dvh + 24px);
+    max-width: none;
     padding: 12px;
   }
 

@@ -265,8 +265,8 @@ function demoPublicTopbar() {
         <button type="button" id="resetFilters">Сброс</button>
       </div>
       <div class="auth">
-        <button type="button" class="top-action" id="demoAuthLogin">Войти</button>
-        <button type="button" class="top-action" id="demoAuthRegister">Регистрация</button>
+        <button type="button" class="top-action primary" id="demoAuthLogin">Войти</button>
+        <button type="button" class="top-action primary" id="demoAuthRegister">Регистрация</button>
       </div>
     </header>
   `;
@@ -379,19 +379,33 @@ function setMapBodyClass(isMap) {
   document.body.classList.toggle("view-map", Boolean(isMap));
 }
 
+/** Стартовый вид карты: центр Москвы, заметно ближе, чем зум 5–9 (вся область). */
+const MOSCOW_DEFAULT_CENTER = [55.751244, 37.618423];
+const MOSCOW_DEFAULT_ZOOM = 11;
+
+/** Адреса вдоль реальных осьмых улиц: координаты линейно вдоль сегмента (для демо совпадают с пином). */
+const DEMO_MOSCOW_SEGMENTS = [
+  { street: "Тверская улица", from: [55.7558, 37.6173], to: [55.767, 37.604], houses: [4, 6, 10, 14, 17, 18, 20, 22, 24, 26] },
+  { street: "Ленинский проспект", from: [55.7075, 37.5755], to: [55.655, 37.5], houses: [12, 24, 38, 45, 57, 66, 78, 88, 95, 123] },
+  { street: "Кутузовский проспект", from: [55.7415, 37.534], to: [55.726, 37.456], houses: [15, 23, 33, 41, 55, 67, 82, 95, 108, 124] },
+  { street: "Проспект Мира", from: [55.7785, 37.631], to: [55.826, 37.64], houses: [5, 12, 25, 36, 48, 64, 72, 88, 102, 120] },
+  { street: "Ленинградский проспект", from: [55.7775, 37.5805], to: [55.819, 37.52], houses: [8, 18, 29, 36, 45, 58, 66, 79, 90, 105] },
+  { street: "Мичуринский проспект", from: [55.696, 37.499], to: [55.665, 37.45], houses: [3, 9, 15, 25, 31, 44, 56, 63, 77, 89] },
+  { street: "Варшавское шоссе", from: [55.64, 37.625], to: [55.58, 37.6], houses: [10, 22, 35, 48, 56, 68, 77, 90, 102, 118] },
+  { street: "Профсоюзная улица", from: [55.666, 37.555], to: [55.618, 37.512], houses: [7, 15, 28, 36, 44, 52, 61, 73, 84, 95] },
+  { street: "Садовая-Самотёчная улица", from: [55.772, 37.61], to: [55.768, 37.6], houses: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19] },
+  { street: "Новый Арбат", from: [55.7525, 37.588], to: [55.749, 37.5805], houses: [5, 8, 11, 15, 19, 22, 26, 29, 33, 36] }
+];
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function priceRoundedThousands(value) {
+  return Math.round(Number(value) / 1000) * 1000;
+}
+
 function createDemoProperties(count = 100) {
-  const streets = [
-    "Ленинский проспект",
-    "Кутузовский проспект",
-    "Проспект Мира",
-    "Тверская улица",
-    "Профсоюзная улица",
-    "Ленинградский проспект",
-    "Мосфильмовская улица",
-    "Улица Академика Королева",
-    "Пятницкая улица",
-    "Новослободская улица"
-  ];
   const residentialPhotos = [
     "https://images.unsplash.com/photo-1494526585095-c41746248156?w=1600",
     "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1600",
@@ -408,17 +422,22 @@ function createDemoProperties(count = 100) {
   ];
   const finishingOptions = ["finished", "whitebox", "concrete"];
   const readinessOptions = ["resale", "assignment"];
+  const nSeg = DEMO_MOSCOW_SEGMENTS.length;
+  const perSeg = 10;
   const demo = [];
   for (let i = 0; i < count; i++) {
-    const lat = 55.55 + Math.random() * 0.33;
-    const lon = 37.35 + Math.random() * 0.55;
-    const priceBase = 11_000_000 + Math.round(Math.random() * 65_000_000);
-    const street = streets[i % streets.length];
-    const house = 1 + (i % 130);
+    const slot = i % (nSeg * perSeg);
+    const seg = DEMO_MOSCOW_SEGMENTS[Math.floor(slot / perSeg)];
+    const houseIndex = slot % perSeg;
+    const t = houseIndex / (perSeg - 1);
+    const lat = lerp(seg.from[0], seg.to[0], t);
+    const lon = lerp(seg.from[1], seg.to[1], t);
+    const address = `Москва, ${seg.street}, ${seg.houses[houseIndex]}`;
+    const priceBase = priceRoundedThousands(12_000_000 + (i * 601_001) % 59_000_000);
     demo.push({
       id: `demo-${i + 1}`,
       title: `Квартира в Москве #${i + 1}`,
-      address: `Москва, ${street}, ${house}`,
+      address,
       lat,
       lon,
       price: priceBase,
@@ -1208,8 +1227,8 @@ function initMap() {
     }
 
     const map = new ymaps.Map("map", {
-      center: state.mapView?.center || [55.751244, 37.618423],
-      zoom: state.mapView?.zoom || 5,
+      center: state.mapView?.center || MOSCOW_DEFAULT_CENTER,
+      zoom: state.mapView?.zoom ?? MOSCOW_DEFAULT_ZOOM,
       controls: ["zoomControl"]
     });
     state.mapInstance = map;
@@ -1301,8 +1320,8 @@ function initDemoMap() {
     }
 
     const map = new ymaps.Map("demoMap", {
-      center: state.mapView?.center || [55.751244, 37.618423],
-      zoom: state.mapView?.zoom || 5,
+      center: state.mapView?.center || MOSCOW_DEFAULT_CENTER,
+      zoom: state.mapView?.zoom ?? MOSCOW_DEFAULT_ZOOM,
       controls: ["zoomControl"]
     });
     state.mapInstance = map;
@@ -2197,7 +2216,7 @@ function setupAddressSuggest() {
     [55.45, 37.2],
     [56.05, 37.95]
   ];
-  const MOSCOW_CENTER = [55.751244, 37.618423];
+  const MOSCOW_CENTER = MOSCOW_DEFAULT_CENTER;
 
   if (addressInput.dataset.suggestBound === "1") return;
   addressInput.dataset.suggestBound = "1";
@@ -2429,7 +2448,7 @@ function setupAddressSuggest() {
 
       previewMap = new ymaps.Map("addressPreviewMap", {
         center: MOSCOW_CENTER,
-        zoom: 10,
+        zoom: MOSCOW_DEFAULT_ZOOM,
         controls: ["zoomControl"]
       });
       previewPlacemark = new ymaps.Placemark(
