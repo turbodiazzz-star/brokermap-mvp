@@ -1248,6 +1248,7 @@ async function renderCabinetPage(openForm = false) {
               <div class="address-row">
                 <input id="addressInput" name="address" autocomplete="off" required />
               </div>
+              <div id="addressSuggestList" class="address-suggest-list" style="display:none;"></div>
               <div id="addressHint" class="note">Начните вводить адрес и выберите вариант из выпадающего списка.</div>
               <div id="addressPreviewMap" class="address-preview-map visible"></div>
             </div>
@@ -1657,13 +1658,54 @@ function setupAddressSuggest() {
   const latInput = document.getElementById("latInput");
   const lonInput = document.getElementById("lonInput");
   const addressHint = document.getElementById("addressHint");
+  const addressSuggestList = document.getElementById("addressSuggestList");
   const addressPreviewMap = document.getElementById("addressPreviewMap");
   if (!addressInput || !latInput || !lonInput) return;
   let previewMap = null;
   let previewPlacemark = null;
+  let suggestDebounceTimer = null;
+  let suggestRequestId = 0;
 
   if (addressInput.dataset.suggestBound === "1") return;
   addressInput.dataset.suggestBound = "1";
+
+  const hideSuggestList = () => {
+    if (!addressSuggestList) return;
+    addressSuggestList.innerHTML = "";
+    addressSuggestList.style.display = "none";
+  };
+
+  const showSuggestList = (items) => {
+    if (!addressSuggestList) return;
+    if (!items.length) {
+      hideSuggestList();
+      return;
+    }
+    addressSuggestList.innerHTML = items
+      .map((item) => {
+        const value = escapeHtml(String(item.value || ""));
+        const desc = escapeHtml(String(item.displayName || item.description || ""));
+        return `<button type="button" class="address-suggest-item" data-value="${value}">${value}${
+          desc && desc !== value ? `<span>${desc}</span>` : ""
+        }</button>`;
+      })
+      .join("");
+    addressSuggestList.style.display = "block";
+    addressSuggestList.querySelectorAll(".address-suggest-item").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const value = btn.getAttribute("data-value") || "";
+        if (!value) return;
+        addressInput.value = value;
+        hideSuggestList();
+        resolveAddress(value).catch(() => {
+          resetCoordinates();
+          if (addressHint) {
+            addressHint.textContent = "Не удалось определить адрес. Выберите другой вариант из списка.";
+          }
+        });
+      });
+    });
+  };
 
   const updateAddressByCoordinates = async (lat, lon) => {
     if (!window.ymaps) return;
@@ -1696,7 +1738,43 @@ function setupAddressSuggest() {
     }
   };
 
-  addressInput.addEventListener("input", resetCoordinates);
+  const requestSuggestions = (value) => {
+    if (!value || value.length < 3 || !window.ymaps || typeof ymaps.suggest !== "function") {
+      hideSuggestList();
+      return;
+    }
+    const requestId = ++suggestRequestId;
+    ymaps
+      .suggest(value, { results: 6 })
+      .then((items) => {
+        if (requestId !== suggestRequestId) return;
+        showSuggestList(Array.isArray(items) ? items : []);
+      })
+      .catch(() => {
+        if (requestId !== suggestRequestId) return;
+        hideSuggestList();
+      });
+  };
+
+  addressInput.addEventListener("input", () => {
+    resetCoordinates();
+    const value = addressInput.value.trim();
+    if (suggestDebounceTimer) clearTimeout(suggestDebounceTimer);
+    suggestDebounceTimer = setTimeout(() => requestSuggestions(value), 160);
+  });
+
+  addressInput.addEventListener("focus", () => {
+    const value = addressInput.value.trim();
+    if (value.length >= 3) {
+      requestSuggestions(value);
+    }
+  });
+
+  addressInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hideSuggestList();
+    }
+  });
 
   const resolveAddress = async (value) => {
     if (!window.ymaps) {
@@ -1718,10 +1796,11 @@ function setupAddressSuggest() {
     const exactAddress = firstGeoObject.getAddressLine() || value;
     addressInput.value = exactAddress;
     setPoint(lat, lon);
+    hideSuggestList();
   };
 
   const initSuggest = () => {
-    if (!window.ymaps || typeof ymaps.SuggestView !== "function") {
+    if (!window.ymaps) {
       setTimeout(initSuggest, 300);
       return;
     }
@@ -1752,14 +1831,10 @@ function setupAddressSuggest() {
         updateAddressByCoordinates(lat, lon).catch(() => {});
       });
 
-      const suggest = new ymaps.SuggestView("addressInput");
-
-      suggest.events.add("select", (event) => {
-        const selectedValue = event.get("item").value;
-        resolveAddress(selectedValue).catch(resetCoordinates);
-      });
-
       addressInput.addEventListener("blur", () => {
+        setTimeout(() => {
+          hideSuggestList();
+        }, 150);
         if (!addressInput.value.trim() || (latInput.value && lonInput.value)) return;
         resolveAddress(addressInput.value.trim()).catch(resetCoordinates);
       });

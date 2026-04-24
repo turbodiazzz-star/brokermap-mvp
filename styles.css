@@ -718,6 +718,45 @@ textarea {
   z-index: 3000 !important;
 }
 
+.address-suggest-list {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(18, 32, 58, 0.16);
+  margin-top: 6px;
+  max-height: 220px;
+  overflow: auto;
+  position: relative;
+  z-index: 4000;
+}
+
+.address-suggest-item {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #edf1f7;
+  background: #fff;
+  text-align: left;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text);
+}
+
+.address-suggest-item:last-child {
+  border-bottom: 0;
+}
+
+.address-suggest-item:hover {
+  background: #f4f8ff;
+}
+
+.address-suggest-item span {
+  display: block;
+  font-size: 12px;
+  color: #667189;
+  margin-top: 2px;
+}
+
 @media (max-width: 900px) {
   .map-layout {
     grid-template-columns: 1fr;
