@@ -181,7 +181,7 @@ function topbar(options = {}) {
   if (options.slim) {
     return `
     <header class="topbar topbar-slim">
-      <div class="brand">BrokerMap</div>
+      <button type="button" class="brand brand-home-btn" id="brandHomeBtn">BrokerMap</button>
       <div class="auth">
         ${adminButtonHtml()}
         ${agencyButtonHtml()}
@@ -195,7 +195,7 @@ function topbar(options = {}) {
   }
   return `
     <header class="topbar">
-      <div class="brand">BrokerMap</div>
+      <button type="button" class="brand brand-home-btn" id="brandHomeBtn">BrokerMap</button>
       <div class="filters">
         <input
           id="minPrice"
@@ -233,6 +233,36 @@ function topbar(options = {}) {
       </div>
     </header>
   `;
+}
+
+function bindBrandHomeButton() {
+  document.getElementById("brandHomeBtn")?.addEventListener("click", () => {
+    location.hash = "#/";
+  });
+}
+
+function ensureMapDrawControls() {
+  const mapWrap = document.querySelector(".map-wrap");
+  if (!mapWrap) return;
+  let tools = mapWrap.querySelector(".map-draw-tools");
+  if (!tools) {
+    tools = document.createElement("div");
+    tools.className = "map-draw-tools";
+    mapWrap.appendChild(tools);
+  }
+  let drawBtn = document.getElementById("mapDrawAreaBtn");
+  if (!drawBtn) {
+    drawBtn = document.createElement("button");
+    drawBtn.id = "mapDrawAreaBtn";
+    drawBtn.className = "map-draw-btn";
+    drawBtn.title = "Рисовать область";
+    drawBtn.textContent = "✍";
+    tools.appendChild(drawBtn);
+    drawBtn.addEventListener("click", startAreaDrawing);
+  }
+  tools.style.display = "flex";
+  drawBtn.style.display = "inline-flex";
+  syncDrawButtons();
 }
 
 function cardMarkup(property) {
@@ -325,6 +355,7 @@ function renderMapPage() {
     </div>
   `;
 
+  bindBrandHomeButton();
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
     location.hash = state.user ? "#/cabinet" : "#/auth";
   });
@@ -365,6 +396,7 @@ function renderMapPage() {
   document.getElementById("closeLeftPanel").addEventListener("click", () => {
     state.panelCollapsed = true;
     document.getElementById("mapLayout").classList.add("collapsed");
+    ensureMapDrawControls();
     refreshMapViewport();
   });
   document.getElementById("openLeftPanelBtn").addEventListener("click", () => {
@@ -375,10 +407,11 @@ function renderMapPage() {
     } else {
       renderViewportPanel();
     }
+    ensureMapDrawControls();
     refreshMapViewport();
   });
   document.getElementById("mapDrawAreaBtn").addEventListener("click", startAreaDrawing);
-  syncDrawButtons();
+  ensureMapDrawControls();
 
   document.getElementById("maxPrice").addEventListener("input", (e) => {
     const raw = toRawNumberString(e.target.value);
@@ -447,6 +480,7 @@ function renderAreaSelectionPanel(list) {
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
     state.panelCollapsed = true;
     document.getElementById("mapLayout")?.classList.add("collapsed");
+    ensureMapDrawControls();
     refreshMapViewport();
   });
   panel.querySelectorAll(".open-object").forEach((btn) => {
@@ -483,6 +517,7 @@ function renderViewportPanel() {
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
     state.panelCollapsed = true;
     document.getElementById("mapLayout")?.classList.add("collapsed");
+    ensureMapDrawControls();
     refreshMapViewport();
   });
   panel.querySelectorAll(".open-object").forEach((btn) => {
@@ -521,6 +556,7 @@ function clearAreaFilter() {
     document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
       state.panelCollapsed = true;
       document.getElementById("mapLayout")?.classList.add("collapsed");
+      ensureMapDrawControls();
       refreshMapViewport();
     });
   }
@@ -891,6 +927,7 @@ async function renderPropertyPage(id) {
       <div class="gallery-lightbox-counter" id="galleryCounter">1 / ${galleryPhotos.length}</div>
     </div>
   `;
+  bindBrandHomeButton();
   document.getElementById("goBack").addEventListener("click", () => {
     location.hash = "#/";
   });
@@ -1318,10 +1355,13 @@ async function renderCabinetPage(openForm = false) {
       </div>
     </div>
   `;
-  document.getElementById("addObjectBtn")?.addEventListener("click", () => {
+  bindBrandHomeButton();
+  const openObjectForm = () => {
     document.getElementById("propertyFormWrap").style.display = "block";
     setupAddressSuggest();
-  });
+  };
+  document.getElementById("addProperty")?.addEventListener("click", openObjectForm);
+  document.getElementById("addObjectBtn")?.addEventListener("click", openObjectForm);
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
   document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
   document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
@@ -1891,6 +1931,7 @@ async function renderAgencyPage() {
     </section>
   `;
 
+  bindBrandHomeButton();
   document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
   document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
   document.getElementById("toMapBtn")?.addEventListener("click", () => (location.hash = "#/"));
@@ -2172,6 +2213,7 @@ async function renderAdminPage() {
     </section>
   `;
 
+  bindBrandHomeButton();
   document.getElementById("adminBtn")?.addEventListener("click", () => {
     location.hash = "#/admin";
   });
