@@ -1780,28 +1780,13 @@ function setupAddressSuggest() {
       return;
     }
     const requestId = ++suggestRequestId;
-    const suggestPromise =
-      typeof ymaps.suggest === "function"
-        ? ymaps.suggest(value, {
-            boundedBy: MOSCOW_BOUNDS,
-            strictBounds: true,
-            results: 8
-          })
-        : Promise.resolve([]);
-
-    suggestPromise
-      .then((items) => {
-        if (requestId !== suggestRequestId) return;
-        const normalized = normalizeSuggestionItems(value, items);
-        if (normalized.length) {
-          showSuggestList(normalized);
-          return;
-        }
-        return ymaps.geocode(value, {
+    const showGeocodeFallback = () =>
+      ymaps
+        .geocode(`Москва, ${value}`, {
           results: 8,
-          boundedBy: MOSCOW_BOUNDS,
-          strictBounds: true
-        }).then((result) => {
+          boundedBy: MOSCOW_BOUNDS
+        })
+        .then((result) => {
           if (requestId !== suggestRequestId) return;
           const fallback = [];
           result.geoObjects.each((geoObject) => {
@@ -1813,11 +1798,33 @@ function setupAddressSuggest() {
             });
           });
           showSuggestList(normalizeSuggestionItems(value, fallback));
+        })
+        .catch(() => {
+          if (requestId !== suggestRequestId) return;
+          hideSuggestList();
         });
+
+    if (typeof ymaps.suggest !== "function") {
+      showGeocodeFallback();
+      return;
+    }
+
+    ymaps
+      .suggest(`Москва, ${value}`, {
+        boundedBy: MOSCOW_BOUNDS,
+        results: 8
+      })
+      .then((items) => {
+        if (requestId !== suggestRequestId) return;
+        const normalized = normalizeSuggestionItems(value, items);
+        if (normalized.length) {
+          showSuggestList(normalized);
+          return;
+        }
+        showGeocodeFallback();
       })
       .catch(() => {
-        if (requestId !== suggestRequestId) return;
-        hideSuggestList();
+        showGeocodeFallback();
       });
   };
 
