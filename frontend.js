@@ -506,16 +506,34 @@ function bindDemoCardButtons(root = document) {
   });
 }
 
+function demoLeftPanelHandleHtml() {
+  return `<div class="left-panel-handle-wrap" id="demoLeftPanelHandleArea" role="presentation">
+    <div class="left-panel-handle" aria-hidden="true"></div>
+    <p class="left-panel-handle-hint">Свайпните вниз, чтобы скрыть</p>
+  </div>`;
+}
+
+function demoCollapseLeftPanel() {
+  state.panelCollapsed = true;
+  document.getElementById("demoMapLayout")?.classList.add("collapsed");
+  const p = document.getElementById("demoLeftPanel");
+  if (p) {
+    p.classList.remove("left-panel--drag");
+    p.style.removeProperty("transform");
+  }
+  ensureMapDrawControls();
+  refreshMapViewport();
+}
+
 function renderDemoPanel(list, title) {
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
   panel.innerHTML =
+    demoLeftPanelHandleHtml() +
     `<div class="left-panel-head"><h3>${title}: ${list.length}</h3><button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button></div>` +
     (list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`);
   document.getElementById("closeDemoLeftPanel")?.addEventListener("click", () => {
-    state.panelCollapsed = true;
-    document.getElementById("demoMapLayout")?.classList.add("collapsed");
-    refreshMapViewport();
+    demoCollapseLeftPanel();
   });
   bindDemoCardButtons(panel);
 }
@@ -698,7 +716,10 @@ function renderPublicDemoPage() {
   applyDemoFilters();
   document.getElementById("openDemoLeftPanelBtn")?.addEventListener("click", () => {
     state.panelCollapsed = false;
-    document.getElementById("demoMapLayout")?.classList.remove("collapsed");
+    const layout = document.getElementById("demoMapLayout");
+    layout?.classList.remove("collapsed");
+    const p = document.getElementById("demoLeftPanel");
+    if (p) p.style.removeProperty("transform");
     if (state.areaPolygonCoords?.length) {
       renderDemoAreaSelectionPanel();
     } else {
@@ -707,6 +728,8 @@ function renderPublicDemoPage() {
     ensureMapDrawControls();
     refreshMapViewport();
   });
+
+  bindDemoLeftPanelSwipe();
 }
 
 function renderDemoPropertyPage(id) {
@@ -961,17 +984,97 @@ function setDemoDefaultLeftPanel() {
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
   panel.innerHTML = `
+    ${demoLeftPanelHandleHtml()}
     <div class="left-panel-head">
       <h3>Нажмите на точку на карте</h3>
       <button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button>
     </div>
   `;
   document.getElementById("closeDemoLeftPanel")?.addEventListener("click", () => {
-    state.panelCollapsed = true;
-    document.getElementById("demoMapLayout")?.classList.add("collapsed");
-    ensureMapDrawControls();
-    refreshMapViewport();
+    demoCollapseLeftPanel();
   });
+}
+
+/**
+ * Мобилка: свайп вниз за ручку или за заголовок — то же, что крестик.
+ */
+function bindDemoLeftPanelSwipe() {
+  const panel = document.getElementById("demoLeftPanel");
+  if (!panel || panel.dataset.swipeBound === "1") return;
+  const mq = () => window.matchMedia("(max-width: 900px)").matches;
+  let startY = 0;
+  let dragging = false;
+  let activeId = null;
+
+  const canStart = (el) => {
+    if (!mq() || !el) return false;
+    const L = document.getElementById("demoMapLayout");
+    if (!L || L.classList.contains("collapsed")) return false;
+    if (!panel.contains(el)) return false;
+    if (el.closest("button.close-left-panel")) return false;
+    return Boolean(el.closest("#demoLeftPanelHandleArea") || el.closest(".left-panel-head"));
+  };
+
+  const endDrag = (dy, forceReset) => {
+    panel.classList.remove("left-panel--drag");
+    if (activeId != null) {
+      try {
+        panel.releasePointerCapture(activeId);
+      } catch (_) {
+        /* */
+      }
+      activeId = null;
+    }
+    dragging = false;
+    if (forceReset) {
+      panel.style.removeProperty("transform");
+      return;
+    }
+    if (dy > 72) {
+      panel.style.removeProperty("transform");
+      demoCollapseLeftPanel();
+    } else {
+      panel.style.removeProperty("transform");
+    }
+  };
+
+  panel.addEventListener("pointerdown", (e) => {
+    if (!canStart(e.target)) return;
+    e.preventDefault();
+    startY = e.clientY;
+    dragging = true;
+    activeId = e.pointerId;
+    panel.classList.add("left-panel--drag");
+    try {
+      panel.setPointerCapture(e.pointerId);
+    } catch (_) {
+      /* */
+    }
+  });
+
+  panel.addEventListener("pointermove", (e) => {
+    if (!dragging || e.pointerId !== activeId) return;
+    if (!mq()) {
+      endDrag(0, true);
+      return;
+    }
+    const dy = Math.max(0, e.clientY - startY);
+    panel.style.transform = `translate3d(0, ${dy}px, 0)`;
+  });
+
+  const onUp = (e) => {
+    if (!dragging || e.pointerId !== activeId) return;
+    const dy = Math.max(0, e.clientY - startY);
+    endDrag(dy, false);
+  };
+
+  panel.addEventListener("pointerup", onUp);
+  panel.addEventListener("pointercancel", (e) => {
+    if (dragging && e.pointerId === activeId) {
+      endDrag(0, true);
+    }
+  });
+  panel.dataset.swipeBound = "1";
 }
 
 function clearAreaFilter() {

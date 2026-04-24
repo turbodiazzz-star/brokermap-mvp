@@ -111,6 +111,11 @@ body.view-map #app {
   z-index: 9;
 }
 
+/* Ручка свайпа (показ только в моб. демо, см. max-width: 900px) */
+.left-panel-handle-wrap {
+  display: none;
+}
+
 .demo-map-layout .left-panel {
   width: clamp(290px, 24vw, 380px);
 }
@@ -868,7 +873,7 @@ textarea {
     left: 12px;
     right: 12px;
     top: auto;
-    bottom: calc(28dvh + 24px);
+    bottom: min(calc(50dvh + 20px), 400px);
     max-width: none;
     padding: 12px;
   }
@@ -885,13 +890,85 @@ textarea {
     max-height: 28dvh;
   }
 
-  .map-layout {
+  .map-layout:not(.demo-map-layout) {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(160px, 40vh) minmax(220px, 1fr);
   }
 
-  .map-layout.collapsed {
+  .map-layout:not(.demo-map-layout).collapsed {
     grid-template-rows: 1fr;
+  }
+
+  .demo-page .demo-map-layout {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    position: relative;
+  }
+
+  .demo-page .demo-map-layout .map-wrap {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .demo-page .demo-map-layout .left-panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100% !important;
+    max-width: none !important;
+    max-height: min(50dvh, 480px);
+    z-index: 25;
+    border-right: 0;
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -6px 28px rgba(16, 24, 40, 0.18);
+    padding: 0 12px 12px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    -webkit-overflow-scrolling: touch;
+    overflow: auto;
+    transition: transform 0.22s ease, visibility 0.22s ease;
+  }
+
+  .demo-page .demo-map-layout .left-panel.left-panel--drag {
+    transition: none;
+  }
+
+  .demo-page .demo-map-layout:not(.collapsed) .left-panel {
+    visibility: visible;
+  }
+
+  .demo-page .demo-map-layout.collapsed .left-panel {
+    display: block !important;
+    transform: translate3d(0, 108%, 0) !important;
+    pointer-events: none;
+    visibility: hidden;
+  }
+
+  .demo-page .demo-map-layout .left-panel-handle-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px 0 2px;
+    margin: 0 0 4px;
+    flex-shrink: 0;
+    touch-action: none;
+  }
+
+  .left-panel-handle {
+    width: 40px;
+    height: 5px;
+    border-radius: 3px;
+    background: #c3cad8;
+  }
+
+  .left-panel-handle-hint {
+    margin: 6px 0 0;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
   }
 
   .grid-2 {
