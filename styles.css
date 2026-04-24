@@ -243,28 +243,30 @@ body.view-map #app {
 .map-draw-tools {
   position: absolute;
   right: max(14px, env(safe-area-inset-right, 0px));
-  top: max(16px, env(safe-area-inset-top, 0px));
+  top: max(14px, env(safe-area-inset-top, 0px));
   transform: none;
   z-index: 5000;
-  display: flex;
+  display: flex !important;
   flex-direction: column;
   gap: 8px;
 }
 
 .map-draw-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid #d4dcef;
   background: #fff;
+  color: var(--brand);
   cursor: pointer;
-  font-size: 18px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  font-size: 17px;
+  font-weight: 700;
+  box-shadow: 0 3px 10px rgba(19, 32, 62, 0.18);
 }
 
 .map-draw-btn.active {
   border-color: var(--brand);
-  color: var(--brand);
+  background: #eff4ff;
 }
 
 .card {
@@ -697,6 +699,12 @@ textarea {
   background: #fff;
   border-radius: 16px;
   padding: 16px;
+}
+
+.property-form-modal-card {
+  width: min(980px, 94vw);
+  max-height: 88vh;
+  overflow: auto;
 }
 
 @media (max-width: 900px) {

@@ -630,6 +630,7 @@ function canvasPointToGeo(canvasPoint) {
 }
 
 function startAreaDrawing() {
+  ensureMapDrawControls();
   if (!state.mapInstance || !window.ymaps) return;
   if (state.areaDrawMode) {
     stopAreaDrawing();
@@ -851,6 +852,7 @@ function initMap() {
         renderViewportPanel();
       }
     }
+    ensureMapDrawControls();
   };
 
   if (window.ymaps) {
@@ -1232,10 +1234,13 @@ async function renderCabinetPage(openForm = false) {
             : "<p class='muted'>Пока нет объектов.</p>"
         }
       </div>
-      <div class="panel" id="propertyFormWrap" style="display:none;">
-        <div class="panel-head">
-          <h3 id="propertyFormTitle">Новый объект</h3>
-        </div>
+      <div class="modal" id="propertyFormModal">
+        <div class="modal-card property-form-modal-card">
+          <div class="panel-head">
+            <h3 id="propertyFormTitle">Новый объект</h3>
+            <button class="close-panel-action" id="closePropertyFormModal" aria-label="Закрыть">×</button>
+          </div>
+          <div id="propertyFormWrap">
         <form id="propertyForm">
           <div class="form-grid">
             <div class="field-block field-span-2">
@@ -1328,6 +1333,8 @@ async function renderCabinetPage(openForm = false) {
           <p><button class="btn primary" id="propertySubmitBtn" type="submit">Сохранить объект</button></p>
         </form>
         <p id="cabinetStatus" class="muted"></p>
+          </div>
+        </div>
       </div>
     </section>
     <div class="modal" id="changePasswordModal">
@@ -1356,10 +1363,17 @@ async function renderCabinetPage(openForm = false) {
     </div>
   `;
   bindBrandHomeButton();
+  const closePropertyFormModal = () => {
+    document.getElementById("propertyFormModal")?.classList.remove("open");
+  };
   const openObjectForm = () => {
-    document.getElementById("propertyFormWrap").style.display = "block";
+    document.getElementById("propertyFormModal")?.classList.add("open");
     setupAddressSuggest();
   };
+  document.getElementById("closePropertyFormModal")?.addEventListener("click", closePropertyFormModal);
+  document.getElementById("propertyFormModal")?.addEventListener("click", (event) => {
+    if (event.target?.id === "propertyFormModal") closePropertyFormModal();
+  });
   document.getElementById("addProperty")?.addEventListener("click", openObjectForm);
   document.getElementById("addObjectBtn")?.addEventListener("click", openObjectForm);
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
@@ -1500,7 +1514,7 @@ async function renderCabinetPage(openForm = false) {
     document.getElementById("propertyForm").reset();
     document.getElementById("photosInput").required = false;
     renderPhotoState();
-    document.getElementById("propertyFormWrap").style.display = "block";
+    document.getElementById("propertyFormModal")?.classList.add("open");
     document.getElementById("cabinetStatus").textContent = "";
     setupAddressSuggest();
   };
@@ -1514,7 +1528,7 @@ async function renderCabinetPage(openForm = false) {
     document.getElementById("photosInput").required = false;
     existingPhotoUrls = Array.isArray(property.photos) ? property.photos : [];
     renderPhotoState();
-    document.getElementById("propertyFormWrap").style.display = "block";
+    document.getElementById("propertyFormModal")?.classList.add("open");
     const form = document.getElementById("propertyForm");
     form.elements.address.value = property.address || "";
     form.elements.price.value = formatSpacedNumber(property.price || "");
@@ -1539,9 +1553,6 @@ async function renderCabinetPage(openForm = false) {
     setupAddressSuggest();
   };
 
-  document.getElementById("addProperty").addEventListener("click", () => {
-    openFormCreate();
-  });
   if (openForm) {
     openFormCreate();
   }
