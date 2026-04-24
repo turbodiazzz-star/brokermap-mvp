@@ -33,7 +33,7 @@ const state = {
   demoDataVersion: 0
 };
 
-const CURRENT_DEMO_DATA_VERSION = 3;
+const CURRENT_DEMO_DATA_VERSION = 5;
 
 let didSyncUserFromServer = false;
 
