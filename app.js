@@ -205,52 +205,83 @@ async function generatePresentationPdf(property) {
     const addressText = normalizePdfText(property.address || "Адрес не указан");
     const descriptionText = normalizePdfText(property.description || "");
     const mainPhotoPath = resolvePropertyPhotoPath(Array.isArray(property.photos) ? property.photos[0] : null);
+    const pageLeft = doc.page.margins.left;
+    const pageTop = doc.page.margins.top;
+    const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const pageBottom = doc.page.height - doc.page.margins.bottom;
+    let y = pageTop;
+
     if (mainPhotoPath) {
       try {
-        doc.image(mainPhotoPath, doc.page.margins.left, doc.y, {
-          fit: [doc.page.width - doc.page.margins.left - doc.page.margins.right, 280],
-          align: "center",
-          valign: "center"
-        });
-        doc.moveDown(11.8);
+        const image = doc.openImage(mainPhotoPath);
+        const maxPhotoHeight = 300;
+        const scale = Math.min(pageWidth / image.width, maxPhotoHeight / image.height);
+        const drawWidth = image.width * scale;
+        const drawHeight = image.height * scale;
+        const imageX = pageLeft + (pageWidth - drawWidth) / 2;
+        doc.roundedRect(pageLeft, y, pageWidth, drawHeight).fillAndStroke("#f6f8fc", "#e5eaf5");
+        doc.image(mainPhotoPath, imageX, y, { width: drawWidth, height: drawHeight });
+        y += drawHeight + 18;
       } catch {
         /* ignore image read errors */
       }
     }
 
-    doc.fillColor("#111");
-    doc.fontSize(30).text(`${money(property.price)} ₽`, { align: "left" });
-    doc.moveDown(0.3);
-    doc.fontSize(18).text(titleText, { align: "left" });
-    doc.moveDown(0.2);
-    doc.fontSize(13).fillColor("#2f3b52").text(addressText, { align: "left" });
-    doc.moveDown(0.8);
+    doc.fillColor("#101828").fontSize(34).text(`${money(property.price)} ₽`, pageLeft, y, {
+      width: pageWidth,
+      align: "left"
+    });
+    y = doc.y + 3;
+    if (titleText && titleText !== addressText) {
+      doc.fillColor("#1f2a44").fontSize(18).text(titleText, pageLeft, y, { width: pageWidth });
+      y = doc.y + 2;
+    }
+    doc.fillColor("#344054").fontSize(13).text(addressText, pageLeft, y, { width: pageWidth });
+    y = doc.y + 12;
 
-    doc.fontSize(13).fillColor("#2f3b52").text(`Площадь: ${property.area ?? "-"} м²`);
-    doc.text(`Спален: ${property.bedrooms ?? "-"}`);
-    doc.text(`Этаж: ${property.floor ?? "-"}`);
-    doc.text(`Этажей в доме: ${property.totalFloors ?? "-"}`);
-    doc.text(`Высота потолков: ${property.ceilingHeight ?? "-"} м`);
-    doc.text(`Отделка: ${finishingLabel(property.finishing)}`);
-    doc.text(`Готовность дома: ${readinessLabel(property.readiness)}`);
+    const specs = [
+      { icon: "▣", label: "Площадь", value: `${property.area ?? "-"} м²` },
+      { icon: "◍", label: "Спален", value: `${property.bedrooms ?? "-"}` },
+      { icon: "⌂", label: "Этаж", value: `${property.floor ?? "-"}` },
+      { icon: "⇅", label: "Этажей в доме", value: `${property.totalFloors ?? "-"}` },
+      { icon: "✦", label: "Высота потолков", value: `${property.ceilingHeight ?? "-"} м` },
+      { icon: "◈", label: "Отделка", value: finishingLabel(property.finishing) },
+      { icon: "●", label: "Готовность дома", value: readinessLabel(property.readiness) }
+    ];
+    const colGap = 12;
+    const colWidth = (pageWidth - colGap) / 2;
+    const cardHeight = 30;
+    specs.forEach((item, index) => {
+      const col = index % 2;
+      const row = Math.floor(index / 2);
+      const cardX = pageLeft + col * (colWidth + colGap);
+      const cardY = y + row * (cardHeight + 8);
+      doc.roundedRect(cardX, cardY, colWidth, cardHeight, 6).fillAndStroke("#f7f9fc", "#e4e9f2");
+      doc.fillColor("#1f2a44").fontSize(10).text(`${item.icon} ${item.label}: ${item.value}`, cardX + 10, cardY + 10, {
+        width: colWidth - 16
+      });
+    });
+    y += Math.ceil(specs.length / 2) * (cardHeight + 8) + 8;
 
     if (descriptionText) {
-      doc.moveDown(0.8);
-      doc.fontSize(13).fillColor("#1f2a44").text("Описание");
-      doc.moveDown(0.2);
-      doc.fontSize(11).fillColor("#3a4660").text(descriptionText, {
-        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
-        align: "left"
+      const descHeight = Math.min(150, Math.max(60, Math.ceil(descriptionText.length / 80) * 16));
+      if (y + descHeight + 50 > pageBottom) {
+        doc.addPage();
+        y = pageTop;
+      }
+      doc.fillColor("#1f2a44").fontSize(14).text("Описание", pageLeft, y, { width: pageWidth });
+      y = doc.y + 6;
+      doc.roundedRect(pageLeft, y, pageWidth, descHeight, 8).fillAndStroke("#fbfcff", "#e4e9f2");
+      doc.fillColor("#344054").fontSize(11).text(descriptionText, pageLeft + 12, y + 10, {
+        width: pageWidth - 24,
+        height: descHeight - 20
       });
+      y += descHeight + 10;
     }
 
-    doc.moveDown(1);
-    doc
-      .fontSize(9)
-      .fillColor("#7a8399")
-      .text("Презентация сформирована автоматически. Контакты и комиссии скрыты.", {
-        width: doc.page.width - doc.page.margins.left - doc.page.margins.right
-      });
+    doc.fillColor("#98a2b3").fontSize(9).text("Контакты и комиссии в презентации скрыты.", pageLeft, y, {
+      width: pageWidth
+    });
 
     doc.end();
   });
