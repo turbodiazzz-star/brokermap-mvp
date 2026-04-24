@@ -164,16 +164,27 @@ function resolvePropertyPhotoPath(photoUrl) {
 function normalizePdfText(value) {
   const text = String(value ?? "");
   if (!text) return "";
-  const suspicious = /[ÐÑÃÂ]/.test(text);
+  const suspicious = /[ÐÑÃÂ]|[À-ÿ]{2,}/.test(text);
   if (!suspicious) return text;
   try {
     const converted = Buffer.from(text, "latin1").toString("utf8");
     const cyrCount = (converted.match(/[А-Яа-яЁё]/g) || []).length;
     const srcCyrCount = (text.match(/[А-Яа-яЁё]/g) || []).length;
-    return cyrCount > srcCyrCount ? converted : text;
+    if (cyrCount > srcCyrCount) return converted;
   } catch {
-    return text;
+    /* ignore */
   }
+  try {
+    const decoder = new TextDecoder("windows-1251");
+    const bytes = Uint8Array.from(text, (ch) => ch.charCodeAt(0) & 0xff);
+    const converted1251 = decoder.decode(bytes);
+    const cyrCount1251 = (converted1251.match(/[А-Яа-яЁё]/g) || []).length;
+    const srcCyrCount = (text.match(/[А-Яа-яЁё]/g) || []).length;
+    if (cyrCount1251 > srcCyrCount) return converted1251;
+  } catch {
+    /* ignore */
+  }
+  return text;
 }
 
 async function generatePresentationPdf(property) {

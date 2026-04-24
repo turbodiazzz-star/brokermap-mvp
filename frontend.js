@@ -907,10 +907,7 @@ async function renderPropertyPage(id) {
           <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
           ${
             property.pdfUrl
-              ? `<p>
-                  <a href="${property.pdfUrl}?v=${encodeURIComponent(property.id || "")}-${Date.now()}" target="_blank" class="btn">Скачать презентацию PDF</a>
-                  <button class="btn" id="generatePdfBtn">Обновить PDF</button>
-                </p>`
+              ? `<p><a href="${property.pdfUrl}?v=${encodeURIComponent(property.id || "")}-${Date.now()}" target="_blank" class="btn">Скачать презентацию PDF</a></p>`
               : `<p><button class="btn" id="generatePdfBtn">Сгенерировать презентацию PDF</button></p>`
           }
           <hr />
