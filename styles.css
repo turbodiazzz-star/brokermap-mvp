@@ -92,6 +92,13 @@ body.view-map #app {
   border-left: 1px solid var(--border);
 }
 
+.demo-blur-line {
+  margin-top: 4px;
+  color: var(--muted);
+  filter: blur(3px);
+  user-select: none;
+}
+
 .cabinet-btn-short {
   display: none;
 }

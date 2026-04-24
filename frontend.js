@@ -313,7 +313,12 @@ function createDemoProperties(count = 100) {
       price: priceBase,
       area: 28 + (i % 9) * 6,
       bedrooms: (i % 4) + 1,
-      commissionPartner: 2 + (i % 5),
+      commissionTotal: 3,
+      commissionPartner: 1.5,
+      contacts: {
+        phone: "+7 (9••) •••-••-••",
+        telegram: "@••••••••"
+      },
       photos: [PLACEHOLDER_IMAGE_URL]
     });
   }
@@ -333,6 +338,10 @@ function renderPublicDemoPage() {
           <div class="price">${money(item.price)} ₽</div>
           <div>${item.address}</div>
           <div class="muted">${item.area} м² · ${item.bedrooms} спальни</div>
+          <div class="muted">Общая комиссия: <strong>${item.commissionTotal}%</strong></div>
+          <div class="muted">Комиссия партнера: <strong>${item.commissionPartner}%</strong></div>
+          <div class="demo-blur-line">Телефон: ${item.contacts.phone}</div>
+          <div class="demo-blur-line">Telegram: ${item.contacts.telegram}</div>
         </div>
       </article>
     `
