@@ -738,7 +738,6 @@ function renderDemoPropertyPage(id) {
           <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
           <p class="demo-blur-line"><strong>Телефон:</strong> ${property.contacts?.phone || "+7 (9••) •••-••-••"}</p>
           <p class="demo-blur-line"><strong>Telegram:</strong> ${property.contacts?.telegram || "@••••••••"}</p>
-          <p class="muted">Планировка добавлена вторым изображением в галерее.</p>
           <p><button class="btn primary" id="demoToAuthBtn">Попробовать платформу</button></p>
         </aside>
       </div>
