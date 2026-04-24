@@ -704,7 +704,18 @@ textarea {
 .property-form-modal-card {
   width: min(980px, 94vw);
   max-height: 88vh;
-  overflow: auto;
+  overflow: visible;
+}
+
+#propertyFormWrap {
+  max-height: calc(88vh - 84px);
+  overflow-y: auto;
+  overflow-x: visible;
+  padding-right: 4px;
+}
+
+.ymaps-2-1-79-suggest {
+  z-index: 3000 !important;
 }
 
 @media (max-width: 900px) {

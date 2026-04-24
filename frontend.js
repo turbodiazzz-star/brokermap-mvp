@@ -1246,41 +1246,40 @@ async function renderCabinetPage(openForm = false) {
             <div class="field-block field-span-2">
               <label class="field-label" for="addressInput">Адрес</label>
               <div class="address-row">
-                <input id="addressInput" name="address" placeholder="Адрес" autocomplete="off" required />
-                <button class="btn" type="button" id="checkAddressBtn">Проверить адрес</button>
+                <input id="addressInput" name="address" autocomplete="off" required />
               </div>
-              <div id="addressHint" class="note">Кликните по мини-карте или введите адрес и нажмите «Проверить адрес».</div>
+              <div id="addressHint" class="note">Начните вводить адрес и выберите вариант из выпадающего списка.</div>
               <div id="addressPreviewMap" class="address-preview-map visible"></div>
             </div>
             <input type="hidden" name="lat" id="latInput" />
             <input type="hidden" name="lon" id="lonInput" />
             <div class="field-block">
               <label class="field-label" for="priceInput">Цена</label>
-              <input id="priceInput" name="price" type="text" inputmode="numeric" placeholder="18 000 000" required />
+              <input id="priceInput" name="price" type="text" inputmode="numeric" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="areaInput">Площадь (м²)</label>
-              <input id="areaInput" name="area" type="text" inputmode="decimal" placeholder="41,21" required />
+              <input id="areaInput" name="area" type="text" inputmode="decimal" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="bedroomsInput">Спальни</label>
-              <input id="bedroomsInput" name="bedrooms" type="number" placeholder="2" required />
+              <input id="bedroomsInput" name="bedrooms" type="number" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="floorInput">Этаж</label>
-              <input id="floorInput" name="floor" type="number" placeholder="8" required />
+              <input id="floorInput" name="floor" type="number" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="totalFloorsInput">Этажей в доме</label>
-              <input id="totalFloorsInput" name="totalFloors" type="number" placeholder="24" required />
+              <input id="totalFloorsInput" name="totalFloors" type="number" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="ceilingHeightInput">Высота потолков (м)</label>
-              <input id="ceilingHeightInput" name="ceilingHeight" type="number" step="0.1" placeholder="2.9" required />
+              <input id="ceilingHeightInput" name="ceilingHeight" type="number" step="0.1" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="commissionTotalInput">Общая комиссия (%)</label>
-              <input id="commissionTotalInput" name="commissionTotal" type="number" step="0.1" placeholder="6" required />
+              <input id="commissionTotalInput" name="commissionTotal" type="number" step="0.1" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="finishingInput">Отделка</label>
@@ -1301,13 +1300,13 @@ async function renderCabinetPage(openForm = false) {
             </div>
             <div class="field-block">
               <label class="field-label" for="commissionPartnerInput">Комиссия партнеру (%)</label>
-              <input id="commissionPartnerInput" name="commissionPartner" type="number" step="0.1" placeholder="3.5" required />
+              <input id="commissionPartnerInput" name="commissionPartner" type="number" step="0.1" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="phoneInput">Телефон</label>
               <div class="phone-group">
                 <span>+7</span>
-                <input id="phoneInput" name="phone" placeholder="(999) 123-45-67" maxlength="15" inputmode="numeric" required />
+                <input id="phoneInput" name="phone" placeholder="(999) 999-99-99" maxlength="15" inputmode="numeric" required />
               </div>
             </div>
             <div class="field-block">
@@ -1316,7 +1315,7 @@ async function renderCabinetPage(openForm = false) {
             </div>
           </div>
           <label class="field-label" for="descriptionInput">Описание</label>
-          <p><textarea id="descriptionInput" name="description" placeholder="Описание" required></textarea></p>
+          <p><textarea id="descriptionInput" name="description" required></textarea></p>
           <label class="field-label" for="photosInput">Фото (до 5)</label>
           <div id="photoDropZone" class="photo-drop-zone">Перетащите фото сюда или выберите файл ниже</div>
           <p><input id="photosInput" type="file" name="photos" accept="image/*" /></p>
@@ -1658,7 +1657,6 @@ function setupAddressSuggest() {
   const latInput = document.getElementById("latInput");
   const lonInput = document.getElementById("lonInput");
   const addressHint = document.getElementById("addressHint");
-  const checkAddressBtn = document.getElementById("checkAddressBtn");
   const addressPreviewMap = document.getElementById("addressPreviewMap");
   if (!addressInput || !latInput || !lonInput) return;
   let previewMap = null;
@@ -1694,7 +1692,7 @@ function setupAddressSuggest() {
     latInput.value = "";
     lonInput.value = "";
     if (addressHint) {
-      addressHint.textContent = "Кликните по мини-карте или введите адрес и нажмите «Проверить адрес».";
+      addressHint.textContent = "Начните вводить адрес и выберите вариант из выпадающего списка.";
     }
   };
 
@@ -1721,22 +1719,6 @@ function setupAddressSuggest() {
     addressInput.value = exactAddress;
     setPoint(lat, lon);
   };
-
-  checkAddressBtn?.addEventListener("click", () => {
-    const value = addressInput.value.trim();
-    if (!value) {
-      if (addressHint) {
-        addressHint.textContent = "Введите адрес перед проверкой.";
-      }
-      return;
-    }
-    resolveAddress(value).catch(() => {
-      resetCoordinates();
-      if (addressHint) {
-        addressHint.textContent = "Не удалось определить адрес. Попробуйте еще раз.";
-      }
-    });
-  });
 
   const initSuggest = () => {
     if (!window.ymaps || typeof ymaps.SuggestView !== "function") {
