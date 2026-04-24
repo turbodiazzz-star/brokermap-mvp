@@ -279,10 +279,6 @@ async function generatePresentationPdf(property) {
       y += descHeight + 10;
     }
 
-    doc.fillColor("#98a2b3").fontSize(9).text("Контакты и комиссии в презентации скрыты.", pageLeft, y, {
-      width: pageWidth
-    });
-
     doc.end();
   });
 
