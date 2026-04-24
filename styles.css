@@ -46,8 +46,8 @@ body.view-map #app {
 }
 
 .demo-page {
-  display: grid;
-  grid-template-columns: minmax(280px, 360px) 1fr;
+  position: relative;
+  display: block;
   flex: 1;
   min-height: 0;
 }
@@ -55,6 +55,10 @@ body.view-map #app {
 .demo-map-wrap {
   position: relative;
   min-height: 100%;
+}
+
+.demo-map-layout {
+  height: 100%;
 }
 
 .demo-hero {
@@ -87,9 +91,17 @@ body.view-map #app {
 }
 
 .demo-list {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  width: min(460px, calc(100% - 32px));
+  max-height: 34dvh;
   overflow: auto;
-  border-radius: 0;
-  border-left: 1px solid var(--border);
+  z-index: 9;
+}
+
+.demo-map-layout .left-panel {
+  width: clamp(290px, 24vw, 380px);
 }
 
 .demo-blur-line {
@@ -813,8 +825,7 @@ textarea {
 
 @media (max-width: 900px) {
   .demo-page {
-    grid-template-columns: 1fr;
-    grid-template-rows: minmax(320px, 44vh) minmax(260px, 1fr);
+    min-height: 100%;
   }
 
   .demo-hero {
@@ -830,8 +841,11 @@ textarea {
   }
 
   .demo-list {
-    border-left: 0;
-    border-top: 1px solid var(--border);
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+    max-height: 28dvh;
   }
 
   .map-layout {

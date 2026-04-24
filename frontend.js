@@ -297,6 +297,20 @@ function createDemoProperties(count = 100) {
     "Пятницкая улица",
     "Новослободская улица"
   ];
+  const residentialPhotos = [
+    "https://images.unsplash.com/photo-1494526585095-c41746248156?w=1600",
+    "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1600",
+    "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=1600",
+    "https://images.unsplash.com/photo-1460317442991-0ec209397118?w=1600",
+    "https://images.unsplash.com/photo-1560185007-cde436f6a4d0?w=1600",
+    "https://images.unsplash.com/photo-1600607686527-6fb886090705?w=1600"
+  ];
+  const planPhotos = [
+    "https://images.unsplash.com/photo-1582407947304-fd86f028f716?w=1600",
+    "https://images.unsplash.com/photo-1600607687644-c7171b42498f?w=1600",
+    "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=1600",
+    "https://images.unsplash.com/photo-1600585152220-90363fe7e115?w=1600"
+  ];
   const demo = [];
   for (let i = 0; i < count; i++) {
     const lat = 55.55 + Math.random() * 0.33;
@@ -319,54 +333,97 @@ function createDemoProperties(count = 100) {
         phone: "+7 (9••) •••-••-••",
         telegram: "@••••••••"
       },
-      photos: [PLACEHOLDER_IMAGE_URL]
+      description:
+        "Современный жилой комплекс в Москве. Панорамные окна, продуманная планировка, закрытый двор и развитая инфраструктура.",
+      photos: [residentialPhotos[i % residentialPhotos.length], planPhotos[i % planPhotos.length]]
     });
   }
   return demo;
 }
 
+function demoCardMarkup(item) {
+  return `
+    <article class="card">
+      <img src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="Демо объект">
+      <div class="card-body">
+        <div class="price">${money(item.price)} ₽</div>
+        <div>${item.address}</div>
+        <div class="muted">${item.area} м² · ${item.bedrooms} спальни</div>
+        <div class="muted">Общая комиссия: <strong>${item.commissionTotal}%</strong></div>
+        <div class="muted">Комиссия партнера: <strong>${item.commissionPartner}%</strong></div>
+        <div class="demo-blur-line">Телефон: ${item.contacts.phone}</div>
+        <div class="demo-blur-line">Telegram: ${item.contacts.telegram}</div>
+        <p><button class="btn primary open-demo-object" data-id="${item.id}">Открыть объект</button></p>
+      </div>
+    </article>
+  `;
+}
+
+function bindDemoCardButtons(root = document) {
+  root.querySelectorAll(".open-demo-object").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      location.hash = `#/demo/property/${encodeURIComponent(btn.dataset.id)}`;
+    });
+  });
+}
+
+function renderDemoPanel(list, title) {
+  const panel = document.getElementById("demoLeftPanel");
+  if (!panel) return;
+  panel.innerHTML =
+    `<div class="left-panel-head"><h3>${title}: ${list.length}</h3><button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button></div>` +
+    (list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`);
+  document.getElementById("closeDemoLeftPanel")?.addEventListener("click", () => {
+    state.panelCollapsed = true;
+    document.getElementById("demoMapLayout")?.classList.add("collapsed");
+    refreshMapViewport();
+  });
+  bindDemoCardButtons(panel);
+}
+
+function renderDemoViewportPanel() {
+  if (!state.mapInstance) return;
+  const bounds = state.mapInstance.getBounds();
+  const list = (state.properties || []).filter((item) => isPointInsideBounds(Number(item.lat), Number(item.lon), bounds));
+  renderDemoPanel(list, "Объекты в видимой области");
+}
+
+function showDemoGroup(properties) {
+  state.panelCollapsed = false;
+  document.getElementById("demoMapLayout")?.classList.remove("collapsed");
+  refreshMapViewport();
+  renderDemoPanel(properties, "Объектов в точке");
+}
+
 function renderPublicDemoPage() {
   setMapBodyClass(true);
   const demoItems = createDemoProperties(100);
-  const listMarkup = demoItems
-    .slice(0, 12)
-    .map(
-      (item) => `
-      <article class="card">
-        <img src="${photoUrlWithFallback(item.photos?.[0])}" alt="Демо объект">
-        <div class="card-body">
-          <div class="price">${money(item.price)} ₽</div>
-          <div>${item.address}</div>
-          <div class="muted">${item.area} м² · ${item.bedrooms} спальни</div>
-          <div class="muted">Общая комиссия: <strong>${item.commissionTotal}%</strong></div>
-          <div class="muted">Комиссия партнера: <strong>${item.commissionPartner}%</strong></div>
-          <div class="demo-blur-line">Телефон: ${item.contacts.phone}</div>
-          <div class="demo-blur-line">Telegram: ${item.contacts.telegram}</div>
-        </div>
-      </article>
-    `
-    )
-    .join("");
+  state.properties = demoItems;
+  state.panelCollapsed = false;
 
   app.innerHTML = `
     <section class="demo-page">
-      <div class="demo-map-wrap">
-        <div id="demoMap" class="map"></div>
-        <div class="demo-hero">
-          <h1>BrokerMap — платформа для брокеров недвижимости</h1>
-          <p>Показываем демо-карту из 100 объектов по Москве. Зарегистрируйтесь, чтобы публиковать свои объекты и получать лиды.</p>
-          <div class="demo-hero-actions">
-            <button class="btn primary" id="demoLoginBtn">Войти</button>
-            <button class="btn" id="demoRegisterBtn">Регистрация</button>
-          </div>
+      <main class="map-layout demo-map-layout ${state.panelCollapsed ? "collapsed" : ""}" id="demoMapLayout">
+        <aside class="left-panel" id="demoLeftPanel"></aside>
+        <div class="demo-map-wrap">
+          <div id="demoMap" class="map"></div>
+          <button class="open-left-panel-btn" id="openDemoLeftPanelBtn" aria-label="Открыть список">❯</button>
+        </div>
+      </main>
+      <div class="demo-hero">
+        <h1>BrokerMap — платформа для брокеров недвижимости</h1>
+        <p>Демо-карта из 100 объектов по Москве. Нажмите на пин, откройте карточку и посмотрите, как это будет работать у вас.</p>
+        <div class="demo-hero-actions">
+          <button class="btn primary" id="demoLoginBtn">Войти</button>
+          <button class="btn" id="demoRegisterBtn">Регистрация</button>
         </div>
       </div>
       <div class="demo-list panel">
         <div class="panel-head">
-          <h3>Пример объектов на платформе</h3>
-          <span class="muted">100 объектов на карте</span>
+          <h3>Что внутри платформы</h3>
+          <span class="muted">Карта · Карточки · ЛК брокера · Админка</span>
         </div>
-        ${listMarkup}
+        <p class="muted">Перед регистрацией можно посмотреть карту и открыть демо-объекты.</p>
       </div>
     </section>
   `;
@@ -382,6 +439,14 @@ function renderPublicDemoPage() {
         zoom: 10,
         controls: ["zoomControl"]
       });
+      state.mapInstance = map;
+      map.events.add("boundschange", () => {
+        if (state.panelCollapsed) return;
+        if (state.viewportUpdateTimer) clearTimeout(state.viewportUpdateTimer);
+        state.viewportUpdateTimer = setTimeout(() => {
+          renderDemoViewportPanel();
+        }, 100);
+      });
       demoItems.forEach((item) => {
         const placemark = new ymaps.Placemark(
           [item.lat, item.lon],
@@ -390,16 +455,66 @@ function renderPublicDemoPage() {
           },
           { preset: "islands#blueCircleDotIcon" }
         );
+        placemark.events.add("click", () => showDemoGroup([item]));
         map.geoObjects.add(placemark);
       });
+      renderDemoViewportPanel();
     });
   };
   initDemoMap();
+  document.getElementById("openDemoLeftPanelBtn")?.addEventListener("click", () => {
+    state.panelCollapsed = false;
+    document.getElementById("demoMapLayout")?.classList.remove("collapsed");
+    renderDemoViewportPanel();
+    refreshMapViewport();
+  });
+  bindDemoCardButtons();
 
   document.getElementById("demoLoginBtn")?.addEventListener("click", () => {
     location.hash = "#/auth-form";
   });
   document.getElementById("demoRegisterBtn")?.addEventListener("click", () => {
+    location.hash = "#/auth-register";
+  });
+}
+
+function renderDemoPropertyPage(id) {
+  setMapBodyClass(false);
+  const demoItems = createDemoProperties(100);
+  const property = demoItems.find((item) => item.id === id) || demoItems[0];
+  const galleryPhotos = (property.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
+  app.innerHTML = `
+    <section class="page">
+      <p><button class="btn" id="backToDemoBtn">← Назад к демо-карте</button></p>
+      <div class="grid-2">
+        <div class="panel">
+          <h2>${property.title}</h2>
+          <div class="gallery">
+            ${galleryPhotos
+              .map((photo) => `<img src="${photoUrlWithFallback(photo)}" onerror="${photoOnErrorAttr()}" alt="Фото демо-объекта" />`)
+              .join("")}
+          </div>
+          <p>${property.description || ""}</p>
+        </div>
+        <aside class="panel">
+          <h3>${money(property.price)} ₽</h3>
+          <p><strong>Адрес:</strong> ${property.address}</p>
+          <p><strong>Площадь:</strong> ${property.area} м²</p>
+          <p><strong>Спален:</strong> ${property.bedrooms}</p>
+          <p><strong>Общая комиссия:</strong> ${property.commissionTotal}%</p>
+          <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
+          <p class="demo-blur-line"><strong>Телефон:</strong> ${property.contacts?.phone || "+7 (9••) •••-••-••"}</p>
+          <p class="demo-blur-line"><strong>Telegram:</strong> ${property.contacts?.telegram || "@••••••••"}</p>
+          <p class="muted">Планировка добавлена вторым изображением в галерее.</p>
+          <p><button class="btn primary" id="demoToAuthBtn">Попробовать платформу</button></p>
+        </aside>
+      </div>
+    </section>
+  `;
+  document.getElementById("backToDemoBtn")?.addEventListener("click", () => {
+    location.hash = "#/";
+  });
+  document.getElementById("demoToAuthBtn")?.addEventListener("click", () => {
     location.hash = "#/auth-register";
   });
 }
@@ -2884,6 +2999,11 @@ async function renderAdminPage() {
 async function router() {
   const hash = location.hash || "#/";
   if (!state.token) {
+    if (hash.startsWith("#/demo/property/")) {
+      const id = decodeURIComponent(hash.split("/")[3] || "");
+      renderDemoPropertyPage(id);
+      return;
+    }
     if (hash === "#/auth-form" || hash === "#/auth-register") {
       renderAuthPage();
       if (hash === "#/auth-register") {
