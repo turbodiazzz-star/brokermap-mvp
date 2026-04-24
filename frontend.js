@@ -506,10 +506,10 @@ function bindDemoCardButtons(root = document) {
   });
 }
 
-function demoLeftPanelHandleHtml() {
-  return `<div class="left-panel-handle-wrap" id="demoLeftPanelHandleArea" role="presentation">
+function leftPanelHandleHtml(handleAreaId) {
+  return `<div class="left-panel-handle-wrap" id="${handleAreaId}" role="presentation">
     <div class="left-panel-handle" aria-hidden="true"></div>
-    <p class="left-panel-handle-hint">Свайпните вниз, чтобы скрыть</p>
+    <p class="left-panel-handle-hint">Свайпните вниз, чтобы свернуть</p>
   </div>`;
 }
 
@@ -525,6 +525,204 @@ function updateDemoOpenPanelButton() {
   }
 }
 
+function updateMapOpenPanelButton() {
+  const btn = document.getElementById("openLeftPanelBtn");
+  if (!btn) return;
+  if (state.panelCollapsed) {
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-hidden", "false");
+  } else {
+    btn.setAttribute("aria-expanded", "true");
+    btn.setAttribute("aria-hidden", "true");
+  }
+}
+
+/**
+ * Моб. нижняя «усыпка» (как в Циане): подпись = заголовок панели, подсказка фиксирована.
+ */
+function syncMapSheetPeek(mode) {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  const id = mode === "demo" ? "demoMapSheetPeekTitle" : "mapSheetPeekTitle";
+  const el = document.getElementById(id);
+  if (!el) return;
+  const panel = document.getElementById(mode === "demo" ? "demoLeftPanel" : "leftPanel");
+  const h3 = panel?.querySelector(".left-panel-head h3");
+  if (h3) {
+    el.textContent = h3.textContent.replace(/\s+/g, " ").trim();
+  } else {
+    el.textContent = mode === "demo" ? "Демо — список" : "Список";
+  }
+}
+
+function bindMapSheetPeek({ peekId, layoutId, openFn }) {
+  const peek = document.getElementById(peekId);
+  if (!peek || peek.dataset.peekBound === "1") return;
+  const layoutEl = () => document.getElementById(layoutId);
+  const mq = () => window.matchMedia("(max-width: 900px)").matches;
+  let startY = 0;
+  let hasMoved = false;
+  const tryOpen = (e) => {
+    e?.preventDefault?.();
+    if (!mq() || !layoutEl()?.classList.contains("collapsed")) return;
+    openFn();
+  };
+  peek.addEventListener("pointerdown", (e) => {
+    if (!mq() || !layoutEl()?.classList.contains("collapsed")) return;
+    startY = e.clientY;
+    hasMoved = false;
+  });
+  peek.addEventListener("pointermove", (e) => {
+    if (Math.abs(e.clientY - startY) > 6) hasMoved = true;
+  });
+  peek.addEventListener("pointerup", (e) => {
+    if (!mq() || !layoutEl()?.classList.contains("collapsed")) return;
+    const dy = e.clientY - startY;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (dy < -32) {
+      tryOpen(e);
+    } else if (!hasMoved && Math.abs(dy) < 10) {
+      tryOpen(e);
+    }
+  });
+  peek.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      tryOpen(e);
+    }
+  });
+  peek.dataset.peekBound = "1";
+}
+
+/**
+ * Моб. свайп вниз за ручку/заголовок — свернуть панель.
+ */
+function bindMobileLeftPanelSwipe({ panelId, layoutId, onCollapse }) {
+  const panel = document.getElementById(panelId);
+  if (!panel || panel.dataset.swipeBound === "1") return;
+  const mq = () => window.matchMedia("(max-width: 900px)").matches;
+  let startY = 0;
+  let dragging = false;
+  let activeId = null;
+  const layout = () => document.getElementById(layoutId);
+
+  const canStart = (el) => {
+    if (!mq() || !el) return false;
+    const L = layout();
+    if (!L || L.classList.contains("collapsed")) return false;
+    if (!panel.contains(el)) return false;
+    if (el.closest("button.close-left-panel")) return false;
+    return Boolean(el.closest(".left-panel-handle-wrap") || el.closest(".left-panel-head"));
+  };
+
+  const endDrag = (dy, forceReset) => {
+    panel.classList.remove("left-panel--drag");
+    if (activeId != null) {
+      try {
+        panel.releasePointerCapture(activeId);
+      } catch (_) {
+        /* */
+      }
+      activeId = null;
+    }
+    dragging = false;
+    if (forceReset) {
+      panel.style.removeProperty("transform");
+      return;
+    }
+    if (dy > 72) {
+      panel.style.removeProperty("transform");
+      onCollapse();
+    } else {
+      panel.style.removeProperty("transform");
+    }
+  };
+
+  panel.addEventListener("pointerdown", (e) => {
+    if (!canStart(e.target)) return;
+    e.preventDefault();
+    startY = e.clientY;
+    dragging = true;
+    activeId = e.pointerId;
+    panel.classList.add("left-panel--drag");
+    try {
+      panel.setPointerCapture(e.pointerId);
+    } catch (_) {
+      /* */
+    }
+  });
+
+  panel.addEventListener("pointermove", (e) => {
+    if (!dragging || e.pointerId !== activeId) return;
+    if (!mq()) {
+      endDrag(0, true);
+      return;
+    }
+    const dy = Math.max(0, e.clientY - startY);
+    panel.style.transform = `translate3d(0, ${dy}px, 0)`;
+  });
+
+  const onUp = (e) => {
+    if (!dragging || e.pointerId !== activeId) return;
+    const dy = Math.max(0, e.clientY - startY);
+    endDrag(dy, false);
+  };
+
+  panel.addEventListener("pointerup", onUp);
+  panel.addEventListener("pointercancel", (e) => {
+    if (dragging && e.pointerId === activeId) {
+      endDrag(0, true);
+    }
+  });
+  panel.dataset.swipeBound = "1";
+}
+
+function mapCollapseLeftPanel() {
+  state.panelCollapsed = true;
+  document.getElementById("mapLayout")?.classList.add("collapsed");
+  const p = document.getElementById("leftPanel");
+  if (p) {
+    p.classList.remove("left-panel--drag");
+    p.style.removeProperty("transform");
+  }
+  updateMapOpenPanelButton();
+  syncMapSheetPeek("map");
+  ensureMapDrawControls();
+  refreshMapViewport();
+}
+
+function openMapLeftPanel() {
+  state.panelCollapsed = false;
+  const layout = document.getElementById("mapLayout");
+  layout?.classList.remove("collapsed");
+  const p = document.getElementById("leftPanel");
+  if (p) p.style.removeProperty("transform");
+  if (state.areaPolygonCoords?.length) {
+    renderAreaSelectionPanel(getAreaFilteredProperties());
+  } else {
+    renderViewportPanel();
+  }
+  updateMapOpenPanelButton();
+  syncMapSheetPeek("map");
+  ensureMapDrawControls();
+  refreshMapViewport();
+}
+
+function setMapDefaultLeftPanel() {
+  const panel = document.getElementById("leftPanel");
+  if (!panel) return;
+  panel.innerHTML = `
+    ${leftPanelHandleHtml("mapLeftPanelHandleArea")}
+    <div class="left-panel-head">
+      <h3>Выберите объект на карте</h3>
+      <button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button>
+    </div>
+  `;
+  document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
+    mapCollapseLeftPanel();
+  });
+  syncMapSheetPeek("map");
+}
+
 function demoCollapseLeftPanel() {
   state.panelCollapsed = true;
   document.getElementById("demoMapLayout")?.classList.add("collapsed");
@@ -534,6 +732,7 @@ function demoCollapseLeftPanel() {
     p.style.removeProperty("transform");
   }
   updateDemoOpenPanelButton();
+  syncMapSheetPeek("demo");
   ensureMapDrawControls();
   refreshMapViewport();
 }
@@ -542,13 +741,14 @@ function renderDemoPanel(list, title) {
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
   panel.innerHTML =
-    demoLeftPanelHandleHtml() +
+    leftPanelHandleHtml("demoLeftPanelHandleArea") +
     `<div class="left-panel-head"><h3>${title}: ${list.length}</h3><button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button></div>` +
     (list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`);
   document.getElementById("closeDemoLeftPanel")?.addEventListener("click", () => {
     demoCollapseLeftPanel();
   });
   bindDemoCardButtons(panel);
+  syncMapSheetPeek("demo");
 }
 
 function getDemoViewportPropertyList() {
@@ -608,17 +808,17 @@ function renderPublicDemoPage() {
       ${demoPublicTopbar()}
       <div class="demo-top-strip" id="demoTopStrip" aria-label="Справка по демо">
         <p class="demo-top-strip__line">
-          <strong>Демо</strong> · 100 точек на карте · нажмите на метку, откройте <strong>Список</strong> внизу или обведите район ✍
+          <strong>Демо</strong> · 100 точек · снизу полоска списка (как в Циане) — подтяните вверх, нажмите метку или обведите район ✍
         </p>
         <button type="button" class="btn demo-top-strip__open" id="demoAboutOpen">О демо</button>
       </div>
-      <main class="map-layout demo-map-layout ${state.panelCollapsed ? "collapsed" : ""}" id="demoMapLayout">
+      <main class="map-layout demo-map-layout map-layout--app-sheet ${state.panelCollapsed ? "collapsed" : ""}" id="demoMapLayout">
         <aside class="left-panel" id="demoLeftPanel"></aside>
         <div class="map-wrap demo-map-wrap">
           <div id="demoMap" class="map"></div>
           <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
           <button
-            class="open-left-panel-btn open-left-panel-btn--demo"
+            class="open-left-panel-btn open-left-panel-btn--sheet"
             type="button"
             id="openDemoLeftPanelBtn"
             aria-label="Открыть список объектов"
@@ -633,7 +833,12 @@ function renderPublicDemoPage() {
           <div class="map-draw-tools">
             <button class="map-draw-btn" type="button" id="mapDrawAreaBtn" title="Рисовать область">✍</button>
           </div>
-          <div class="demo-left-panel-scrim" id="demoLeftPanelScrim" aria-hidden="true"></div>
+          <div class="map-sheet-peek" id="demoMapSheetPeek" role="button" tabindex="0" aria-label="Открыть список снизу">
+            <div class="map-sheet-peek__handle" aria-hidden="true"></div>
+            <p class="map-sheet-peek__title" id="demoMapSheetPeekTitle">Список</p>
+            <p class="map-sheet-peek__sub">Подтяните вверх / нажмите</p>
+          </div>
+          <div class="map-sheet-left-scrim" id="demoLeftPanelScrim" aria-hidden="true"></div>
         </div>
       </main>
       <div class="demo-hero demo-float-desktop">
@@ -783,6 +988,7 @@ function renderPublicDemoPage() {
       renderDemoViewportPanel();
     }
     updateDemoOpenPanelButton();
+    syncMapSheetPeek("demo");
     ensureMapDrawControls();
     refreshMapViewport();
   }
@@ -795,7 +1001,19 @@ function renderPublicDemoPage() {
   });
 
   updateDemoOpenPanelButton();
-  bindDemoLeftPanelSwipe();
+  syncMapSheetPeek("demo");
+  const demoP = document.getElementById("demoLeftPanel");
+  if (demoP) demoP.dataset.swipeBound = "";
+  bindMobileLeftPanelSwipe({
+    panelId: "demoLeftPanel",
+    layoutId: "demoMapLayout",
+    onCollapse: () => demoCollapseLeftPanel()
+  });
+  bindMapSheetPeek({
+    peekId: "demoMapSheetPeek",
+    layoutId: "demoMapLayout",
+    openFn: openDemoLeftPanel
+  });
 }
 
 function renderDemoPropertyPage(id) {
@@ -843,9 +1061,11 @@ function renderDemoPropertyPage(id) {
 function renderMapPage() {
   setMapBodyClass(true);
   app.innerHTML = `
+    <section class="map-page">
     ${topbar()}
-    <main class="map-layout ${state.panelCollapsed ? "collapsed" : ""}" id="mapLayout">
+    <main class="map-layout map-layout--app-sheet ${state.panelCollapsed ? "collapsed" : ""}" id="mapLayout">
       <aside class="left-panel" id="leftPanel">
+        ${leftPanelHandleHtml("mapLeftPanelHandleArea")}
         <div class="left-panel-head">
           <h3>Выберите объект на карте</h3>
           <button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button>
@@ -854,12 +1074,31 @@ function renderMapPage() {
       <div class="map-wrap">
         <div id="map" class="map"></div>
         <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
-        <button class="open-left-panel-btn" id="openLeftPanelBtn" aria-label="Открыть список">❯</button>
+        <button
+          class="open-left-panel-btn open-left-panel-btn--sheet"
+          type="button"
+          id="openLeftPanelBtn"
+          aria-label="Открыть список объектов"
+          aria-controls="leftPanel"
+          aria-expanded="false"
+          aria-hidden="true"
+        >
+          <span class="open-left-panel-ico open-left-panel-ico--mob" aria-hidden="true">▲</span>
+          <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
+          <span class="open-left-panel-label">Список</span>
+        </button>
         <div class="map-draw-tools">
           <button class="map-draw-btn" id="mapDrawAreaBtn" title="Рисовать область">✍</button>
         </div>
+        <div class="map-sheet-peek" id="mapSheetPeek" role="button" tabindex="0" aria-label="Открыть список снизу">
+          <div class="map-sheet-peek__handle" aria-hidden="true"></div>
+          <p class="map-sheet-peek__title" id="mapSheetPeekTitle">Список</p>
+          <p class="map-sheet-peek__sub">Подтяните вверх / нажмите</p>
+        </div>
+        <div class="map-sheet-left-scrim" id="mapLeftPanelScrim" aria-hidden="true"></div>
       </div>
     </main>
+    </section>
     ${moreFiltersModalHtml()}
   `;
 
@@ -901,25 +1140,29 @@ function renderMapPage() {
     document.getElementById("filtersModal").classList.remove("open");
     renderMapPage();
   });
-  document.getElementById("closeLeftPanel").addEventListener("click", () => {
-    state.panelCollapsed = true;
-    document.getElementById("mapLayout").classList.add("collapsed");
-    ensureMapDrawControls();
-    refreshMapViewport();
-  });
-  document.getElementById("openLeftPanelBtn").addEventListener("click", () => {
-    state.panelCollapsed = false;
-    document.getElementById("mapLayout").classList.remove("collapsed");
-    if (state.areaPolygonCoords?.length) {
-      renderAreaSelectionPanel(getAreaFilteredProperties());
-    } else {
-      renderViewportPanel();
+  document.getElementById("closeLeftPanel")?.addEventListener("click", mapCollapseLeftPanel);
+  document.getElementById("openLeftPanelBtn")?.addEventListener("click", openMapLeftPanel);
+  document.getElementById("mapLeftPanelScrim")?.addEventListener("click", () => {
+    if (window.matchMedia("(max-width: 900px)").matches) {
+      mapCollapseLeftPanel();
     }
-    ensureMapDrawControls();
-    refreshMapViewport();
   });
-  document.getElementById("mapDrawAreaBtn").addEventListener("click", startAreaDrawing);
+  const lp = document.getElementById("leftPanel");
+  if (lp) lp.dataset.swipeBound = "";
+  bindMobileLeftPanelSwipe({
+    panelId: "leftPanel",
+    layoutId: "mapLayout",
+    onCollapse: () => mapCollapseLeftPanel()
+  });
+  bindMapSheetPeek({
+    peekId: "mapSheetPeek",
+    layoutId: "mapLayout",
+    openFn: openMapLeftPanel
+  });
+  document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
   ensureMapDrawControls();
+  updateMapOpenPanelButton();
+  syncMapSheetPeek("map");
 
   document.getElementById("maxPrice").addEventListener("input", (e) => {
     const raw = toRawNumberString(e.target.value);
@@ -983,19 +1226,18 @@ function renderAreaSelectionPanel(list) {
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
   panel.innerHTML =
+    leftPanelHandleHtml("mapLeftPanelHandleArea") +
     `<div class="left-panel-head"><h3>В выбранной области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>` +
     (list.length ? list.map(cardMarkup).join("") : `<p class="muted">Внутри области объекты не найдены.</p>`);
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
-    state.panelCollapsed = true;
-    document.getElementById("mapLayout")?.classList.add("collapsed");
-    ensureMapDrawControls();
-    refreshMapViewport();
+    mapCollapseLeftPanel();
   });
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  syncMapSheetPeek("map");
 }
 
 function isPointInsideBounds(lat, lon, bounds) {
@@ -1020,19 +1262,18 @@ function renderViewportPanel() {
   if (!panel) return;
   const list = getViewportProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
   panel.innerHTML =
+    leftPanelHandleHtml("mapLeftPanelHandleArea") +
     `<div class="left-panel-head"><h3>Объекты в видимой области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>` +
     (list.length ? list.map(cardMarkup).join("") : `<p class="muted">В текущей области объекты не найдены.</p>`);
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
-    state.panelCollapsed = true;
-    document.getElementById("mapLayout")?.classList.add("collapsed");
-    ensureMapDrawControls();
-    refreshMapViewport();
+    mapCollapseLeftPanel();
   });
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  syncMapSheetPeek("map");
 }
 
 function syncDrawButtons() {
@@ -1050,7 +1291,7 @@ function setDemoDefaultLeftPanel() {
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
   panel.innerHTML = `
-    ${demoLeftPanelHandleHtml()}
+    ${leftPanelHandleHtml("demoLeftPanelHandleArea")}
     <div class="left-panel-head">
       <h3>Нажмите на точку на карте</h3>
       <button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button>
@@ -1059,88 +1300,7 @@ function setDemoDefaultLeftPanel() {
   document.getElementById("closeDemoLeftPanel")?.addEventListener("click", () => {
     demoCollapseLeftPanel();
   });
-}
-
-/**
- * Мобилка: свайп вниз за ручку или за заголовок — то же, что крестик.
- */
-function bindDemoLeftPanelSwipe() {
-  const panel = document.getElementById("demoLeftPanel");
-  if (!panel || panel.dataset.swipeBound === "1") return;
-  const mq = () => window.matchMedia("(max-width: 900px)").matches;
-  let startY = 0;
-  let dragging = false;
-  let activeId = null;
-
-  const canStart = (el) => {
-    if (!mq() || !el) return false;
-    const L = document.getElementById("demoMapLayout");
-    if (!L || L.classList.contains("collapsed")) return false;
-    if (!panel.contains(el)) return false;
-    if (el.closest("button.close-left-panel")) return false;
-    return Boolean(el.closest("#demoLeftPanelHandleArea") || el.closest(".left-panel-head"));
-  };
-
-  const endDrag = (dy, forceReset) => {
-    panel.classList.remove("left-panel--drag");
-    if (activeId != null) {
-      try {
-        panel.releasePointerCapture(activeId);
-      } catch (_) {
-        /* */
-      }
-      activeId = null;
-    }
-    dragging = false;
-    if (forceReset) {
-      panel.style.removeProperty("transform");
-      return;
-    }
-    if (dy > 72) {
-      panel.style.removeProperty("transform");
-      demoCollapseLeftPanel();
-    } else {
-      panel.style.removeProperty("transform");
-    }
-  };
-
-  panel.addEventListener("pointerdown", (e) => {
-    if (!canStart(e.target)) return;
-    e.preventDefault();
-    startY = e.clientY;
-    dragging = true;
-    activeId = e.pointerId;
-    panel.classList.add("left-panel--drag");
-    try {
-      panel.setPointerCapture(e.pointerId);
-    } catch (_) {
-      /* */
-    }
-  });
-
-  panel.addEventListener("pointermove", (e) => {
-    if (!dragging || e.pointerId !== activeId) return;
-    if (!mq()) {
-      endDrag(0, true);
-      return;
-    }
-    const dy = Math.max(0, e.clientY - startY);
-    panel.style.transform = `translate3d(0, ${dy}px, 0)`;
-  });
-
-  const onUp = (e) => {
-    if (!dragging || e.pointerId !== activeId) return;
-    const dy = Math.max(0, e.clientY - startY);
-    endDrag(dy, false);
-  };
-
-  panel.addEventListener("pointerup", onUp);
-  panel.addEventListener("pointercancel", (e) => {
-    if (dragging && e.pointerId === activeId) {
-      endDrag(0, true);
-    }
-  });
-  panel.dataset.swipeBound = "1";
+  syncMapSheetPeek("demo");
 }
 
 function clearAreaFilter() {
@@ -1156,18 +1316,7 @@ function clearAreaFilter() {
     if (isDemo) {
       setDemoDefaultLeftPanel();
     } else {
-      panel.innerHTML = `
-        <div class="left-panel-head">
-          <h3>Выберите объект на карте</h3>
-          <button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button>
-        </div>
-      `;
-      document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
-        state.panelCollapsed = true;
-        document.getElementById("mapLayout")?.classList.add("collapsed");
-        ensureMapDrawControls();
-        refreshMapViewport();
-      });
+      setMapDefaultLeftPanel();
     }
   }
   if (state.mapInstance && (document.getElementById("map") || document.getElementById("demoMap"))) {
@@ -1386,15 +1535,18 @@ function showGroup(properties) {
   document.getElementById("mapLayout")?.classList.remove("collapsed");
   refreshMapViewport();
   const panel = document.getElementById("leftPanel");
+  if (!panel) return;
   properties.sort((a, b) => b.commissionPartner - a.commissionPartner);
   panel.innerHTML =
+    leftPanelHandleHtml("mapLeftPanelHandleArea") +
     `<div class="left-panel-head"><h3>Объектов в точке: ${properties.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>` +
     properties.map(cardMarkup).join("");
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
-    state.panelCollapsed = true;
-    document.getElementById("mapLayout")?.classList.add("collapsed");
-    refreshMapViewport();
+    mapCollapseLeftPanel();
   });
+  updateMapOpenPanelButton();
+  syncMapSheetPeek("map");
+  ensureMapDrawControls();
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
       location.hash = `#/property/${btn.dataset.id}`;
@@ -1441,6 +1593,16 @@ function initMap() {
       }, 120);
     });
 
+    let clusterer = null;
+    try {
+      clusterer = new ymaps.Clusterer({
+        groupByCoordinates: false,
+        gridSize: 72,
+        hasBalloon: false
+      });
+    } catch (_) {
+      /* */
+    }
     grouped.forEach((group) => {
       const top = group.sort((a, b) => b.commissionPartner - a.commissionPartner)[0];
       const placemark = new ymaps.Placemark(
@@ -1455,8 +1617,15 @@ function initMap() {
         }
       );
       placemark.events.add("click", () => showGroup(group));
-      map.geoObjects.add(placemark);
+      if (clusterer) {
+        clusterer.add(placemark);
+      } else {
+        map.geoObjects.add(placemark);
+      }
     });
+    if (clusterer) {
+      map.geoObjects.add(clusterer);
+    }
 
     if (state.areaPolygonCoords?.length) {
       const polygon = new ymaps.Polygon(
@@ -1479,6 +1648,7 @@ function initMap() {
         renderViewportPanel();
       }
     }
+    syncMapSheetPeek("map");
     ensureMapDrawControls();
   };
 
@@ -1589,6 +1759,7 @@ function initDemoMap() {
         renderDemoViewportPanel();
       }
     }
+    syncMapSheetPeek("demo");
     ensureMapDrawControls();
   };
 
@@ -1756,6 +1927,7 @@ function renderAuthPage() {
           <input id="loginEmail" placeholder="Email" type="email" autocomplete="username email" />
           <input id="loginPassword" type="password" placeholder="Пароль" autocomplete="current-password" />
           <button class="btn primary full" id="login">Войти</button>
+          <button class="btn full" type="button" id="toDemoMapBtn">К демо без входа</button>
           <button class="btn full" id="openRegister">Регистрация</button>
           <button class="btn full" id="openReset">Забыли пароль?</button>
           <p class="muted" id="authStatus"></p>
@@ -1813,6 +1985,13 @@ function renderAuthPage() {
     </section>
   `;
 
+  const toDemoEl = document.getElementById("toDemoMapBtn");
+  if (toDemoEl) {
+    toDemoEl.textContent = state.token ? "На карту" : "К демо без входа";
+    toDemoEl.addEventListener("click", () => {
+      location.hash = "#/";
+    });
+  }
   document.getElementById("openRegister").addEventListener("click", () => {
     document.getElementById("registerModal").classList.add("active");
   });
