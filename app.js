@@ -152,6 +152,15 @@ function resolvePdfFontPath() {
   return candidates.find((p) => fs.existsSync(p)) || null;
 }
 
+function resolvePropertyPhotoPath(photoUrl) {
+  if (!photoUrl || typeof photoUrl !== "string") return null;
+  if (photoUrl.startsWith("/uploads/")) {
+    const abs = path.join(__dirname, photoUrl.replace(/^\//, ""));
+    return fs.existsSync(abs) ? abs : null;
+  }
+  return null;
+}
+
 async function generatePresentationPdf(property) {
   const filename = `auto-${property.id}.pdf`;
   const filePath = path.join(PDFS_DIR, filename);
@@ -169,25 +178,51 @@ async function generatePresentationPdf(property) {
       doc.font(unicodeFontPath);
     }
 
-    doc.fontSize(22).text(property.title || "Объект недвижимости");
-    doc.moveDown(0.7);
-    doc.fontSize(12).fillColor("#333").text(`Адрес: ${property.address || "-"}`);
-    doc.text(`Цена: ${money(property.price)} ₽`);
-    doc.text(`Площадь: ${property.area ?? "-"} м²`);
+    const mainPhotoPath = resolvePropertyPhotoPath(Array.isArray(property.photos) ? property.photos[0] : null);
+    if (mainPhotoPath) {
+      try {
+        doc.image(mainPhotoPath, doc.page.margins.left, doc.y, {
+          fit: [doc.page.width - doc.page.margins.left - doc.page.margins.right, 280],
+          align: "center",
+          valign: "center"
+        });
+        doc.moveDown(11.8);
+      } catch {
+        /* ignore image read errors */
+      }
+    }
+
+    doc.fillColor("#111");
+    doc.fontSize(30).text(`${money(property.price)} ₽`, { align: "left" });
+    doc.moveDown(0.3);
+    doc.fontSize(20).text(property.address || "Адрес не указан", { align: "left" });
+    doc.moveDown(0.8);
+
+    doc.fontSize(13).fillColor("#2f3b52").text(`Площадь: ${property.area ?? "-"} м²`);
     doc.text(`Спален: ${property.bedrooms ?? "-"}`);
     doc.text(`Этаж: ${property.floor ?? "-"}`);
     doc.text(`Этажей в доме: ${property.totalFloors ?? "-"}`);
     doc.text(`Высота потолков: ${property.ceilingHeight ?? "-"} м`);
     doc.text(`Отделка: ${finishingLabel(property.finishing)}`);
     doc.text(`Готовность дома: ${readinessLabel(property.readiness)}`);
-    doc.moveDown(0.8);
-    doc.fontSize(12).text("Описание:");
-    doc.fontSize(11).fillColor("#444").text(property.description || "-", { width: 500, align: "left" });
-    doc.moveDown(0.8);
+
+    if (property.description) {
+      doc.moveDown(0.8);
+      doc.fontSize(13).fillColor("#1f2a44").text("Описание");
+      doc.moveDown(0.2);
+      doc.fontSize(11).fillColor("#3a4660").text(property.description, {
+        width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
+        align: "left"
+      });
+    }
+
+    doc.moveDown(1);
     doc
       .fontSize(9)
-      .fillColor("#777")
-      .text("Автоматическая презентация сформирована без контактов и логотипов.", { width: 500 });
+      .fillColor("#7a8399")
+      .text("Презентация сформирована автоматически. Контакты и комиссии скрыты.", {
+        width: doc.page.width - doc.page.margins.left - doc.page.margins.right
+      });
 
     doc.end();
   });
