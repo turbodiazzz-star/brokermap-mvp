@@ -6,8 +6,8 @@ const state = {
   selectedGroup: [],
   selectedPropertyId: null,
   panelCollapsed: false,
-  /** моб. нижний лист: mid — пол-экрана, full — почти на весь экран (как в Циане) */
-  panelSheetSnap: "mid",
+  /** моб.: последний translateY листа (0 — выше) при раскрытом листе; null — взять по умолч. */
+  panelSheetT: null,
   areaPolygonCoords: null,
   areaPolygonObject: null,
   areaDrawMode: false,
@@ -511,13 +511,17 @@ function bindDemoCardButtons(root = document) {
 function leftPanelHandleHtml(handleAreaId) {
   return `<div class="left-panel-handle-wrap" id="${handleAreaId}" role="presentation">
     <div class="left-panel-handle" aria-hidden="true"></div>
-    <p class="left-panel-handle-hint">Держите и тяните панель, как в Циан</p>
+    <p class="left-panel-handle-hint">Тяните панель за любую область</p>
   </div>`;
 }
 
-/** Скролл списка (моб.) — внешняя панель тянем целиком, список прокручиваем отдельно */
-function leftPanelScrollWrap(bodyHtml) {
-  return `<div class="left-panel__scroll" data-left-scroll>${bodyHtml}</div>`;
+/** Скролл списка (моб.): ручка и шапка внутри — при прокрутке уходят вверх вместе с лентой */
+function leftPanelScrollWrap(innerHtml) {
+  return `<div class="left-panel__scroll" data-left-scroll>${innerHtml}</div>`;
+}
+
+function leftPanelMobileBlock(handleAreaId, headHtml, bodyHtml) {
+  return leftPanelScrollWrap(leftPanelHandleHtml(handleAreaId) + headHtml + bodyHtml);
 }
 
 function getPanelTranslateY(el) {
@@ -564,30 +568,27 @@ function getSheetGeometry(panel) {
   return { h, tPeek, tMid, tMax: tPeek, vh };
 }
 
-function chooseSnapT(t, g) {
-  if (!g) return { t, phase: "mid", atPeek: false };
-  const stops = [0, g.tMid, g.tPeek].map((n) => Math.min(g.tMax, Math.max(0, n)));
-  const u = Array.from(new Set(stops.map((n) => Math.round(n * 2) / 2))).sort((a, b) => a - b);
-  let best = u[0];
-  let d0 = Math.abs(t - u[0]);
-  for (const s of u) {
-    const d = Math.abs(t - s);
-    if (d < d0) {
-      d0 = d;
-      best = s;
-    }
-  }
-  const atPeek = Math.abs(best - g.tPeek) < 3;
-  const phase = atPeek ? "peek" : Math.abs(best) < 3 ? "full" : "mid";
-  return { t: best, phase, atPeek };
+/** Упругое сопротивление у 0 и tMax (во время жеста) */
+function sheetRubber(t, g) {
+  if (!g) return t;
+  if (t < 0) return t * 0.32;
+  if (t > g.tMax) return g.tMax + (t - g.tMax) * 0.32;
+  return t;
+}
+
+function clampSheetT(t, g) {
+  if (!g) return 0;
+  return Math.min(g.tMax, Math.max(0, t));
 }
 
 /**
- * «Циан»: любая область панели — тянем пальцем, панель движется; отпустили — снап. Список в [data-left-scroll] прокручивается, если жест — про скролл.
+ * Моб. нижний лист: тянем за любую область; в [data-left-scroll] — ручка, шапка и лента (цельный скролл);
+ * пока лента не в самом верху — двигается скролл; у верхней границы — снова движется вся панель.
+ * Отпускание: фиксируем высоту как есть, с мягким дожатием; пружина — в CSS.
  */
-function bindCianBottomSheet({ panelId, layoutId, isDemo }) {
+function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   const panel = document.getElementById(panelId);
-  if (!panel || panel.dataset.cianBound === "1") return;
+  if (!panel || panel.dataset.mobileSheetBound === "1") return;
   const layout = () => document.getElementById(layoutId);
   const mq = () => window.matchMedia("(max-width: 900px)").matches;
 
@@ -623,11 +624,13 @@ function bindCianBottomSheet({ panelId, layoutId, isDemo }) {
     if (mode === "decide" && scrollEl) {
       const st = scrollEl.scrollTop;
       const maxS = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
-      if (st > 2 && (rawDy < 0 || (rawDy > 0 && st < maxS - 1))) {
+      if (st > 2) {
         mode = "scroll";
         return;
       }
-      if (maxS > 2 && st < maxS - 2 && rawDy < 0) {
+      const g0 = getSheetGeometry(panel);
+      const sheetFullUp = g0 && startT < 8;
+      if (st <= 2 && maxS > 2 && sheetFullUp && rawDy < 0) {
         mode = "scroll";
         return;
       }
@@ -648,7 +651,7 @@ function bindCianBottomSheet({ panelId, layoutId, isDemo }) {
     if (mode !== "sheet") return;
     const g = getSheetGeometry(panel);
     if (!g) return;
-    const t = Math.min(g.tMax, Math.max(0, startT + (e.clientY - startY)));
+    const t = sheetRubber(startT + (e.clientY - startY), g);
     setPanelTranslateY(panel, t, false);
   };
 
@@ -671,9 +674,13 @@ function bindCianBottomSheet({ panelId, layoutId, isDemo }) {
       const g0 = getSheetGeometry(panel);
       if (g0) {
         state.panelCollapsed = false;
-        state.panelSheetSnap = "mid";
         L.classList.remove("collapsed");
-        setPanelTranslateY(panel, g0.tMid, true);
+        const tOpen =
+          state.panelSheetT != null
+            ? clampSheetT(state.panelSheetT, g0)
+            : g0.tMid;
+        setPanelTranslateY(panel, tOpen, true);
+        state.panelSheetT = tOpen;
         if (isDemo) {
           updateDemoOpenPanelButton();
         } else {
@@ -688,13 +695,16 @@ function bindCianBottomSheet({ panelId, layoutId, isDemo }) {
 
     if (mode === "sheet") {
       e.preventDefault();
-      const t = getPanelTranslateY(panel);
+      const rawT = getPanelTranslateY(panel);
       const g = getSheetGeometry(panel);
       if (g) {
-        const { t: snap, phase, atPeek } = chooseSnapT(t, g);
+        const snap = clampSheetT(rawT, g);
+        const atPeek = snap >= g.tMax - 4;
         setPanelTranslateY(panel, snap, true);
-        state.panelSheetSnap = phase;
         state.panelCollapsed = atPeek;
+        if (!atPeek) {
+          state.panelSheetT = snap;
+        }
         const lay = layout();
         if (lay) {
           if (atPeek) lay.classList.add("collapsed");
@@ -744,7 +754,7 @@ function bindCianBottomSheet({ panelId, layoutId, isDemo }) {
   panel.addEventListener("pointermove", onPointerMove, { passive: false });
   panel.addEventListener("pointerup", onPointerUp);
   panel.addEventListener("pointercancel", onPointerCancel);
-  panel.dataset.cianBound = "1";
+  panel.dataset.mobileSheetBound = "1";
 }
 
 function updateDemoOpenPanelButton() {
@@ -782,7 +792,7 @@ function mobileSheetSettleAfterRender(panel, layout) {
     if (!g) return;
     let t;
     if (state.panelCollapsed) t = g.tPeek;
-    else if (state.panelSheetSnap === "full") t = 0;
+    else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
     else t = g.tMid;
     setPanelTranslateY(panel, t, true);
   });
@@ -790,7 +800,6 @@ function mobileSheetSettleAfterRender(panel, layout) {
 
 function mapCollapseLeftPanel() {
   state.panelCollapsed = true;
-  state.panelSheetSnap = "peek";
   const layout = document.getElementById("mapLayout");
   const p = document.getElementById("leftPanel");
   layout?.classList.add("collapsed");
@@ -808,7 +817,7 @@ function mapCollapseLeftPanel() {
 
 function openMapLeftPanel() {
   state.panelCollapsed = false;
-  state.panelSheetSnap = "mid";
+  state.panelSheetT = null;
   const layout = document.getElementById("mapLayout");
   layout?.classList.remove("collapsed");
   const p = document.getElementById("leftPanel");
@@ -827,14 +836,14 @@ function openMapLeftPanel() {
 function setMapDefaultLeftPanel() {
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
-  panel.innerHTML =
-    leftPanelHandleHtml("mapLeftPanelHandleArea") +
+  panel.innerHTML = leftPanelMobileBlock(
+    "mapLeftPanelHandleArea",
     `<div class="left-panel-head">
       <h3>Выберите объект на карте</h3>
       <button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button>
-    </div>
-    ` +
-    leftPanelScrollWrap("");
+    </div>`,
+    ""
+  );
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
     mapCollapseLeftPanel();
   });
@@ -844,7 +853,6 @@ function setMapDefaultLeftPanel() {
 
 function demoCollapseLeftPanel() {
   state.panelCollapsed = true;
-  state.panelSheetSnap = "peek";
   const layout = document.getElementById("demoMapLayout");
   const p = document.getElementById("demoLeftPanel");
   layout?.classList.add("collapsed");
@@ -864,10 +872,11 @@ function renderDemoPanel(list, title) {
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
   const bodyHtml = list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`;
-  panel.innerHTML =
-    leftPanelHandleHtml("demoLeftPanelHandleArea") +
-    `<div class="left-panel-head"><h3>${title}: ${list.length}</h3><button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button></div>` +
-    leftPanelScrollWrap(bodyHtml);
+  panel.innerHTML = leftPanelMobileBlock(
+    "demoLeftPanelHandleArea",
+    `<div class="left-panel-head"><h3>${title}: ${list.length}</h3><button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button></div>`,
+    bodyHtml
+  );
   document.getElementById("closeDemoLeftPanel")?.addEventListener("click", () => {
     demoCollapseLeftPanel();
   });
@@ -896,7 +905,7 @@ function renderDemoAreaSelectionPanel() {
 
 function showDemoGroup(properties) {
   state.panelCollapsed = false;
-  state.panelSheetSnap = "mid";
+  state.panelSheetT = null;
   document.getElementById("demoMapLayout")?.classList.remove("collapsed");
   updateDemoOpenPanelButton();
   refreshMapViewport();
@@ -933,7 +942,7 @@ function renderPublicDemoPage() {
       ${demoPublicTopbar()}
       <div class="demo-top-strip" id="demoTopStrip" aria-label="Справка по демо">
         <p class="demo-top-strip__line">
-          <strong>Демо</strong> · 100 точек · список снизу: тяните панель за любую область, нажмите метку или обведите район ✍
+          <strong>Демо</strong> · 100 точек · список снизу: тяните панель, нажмите метку или обведите район ✍
         </p>
         <button type="button" class="btn demo-top-strip__open" id="demoAboutOpen">О демо</button>
       </div>
@@ -1098,7 +1107,7 @@ function renderPublicDemoPage() {
   applyDemoFilters();
   function openDemoLeftPanel() {
     state.panelCollapsed = false;
-    state.panelSheetSnap = "mid";
+    state.panelSheetT = null;
     const layout = document.getElementById("demoMapLayout");
     layout?.classList.remove("collapsed");
     const p = document.getElementById("demoLeftPanel");
@@ -1123,7 +1132,7 @@ function renderPublicDemoPage() {
   const demoP = document.getElementById("demoLeftPanel");
   const demoLayout = document.getElementById("demoMapLayout");
   updateDemoOpenPanelButton();
-  bindCianBottomSheet({ panelId: "demoLeftPanel", layoutId: "demoMapLayout", isDemo: true });
+  bindMobileBottomSheet({ panelId: "demoLeftPanel", layoutId: "demoMapLayout", isDemo: true });
   mobileSheetSettleAfterRender(demoP, demoLayout);
 }
 
@@ -1176,12 +1185,14 @@ function renderMapPage() {
     ${topbar()}
     <main class="map-layout map-layout--app-sheet ${state.panelCollapsed ? "collapsed" : ""}" id="mapLayout">
       <aside class="left-panel" id="leftPanel">
-        ${leftPanelHandleHtml("mapLeftPanelHandleArea")}
-        <div class="left-panel-head">
-          <h3>Выберите объект на карте</h3>
-          <button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button>
-        </div>
-        ${leftPanelScrollWrap("")}
+        ${leftPanelMobileBlock(
+          "mapLeftPanelHandleArea",
+          `<div class="left-panel-head">
+            <h3>Выберите объект на карте</h3>
+            <button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button>
+          </div>`,
+          ""
+        )}
       </aside>
       <div class="map-wrap">
         <div id="map" class="map"></div>
@@ -1256,7 +1267,7 @@ function renderMapPage() {
   });
   const lp = document.getElementById("leftPanel");
   const mapLayout = document.getElementById("mapLayout");
-  bindCianBottomSheet({ panelId: "leftPanel", layoutId: "mapLayout", isDemo: false });
+  bindMobileBottomSheet({ panelId: "leftPanel", layoutId: "mapLayout", isDemo: false });
   mobileSheetSettleAfterRender(lp, mapLayout);
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
   ensureMapDrawControls();
@@ -1291,6 +1302,7 @@ function renderMapPage() {
     state.filters.finishing = "";
     state.filters.readiness = "";
     state.panelCollapsed = false;
+    state.panelSheetT = null;
     clearAreaFilter();
     renderMapPage();
   });
@@ -1324,10 +1336,11 @@ function renderAreaSelectionPanel(list) {
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
   const bodyHtml = list.length ? list.map(cardMarkup).join("") : `<p class="muted">Внутри области объекты не найдены.</p>`;
-  panel.innerHTML =
-    leftPanelHandleHtml("mapLeftPanelHandleArea") +
-    `<div class="left-panel-head"><h3>В выбранной области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>` +
-    leftPanelScrollWrap(bodyHtml);
+  panel.innerHTML = leftPanelMobileBlock(
+    "mapLeftPanelHandleArea",
+    `<div class="left-panel-head"><h3>В выбранной области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
+    bodyHtml
+  );
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
     mapCollapseLeftPanel();
   });
@@ -1361,10 +1374,11 @@ function renderViewportPanel() {
   if (!panel) return;
   const list = getViewportProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
   const bodyHtml = list.length ? list.map(cardMarkup).join("") : `<p class="muted">В текущей области объекты не найдены.</p>`;
-  panel.innerHTML =
-    leftPanelHandleHtml("mapLeftPanelHandleArea") +
-    `<div class="left-panel-head"><h3>Объекты в видимой области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>` +
-    leftPanelScrollWrap(bodyHtml);
+  panel.innerHTML = leftPanelMobileBlock(
+    "mapLeftPanelHandleArea",
+    `<div class="left-panel-head"><h3>Объекты в видимой области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
+    bodyHtml
+  );
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
     mapCollapseLeftPanel();
   });
@@ -1390,14 +1404,14 @@ function syncDrawButtons() {
 function setDemoDefaultLeftPanel() {
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
-  panel.innerHTML =
-    leftPanelHandleHtml("demoLeftPanelHandleArea") +
+  panel.innerHTML = leftPanelMobileBlock(
+    "demoLeftPanelHandleArea",
     `<div class="left-panel-head">
       <h3>Нажмите на точку на карте</h3>
       <button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button>
-    </div>
-    ` +
-    leftPanelScrollWrap("");
+    </div>`,
+    ""
+  );
   document.getElementById("closeDemoLeftPanel")?.addEventListener("click", () => {
     demoCollapseLeftPanel();
   });
@@ -1633,17 +1647,18 @@ function groupByHouse(list) {
 
 function showGroup(properties) {
   state.panelCollapsed = false;
-  state.panelSheetSnap = "mid";
+  state.panelSheetT = null;
   document.getElementById("mapLayout")?.classList.remove("collapsed");
   refreshMapViewport();
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
   properties.sort((a, b) => b.commissionPartner - a.commissionPartner);
   const bodyHtml = properties.map(cardMarkup).join("");
-  panel.innerHTML =
-    leftPanelHandleHtml("mapLeftPanelHandleArea") +
-    `<div class="left-panel-head"><h3>Объектов в точке: ${properties.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>` +
-    leftPanelScrollWrap(bodyHtml);
+  panel.innerHTML = leftPanelMobileBlock(
+    "mapLeftPanelHandleArea",
+    `<div class="left-panel-head"><h3>Объектов в точке: ${properties.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
+    bodyHtml
+  );
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
     mapCollapseLeftPanel();
   });

@@ -218,7 +218,7 @@ body.view-map #app {
   cursor: pointer;
 }
 
-/* Нижняя плашка-намёк (как у Циана): только при свёрнутом sheet на моб. */
+/* Нижняя плашка (legacy): в разметке карты больше не используется */
 .map-sheet-peek {
   display: none;
   position: absolute;
@@ -1076,7 +1076,7 @@ textarea {
     margin-top: 0;
   }
 
-  /* Круглую кнопку на моб. убираем: открытие — усыпка снизу (как в Циане) */
+  /* Круглую кнопку на моб. убираем: открытие — нижний лист */
   .map-page .map-wrap .open-left-panel-btn--sheet,
   .demo-page .map-wrap .open-left-panel-btn--sheet {
     display: none !important;
@@ -1140,7 +1140,7 @@ textarea {
 
   .map-page .map-layout--app-sheet .left-panel.left-panel--sheet-anim,
   .demo-page .map-layout--app-sheet .left-panel.left-panel--sheet-anim {
-    transition: transform 0.25s ease;
+    transition: transform 0.48s cubic-bezier(0.32, 1.16, 0.34, 1);
   }
 
   .map-page .map-layout--app-sheet .left-panel.left-panel--sheet-live,
@@ -1168,7 +1168,6 @@ textarea {
     padding: 10px 0 2px;
     margin: 0 0 4px;
     flex-shrink: 0;
-    touch-action: none;
   }
 
   .left-panel-handle {
