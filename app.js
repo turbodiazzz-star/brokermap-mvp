@@ -140,10 +140,23 @@ function money(value) {
   return new Intl.NumberFormat("ru-RU").format(Number(value || 0));
 }
 
+function resolvePdfFontPath() {
+  const candidates = [
+    path.join(__dirname, "assets", "fonts", "DejaVuSans.ttf"),
+    path.join(__dirname, "fonts", "DejaVuSans.ttf"),
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",
+    "/Library/Fonts/Arial.ttf"
+  ];
+  return candidates.find((p) => fs.existsSync(p)) || null;
+}
+
 async function generatePresentationPdf(property) {
   const filename = `auto-${property.id}.pdf`;
   const filePath = path.join(PDFS_DIR, filename);
   const doc = new PDFDocument({ size: "A4", margin: 48 });
+  const unicodeFontPath = resolvePdfFontPath();
 
   await new Promise((resolve, reject) => {
     const stream = fs.createWriteStream(filePath);
@@ -151,6 +164,10 @@ async function generatePresentationPdf(property) {
     stream.on("error", reject);
     doc.on("error", reject);
     doc.pipe(stream);
+
+    if (unicodeFontPath) {
+      doc.font(unicodeFontPath);
+    }
 
     doc.fontSize(22).text(property.title || "Объект недвижимости");
     doc.moveDown(0.7);
