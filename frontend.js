@@ -1665,6 +1665,11 @@ function setupAddressSuggest() {
   let previewPlacemark = null;
   let suggestDebounceTimer = null;
   let suggestRequestId = 0;
+  const MOSCOW_BOUNDS = [
+    [55.45, 37.2],
+    [56.05, 37.95]
+  ];
+  const MOSCOW_CENTER = [55.751244, 37.618423];
 
   if (addressInput.dataset.suggestBound === "1") return;
   addressInput.dataset.suggestBound = "1";
@@ -1738,39 +1743,82 @@ function setupAddressSuggest() {
     }
   };
 
+  const scoreAddressSuggestion = (input, item) => {
+    const query = String(input || "").trim().toLowerCase();
+    const valueText = String(item?.value || "").toLowerCase();
+    const descText = String(item?.description || item?.displayName || "").toLowerCase();
+    let score = 0;
+    if (valueText.includes("москва") || descText.includes("москва")) score += 100;
+    if (/\d/.test(valueText)) score += 30;
+    if (query && valueText.startsWith(query)) score += 20;
+    if (query && valueText.includes(query)) score += 10;
+    return score;
+  };
+
+  const normalizeSuggestionItems = (input, list) => {
+    const unique = [];
+    const seen = new Set();
+    for (const item of list || []) {
+      const value = String(item?.value || "").trim();
+      if (!value) continue;
+      const key = value.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      unique.push({
+        value,
+        description: String(item?.description || item?.displayName || "").trim(),
+        _score: scoreAddressSuggestion(input, item)
+      });
+    }
+    unique.sort((a, b) => b._score - a._score);
+    return unique.slice(0, 8);
+  };
+
   const requestSuggestions = (value) => {
     if (!value || value.length < 3 || !window.ymaps || typeof ymaps.geocode !== "function") {
       hideSuggestList();
       return;
     }
     const requestId = ++suggestRequestId;
-    ymaps.geocode(value, { results: 6 }).then(
-      (result) => {
+    const suggestPromise =
+      typeof ymaps.suggest === "function"
+        ? ymaps.suggest(value, {
+            boundedBy: MOSCOW_BOUNDS,
+            strictBounds: true,
+            results: 8
+          })
+        : Promise.resolve([]);
+
+    suggestPromise
+      .then((items) => {
         if (requestId !== suggestRequestId) return;
-        const list = [];
-        result.geoObjects.each((geoObject) => {
-          const line = geoObject.getAddressLine();
-          if (!line) return;
-          list.push({
-            value: line,
-            description: geoObject.properties?.get("text") || ""
-          });
-        });
-        const unique = [];
-        const seen = new Set();
-        for (const item of list) {
-          const key = String(item.value).trim().toLowerCase();
-          if (!key || seen.has(key)) continue;
-          seen.add(key);
-          unique.push(item);
+        const normalized = normalizeSuggestionItems(value, items);
+        if (normalized.length) {
+          showSuggestList(normalized);
+          return;
         }
-        showSuggestList(unique);
-      },
-      () => {
+        return ymaps.geocode(value, {
+          results: 8,
+          boundedBy: MOSCOW_BOUNDS,
+          strictBounds: true
+        }).then((result) => {
+          if (requestId !== suggestRequestId) return;
+          const fallback = [];
+          result.geoObjects.each((geoObject) => {
+            const line = geoObject.getAddressLine();
+            if (!line) return;
+            fallback.push({
+              value: line,
+              description: geoObject.properties?.get("text") || ""
+            });
+          });
+          showSuggestList(normalizeSuggestionItems(value, fallback));
+        });
+      })
+      .catch(() => {
         if (requestId !== suggestRequestId) return;
         hideSuggestList();
-      }
-    );
+      });
   };
 
   addressInput.addEventListener("input", () => {
@@ -1800,7 +1848,11 @@ function setupAddressSuggest() {
       }
       return;
     }
-    const geocodeResult = await ymaps.geocode(value, { results: 1 });
+    const geocodeResult = await ymaps.geocode(value, {
+      results: 1,
+      boundedBy: MOSCOW_BOUNDS,
+      strictBounds: false
+    });
     const firstGeoObject = geocodeResult.geoObjects.get(0);
     if (!firstGeoObject) {
       resetCoordinates();
@@ -1809,7 +1861,21 @@ function setupAddressSuggest() {
       }
       return;
     }
-    const [lat, lon] = firstGeoObject.geometry.getCoordinates();
+    let [lat, lon] = firstGeoObject.geometry.getCoordinates();
+    if (
+      !lat ||
+      !lon ||
+      lat < MOSCOW_BOUNDS[0][0] ||
+      lat > MOSCOW_BOUNDS[1][0] ||
+      lon < MOSCOW_BOUNDS[0][1] ||
+      lon > MOSCOW_BOUNDS[1][1]
+    ) {
+      const retry = await ymaps.geocode(`Москва, ${value}`, { results: 1 });
+      const retryObject = retry.geoObjects.get(0);
+      if (retryObject) {
+        [lat, lon] = retryObject.geometry.getCoordinates();
+      }
+    }
     const exactAddress = firstGeoObject.getAddressLine() || value;
     addressInput.value = exactAddress;
     setPoint(lat, lon);
@@ -1827,12 +1893,12 @@ function setupAddressSuggest() {
       addressInput.dataset.suggestReady = "1";
 
       previewMap = new ymaps.Map("addressPreviewMap", {
-        center: [55.751244, 37.618423],
+        center: MOSCOW_CENTER,
         zoom: 10,
         controls: ["zoomControl"]
       });
       previewPlacemark = new ymaps.Placemark(
-        [55.751244, 37.618423],
+        MOSCOW_CENTER,
         {},
         { draggable: true }
       );
