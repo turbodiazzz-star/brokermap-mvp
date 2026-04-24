@@ -164,13 +164,11 @@ function resolvePropertyPhotoPath(photoUrl) {
 function normalizePdfText(value) {
   const text = String(value ?? "");
   if (!text) return "";
-  const suspicious = /[ÐÑÃÂ]|[À-ÿ]{2,}/.test(text);
-  if (!suspicious) return text;
+  const srcCyrCount = (text.match(/[А-Яа-яЁё]/g) || []).length;
   try {
     const converted = Buffer.from(text, "latin1").toString("utf8");
     const cyrCount = (converted.match(/[А-Яа-яЁё]/g) || []).length;
-    const srcCyrCount = (text.match(/[А-Яа-яЁё]/g) || []).length;
-    if (cyrCount > srcCyrCount) return converted;
+    if (cyrCount >= 3 && cyrCount > srcCyrCount) return converted;
   } catch {
     /* ignore */
   }
@@ -179,8 +177,7 @@ function normalizePdfText(value) {
     const bytes = Uint8Array.from(text, (ch) => ch.charCodeAt(0) & 0xff);
     const converted1251 = decoder.decode(bytes);
     const cyrCount1251 = (converted1251.match(/[А-Яа-яЁё]/g) || []).length;
-    const srcCyrCount = (text.match(/[А-Яа-яЁё]/g) || []).length;
-    if (cyrCount1251 > srcCyrCount) return converted1251;
+    if (cyrCount1251 >= 3 && cyrCount1251 > srcCyrCount) return converted1251;
   } catch {
     /* ignore */
   }
