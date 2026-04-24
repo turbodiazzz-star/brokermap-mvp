@@ -47,9 +47,11 @@ body.view-map #app {
 
 .demo-page {
   position: relative;
-  display: block;
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
+  height: 100%;
 }
 
 .demo-map-wrap {
@@ -58,7 +60,9 @@ body.view-map #app {
 }
 
 .demo-map-layout {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .demo-hero {
@@ -81,6 +85,12 @@ body.view-map #app {
 
 .demo-hero p {
   margin: 0;
+  color: var(--muted);
+}
+
+.demo-hero .demo-hero-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
   color: var(--muted);
 }
 

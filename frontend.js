@@ -26,7 +26,9 @@ const state = {
     ceilingHeightMin: "",
     finishing: "",
     readiness: ""
-  }
+  },
+  /** Фиксированный набор демо-объектов на сессию (фильтры не меняют «источник») */
+  demoAllProperties: null
 };
 
 let didSyncUserFromServer = false;
@@ -177,6 +179,99 @@ const agencyButtonHtml = () =>
     ? `<button type="button" class="top-action" id="agencyBtn">Агентство</button>`
     : "";
 
+function moreFiltersModalHtml() {
+  return `
+    <div class="modal" id="filtersModal">
+      <div class="modal-card">
+        <h3>Дополнительные фильтры</h3>
+        <div class="form-grid">
+          <div class="field-block">
+            <label class="field-label" for="filterFloorMin">Этаж от</label>
+            <input id="filterFloorMin" type="number" min="1" value="${escapeHtml(state.filters.floorMin)}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterFloorMax">Этаж до</label>
+            <input id="filterFloorMax" type="number" min="1" value="${escapeHtml(state.filters.floorMax)}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterTotalFloorsMin">Этажей в доме от</label>
+            <input id="filterTotalFloorsMin" type="number" min="1" value="${escapeHtml(state.filters.totalFloorsMin)}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterTotalFloorsMax">Этажей в доме до</label>
+            <input id="filterTotalFloorsMax" type="number" min="1" value="${escapeHtml(state.filters.totalFloorsMax)}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterCeilingMin">Потолки от (м)</label>
+            <input id="filterCeilingMin" type="number" step="0.1" min="0" value="${escapeHtml(state.filters.ceilingHeightMin)}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterFinishing">Отделка</label>
+            <select id="filterFinishing">
+              <option value="">Любая</option>
+              <option value="finished" ${state.filters.finishing === "finished" ? "selected" : ""}>С отделкой</option>
+              <option value="whitebox" ${state.filters.finishing === "whitebox" ? "selected" : ""}>Вайт бокс</option>
+              <option value="concrete" ${state.filters.finishing === "concrete" ? "selected" : ""}>Бетон</option>
+            </select>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterReadiness">Готовность дома</label>
+            <select id="filterReadiness">
+              <option value="">Любая</option>
+              <option value="resale" ${state.filters.readiness === "resale" ? "selected" : ""}>Вторичка</option>
+              <option value="assignment" ${state.filters.readiness === "assignment" ? "selected" : ""}>Переуступка</option>
+            </select>
+          </div>
+        </div>
+        <p>
+          <button class="btn primary" id="applyMoreFilters" type="button">Применить</button>
+          <button class="btn" id="resetMoreFilters" type="button">Сбросить доп. фильтры</button>
+          <button class="btn" id="closeModal" type="button">Закрыть</button>
+        </p>
+      </div>
+    </div>
+  `;
+}
+
+function demoPublicTopbar() {
+  return `
+    <header class="topbar topbar-demo">
+      <button type="button" class="brand brand-home-btn" id="brandHomeBtn">BrokerMap</button>
+      <div class="filters">
+        <input
+          id="minPrice"
+          class="price-input"
+          type="text"
+          inputmode="numeric"
+          placeholder="Цена от"
+          value="${formatSpacedNumber(state.filters.minPrice)}"
+        />
+        <input
+          id="maxPrice"
+          class="price-input"
+          type="text"
+          inputmode="numeric"
+          placeholder="Цена до"
+          value="${formatSpacedNumber(state.filters.maxPrice)}"
+        />
+        <select id="bedroomsFilter" class="bedrooms-select">
+          <option value="">Спален</option>
+          <option value="1" ${state.filters.bedrooms === "1" ? "selected" : ""}>1</option>
+          <option value="2" ${state.filters.bedrooms === "2" ? "selected" : ""}>2</option>
+          <option value="3" ${state.filters.bedrooms === "3" ? "selected" : ""}>3</option>
+          <option value="4" ${state.filters.bedrooms === "4" ? "selected" : ""}>4+</option>
+        </select>
+        <button type="button" id="moreFilters">Ещё фильтры</button>
+        <button type="button" id="resetFilters">Сброс</button>
+      </div>
+      <div class="auth">
+        <button type="button" class="top-action" id="demoAuthLogin">Войти</button>
+        <button type="button" class="top-action" id="demoAuthRegister">Регистрация</button>
+      </div>
+    </header>
+  `;
+}
+
 function topbar(options = {}) {
   if (options.slim) {
     return `
@@ -311,6 +406,8 @@ function createDemoProperties(count = 100) {
     "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=1600",
     "https://images.unsplash.com/photo-1600585152220-90363fe7e115?w=1600"
   ];
+  const finishingOptions = ["finished", "whitebox", "concrete"];
+  const readinessOptions = ["resale", "assignment"];
   const demo = [];
   for (let i = 0; i < count; i++) {
     const lat = 55.55 + Math.random() * 0.33;
@@ -327,6 +424,11 @@ function createDemoProperties(count = 100) {
       price: priceBase,
       area: 28 + (i % 9) * 6,
       bedrooms: (i % 4) + 1,
+      floor: 1 + (i % 20),
+      totalFloors: 9 + (i % 20),
+      ceilingHeight: Math.round((2.6 + (i % 5) * 0.1) * 10) / 10,
+      finishing: finishingOptions[i % finishingOptions.length],
+      readiness: readinessOptions[i % readinessOptions.length],
       commissionTotal: 3,
       commissionPartner: 1.5,
       contacts: {
@@ -381,107 +483,197 @@ function renderDemoPanel(list, title) {
   bindDemoCardButtons(panel);
 }
 
+function getDemoViewportPropertyList() {
+  const list = getAreaFilteredProperties();
+  if (!state.mapInstance) return list;
+  const bounds = state.mapInstance.getBounds();
+  if (!bounds) return list;
+  return list.filter((item) => isPointInsideBounds(Number(item.lat), Number(item.lon), bounds));
+}
+
 function renderDemoViewportPanel() {
   if (!state.mapInstance) return;
-  const bounds = state.mapInstance.getBounds();
-  const list = (state.properties || []).filter((item) => isPointInsideBounds(Number(item.lat), Number(item.lon), bounds));
+  const list = getDemoViewportPropertyList().sort((a, b) => b.commissionPartner - a.commissionPartner);
   renderDemoPanel(list, "Объекты в видимой области");
+}
+
+function renderDemoAreaSelectionPanel() {
+  const list = getAreaFilteredProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
+  renderDemoPanel(list, "В выбранной области");
 }
 
 function showDemoGroup(properties) {
   state.panelCollapsed = false;
   document.getElementById("demoMapLayout")?.classList.remove("collapsed");
   refreshMapViewport();
-  renderDemoPanel(properties, "Объектов в точке");
+  const sorted = properties.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
+  renderDemoPanel(sorted, "Объектов в точке");
+}
+
+function applyDemoFilters() {
+  if (!state.demoAllProperties || !state.demoAllProperties.length) {
+    state.demoAllProperties = createDemoProperties(100);
+  }
+  state.properties = filterPropertiesByState(state.demoAllProperties);
+  if (window.ymaps) {
+    ymaps.ready(() => initDemoMap());
+  } else {
+    setTimeout(applyDemoFilters, 200);
+  }
 }
 
 function renderPublicDemoPage() {
   setMapBodyClass(true);
-  const demoItems = createDemoProperties(100);
-  state.properties = demoItems;
+  if (!state.demoAllProperties || !state.demoAllProperties.length) {
+    state.demoAllProperties = createDemoProperties(100);
+  }
+  state.properties = filterPropertiesByState(state.demoAllProperties);
   state.panelCollapsed = false;
 
   app.innerHTML = `
     <section class="demo-page">
+      ${demoPublicTopbar()}
       <main class="map-layout demo-map-layout ${state.panelCollapsed ? "collapsed" : ""}" id="demoMapLayout">
         <aside class="left-panel" id="demoLeftPanel"></aside>
-        <div class="demo-map-wrap">
+        <div class="map-wrap demo-map-wrap">
           <div id="demoMap" class="map"></div>
+          <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
           <button class="open-left-panel-btn" id="openDemoLeftPanelBtn" aria-label="Открыть список">❯</button>
+          <div class="map-draw-tools">
+            <button class="map-draw-btn" type="button" id="mapDrawAreaBtn" title="Рисовать область">✍</button>
+          </div>
         </div>
       </main>
       <div class="demo-hero">
-        <h1>BrokerMap — платформа для брокеров недвижимости</h1>
-        <p>Демо-карта из 100 объектов по Москве. Нажмите на пин, откройте карточку и посмотрите, как это будет работать у вас.</p>
-        <div class="demo-hero-actions">
-          <button class="btn primary" id="demoLoginBtn">Войти</button>
-          <button class="btn" id="demoRegisterBtn">Регистрация</button>
-        </div>
+        <h1>Демо BrokerMap</h1>
+        <p>100 объектов по Москве. Сверху — те же фильтры, что в сервисе. Нажмите на <strong>точку на карте</strong>, откройте карточку или обведите район кистью.</p>
+        <p class="demo-hero-hint">После рисования область в приоритете над видимой частью карты (как в рабочей версии).</p>
       </div>
       <div class="demo-list panel">
         <div class="panel-head">
           <h3>Что внутри платформы</h3>
-          <span class="muted">Карта · Карточки · ЛК брокера · Админка</span>
+          <span class="muted">Карта · Фильтры · Карточки · Галереи · PDF · Личный кабинет</span>
         </div>
-        <p class="muted">Перед регистрацией можно посмотреть карту и открыть демо-объекты.</p>
+        <p class="muted">Сначала посмотрите демо, затем зарегистрируйтесь, чтобы публиковать свои объекты.</p>
       </div>
+      ${moreFiltersModalHtml()}
     </section>
   `;
 
-  const initDemoMap = () => {
-    if (!window.ymaps) {
-      setTimeout(initDemoMap, 300);
-      return;
+  bindBrandHomeButton();
+  document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
+  ensureMapDrawControls();
+
+  document.getElementById("moreFilters")?.addEventListener("click", () => {
+    document.getElementById("filtersModal")?.classList.add("open");
+  });
+  document.getElementById("closeModal")?.addEventListener("click", () => {
+    document.getElementById("filtersModal")?.classList.remove("open");
+  });
+  document.getElementById("applyMoreFilters")?.addEventListener("click", () => {
+    state.filters.floorMin = document.getElementById("filterFloorMin")?.value.trim() || "";
+    state.filters.floorMax = document.getElementById("filterFloorMax")?.value.trim() || "";
+    state.filters.totalFloorsMin = document.getElementById("filterTotalFloorsMin")?.value.trim() || "";
+    state.filters.totalFloorsMax = document.getElementById("filterTotalFloorsMax")?.value.trim() || "";
+    state.filters.ceilingHeightMin = document.getElementById("filterCeilingMin")?.value.trim() || "";
+    state.filters.finishing = document.getElementById("filterFinishing")?.value || "";
+    state.filters.readiness = document.getElementById("filterReadiness")?.value || "";
+    document.getElementById("filtersModal")?.classList.remove("open");
+    applyDemoFilters();
+  });
+  document.getElementById("resetMoreFilters")?.addEventListener("click", () => {
+    state.filters.floorMin = "";
+    state.filters.floorMax = "";
+    state.filters.totalFloorsMin = "";
+    state.filters.totalFloorsMax = "";
+    state.filters.ceilingHeightMin = "";
+    state.filters.finishing = "";
+    state.filters.readiness = "";
+    document.getElementById("filterFloorMin").value = "";
+    document.getElementById("filterFloorMax").value = "";
+    document.getElementById("filterTotalFloorsMin").value = "";
+    document.getElementById("filterTotalFloorsMax").value = "";
+    document.getElementById("filterCeilingMin").value = "";
+    document.getElementById("filterFinishing").value = "";
+    document.getElementById("filterReadiness").value = "";
+    document.getElementById("filtersModal")?.classList.remove("open");
+    applyDemoFilters();
+  });
+
+  document.getElementById("maxPrice")?.addEventListener("input", (e) => {
+    const raw = toRawNumberString(e.target.value);
+    state.filters.maxPrice = raw;
+    e.target.value = formatSpacedNumber(raw);
+    applyDemoFilters();
+  });
+  document.getElementById("minPrice")?.addEventListener("input", (e) => {
+    const raw = toRawNumberString(e.target.value);
+    state.filters.minPrice = raw;
+    e.target.value = formatSpacedNumber(raw);
+    applyDemoFilters();
+  });
+  document.getElementById("bedroomsFilter")?.addEventListener("change", (e) => {
+    state.filters.bedrooms = e.target.value;
+    applyDemoFilters();
+  });
+  document.getElementById("resetFilters")?.addEventListener("click", () => {
+    state.filters = {
+      minPrice: "",
+      maxPrice: "",
+      bedrooms: "",
+      floorMin: "",
+      floorMax: "",
+      totalFloorsMin: "",
+      totalFloorsMax: "",
+      ceilingHeightMin: "",
+      finishing: "",
+      readiness: ""
+    };
+    if (state.demoAllProperties && state.demoAllProperties.length) {
+      state.properties = filterPropertiesByState(state.demoAllProperties);
     }
-    ymaps.ready(() => {
-      const map = new ymaps.Map("demoMap", {
-        center: [55.751244, 37.618423],
-        zoom: 10,
-        controls: ["zoomControl"]
-      });
-      state.mapInstance = map;
-      map.events.add("boundschange", () => {
-        if (state.panelCollapsed) return;
-        if (state.viewportUpdateTimer) clearTimeout(state.viewportUpdateTimer);
-        state.viewportUpdateTimer = setTimeout(() => {
-          renderDemoViewportPanel();
-        }, 100);
-      });
-      demoItems.forEach((item) => {
-        const placemark = new ymaps.Placemark(
-          [item.lat, item.lon],
-          {
-            balloonContent: `${item.address}<br>${money(item.price)} ₽`
-          },
-          { preset: "islands#blueCircleDotIcon" }
-        );
-        placemark.events.add("click", () => showDemoGroup([item]));
-        map.geoObjects.add(placemark);
-      });
-      renderDemoViewportPanel();
-    });
-  };
-  initDemoMap();
+    clearAreaFilter();
+    document.getElementById("minPrice").value = "";
+    document.getElementById("maxPrice").value = "";
+    document.getElementById("bedroomsFilter").value = "";
+    if (document.getElementById("filterFloorMin")) {
+      document.getElementById("filterFloorMin").value = "";
+      document.getElementById("filterFloorMax").value = "";
+      document.getElementById("filterTotalFloorsMin").value = "";
+      document.getElementById("filterTotalFloorsMax").value = "";
+      document.getElementById("filterCeilingMin").value = "";
+      document.getElementById("filterFinishing").value = "";
+      document.getElementById("filterReadiness").value = "";
+    }
+  });
+
+  document.getElementById("demoAuthLogin")?.addEventListener("click", () => {
+    location.hash = "#/auth-form";
+  });
+  document.getElementById("demoAuthRegister")?.addEventListener("click", () => {
+    location.hash = "#/auth-register";
+  });
+
+  applyDemoFilters();
   document.getElementById("openDemoLeftPanelBtn")?.addEventListener("click", () => {
     state.panelCollapsed = false;
     document.getElementById("demoMapLayout")?.classList.remove("collapsed");
-    renderDemoViewportPanel();
+    if (state.areaPolygonCoords?.length) {
+      renderDemoAreaSelectionPanel();
+    } else {
+      renderDemoViewportPanel();
+    }
+    ensureMapDrawControls();
     refreshMapViewport();
-  });
-  bindDemoCardButtons();
-
-  document.getElementById("demoLoginBtn")?.addEventListener("click", () => {
-    location.hash = "#/auth-form";
-  });
-  document.getElementById("demoRegisterBtn")?.addEventListener("click", () => {
-    location.hash = "#/auth-register";
   });
 }
 
 function renderDemoPropertyPage(id) {
   setMapBodyClass(false);
-  const demoItems = createDemoProperties(100);
-  const property = demoItems.find((item) => item.id === id) || demoItems[0];
+  if (!state.demoAllProperties || !state.demoAllProperties.length) {
+    state.demoAllProperties = createDemoProperties(100);
+  }
+  const property = state.demoAllProperties.find((item) => item.id === id) || state.demoAllProperties[0];
   const galleryPhotos = (property.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
   app.innerHTML = `
     <section class="page">
@@ -539,55 +731,7 @@ function renderMapPage() {
         </div>
       </div>
     </main>
-    <div class="modal" id="filtersModal">
-      <div class="modal-card">
-        <h3>Дополнительные фильтры</h3>
-        <div class="form-grid">
-          <div class="field-block">
-            <label class="field-label" for="filterFloorMin">Этаж от</label>
-            <input id="filterFloorMin" type="number" min="1" value="${escapeHtml(state.filters.floorMin)}" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="filterFloorMax">Этаж до</label>
-            <input id="filterFloorMax" type="number" min="1" value="${escapeHtml(state.filters.floorMax)}" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="filterTotalFloorsMin">Этажей в доме от</label>
-            <input id="filterTotalFloorsMin" type="number" min="1" value="${escapeHtml(state.filters.totalFloorsMin)}" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="filterTotalFloorsMax">Этажей в доме до</label>
-            <input id="filterTotalFloorsMax" type="number" min="1" value="${escapeHtml(state.filters.totalFloorsMax)}" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="filterCeilingMin">Потолки от (м)</label>
-            <input id="filterCeilingMin" type="number" step="0.1" min="0" value="${escapeHtml(state.filters.ceilingHeightMin)}" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="filterFinishing">Отделка</label>
-            <select id="filterFinishing">
-              <option value="">Любая</option>
-              <option value="finished" ${state.filters.finishing === "finished" ? "selected" : ""}>С отделкой</option>
-              <option value="whitebox" ${state.filters.finishing === "whitebox" ? "selected" : ""}>Вайт бокс</option>
-              <option value="concrete" ${state.filters.finishing === "concrete" ? "selected" : ""}>Бетон</option>
-            </select>
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="filterReadiness">Готовность дома</label>
-            <select id="filterReadiness">
-              <option value="">Любая</option>
-              <option value="resale" ${state.filters.readiness === "resale" ? "selected" : ""}>Вторичка</option>
-              <option value="assignment" ${state.filters.readiness === "assignment" ? "selected" : ""}>Переуступка</option>
-            </select>
-          </div>
-        </div>
-        <p>
-          <button class="btn primary" id="applyMoreFilters">Применить</button>
-          <button class="btn" id="resetMoreFilters">Сбросить доп. фильтры</button>
-          <button class="btn" id="closeModal">Закрыть</button>
-        </p>
-      </div>
-    </div>
+    ${moreFiltersModalHtml()}
   `;
 
   bindBrandHomeButton();
@@ -773,6 +917,23 @@ function syncDrawButtons() {
   }
 }
 
+function setDemoDefaultLeftPanel() {
+  const panel = document.getElementById("demoLeftPanel");
+  if (!panel) return;
+  panel.innerHTML = `
+    <div class="left-panel-head">
+      <h3>Нажмите на точку на карте</h3>
+      <button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button>
+    </div>
+  `;
+  document.getElementById("closeDemoLeftPanel")?.addEventListener("click", () => {
+    state.panelCollapsed = true;
+    document.getElementById("demoMapLayout")?.classList.add("collapsed");
+    ensureMapDrawControls();
+    refreshMapViewport();
+  });
+}
+
 function clearAreaFilter() {
   stopAreaDrawing();
   state.areaPolygonCoords = null;
@@ -780,23 +941,28 @@ function clearAreaFilter() {
     state.mapInstance.geoObjects.remove(state.areaPolygonObject);
   }
   state.areaPolygonObject = null;
-  const panel = document.getElementById("leftPanel");
+  const isDemo = Boolean(document.getElementById("demoMapLayout"));
+  const panel = isDemo ? document.getElementById("demoLeftPanel") : document.getElementById("leftPanel");
   if (panel) {
-    panel.innerHTML = `
-      <div class="left-panel-head">
-        <h3>Выберите объект на карте</h3>
-        <button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button>
-      </div>
-    `;
-    document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
-      state.panelCollapsed = true;
-      document.getElementById("mapLayout")?.classList.add("collapsed");
-      ensureMapDrawControls();
-      refreshMapViewport();
-    });
+    if (isDemo) {
+      setDemoDefaultLeftPanel();
+    } else {
+      panel.innerHTML = `
+        <div class="left-panel-head">
+          <h3>Выберите объект на карте</h3>
+          <button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button>
+        </div>
+      `;
+      document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
+        state.panelCollapsed = true;
+        document.getElementById("mapLayout")?.classList.add("collapsed");
+        ensureMapDrawControls();
+        refreshMapViewport();
+      });
+    }
   }
-  if (state.mapInstance && document.getElementById("map")) {
-    initMap();
+  if (state.mapInstance && (document.getElementById("map") || document.getElementById("demoMap"))) {
+    reinitActiveMap();
   }
 }
 
@@ -933,7 +1099,7 @@ function startAreaDrawing() {
     state.areaPolygonCoords = [polygonGeo];
     resetDrawCanvas();
     stopAreaDrawing();
-    initMap();
+    reinitActiveMap();
   };
 
   state.areaDrawHandlers = { onPointerDown, onPointerMove, onPointerUp };
@@ -943,18 +1109,26 @@ function startAreaDrawing() {
   canvas.addEventListener("pointercancel", onPointerUp);
 }
 
-async function loadMapData() {
-  const query = new URLSearchParams();
-  if (state.filters.minPrice) query.append("minPrice", toRawNumberString(state.filters.minPrice));
-  if (state.filters.maxPrice) query.append("maxPrice", toRawNumberString(state.filters.maxPrice));
-  if (state.filters.bedrooms) query.append("bedrooms", state.filters.bedrooms);
-  const list = await api(`/api/properties?${query.toString()}`);
+function filterPropertiesByState(list) {
+  const rawMin = toRawNumberString(state.filters.minPrice);
+  const rawMax = toRawNumberString(state.filters.maxPrice);
+  const minP = rawMin ? Number(rawMin) : 0;
+  const maxP = rawMax ? Number(rawMax) : Number.MAX_SAFE_INTEGER;
   const floorMin = Number(state.filters.floorMin || 0);
   const floorMax = Number(state.filters.floorMax || Number.MAX_SAFE_INTEGER);
   const totalFloorsMin = Number(state.filters.totalFloorsMin || 0);
   const totalFloorsMax = Number(state.filters.totalFloorsMax || Number.MAX_SAFE_INTEGER);
   const ceilingHeightMin = Number(state.filters.ceilingHeightMin || 0);
-  state.properties = list.filter((item) => {
+  return list.filter((item) => {
+    const price = Number(item.price || 0);
+    if (price < minP || price > maxP) return false;
+    const brF = state.filters.bedrooms;
+    if (brF) {
+      const n = Number(item.bedrooms || 0);
+      if (brF === "4") {
+        if (n < 4) return false;
+      } else if (String(n) !== brF) return false;
+    }
     const floor = Number(item.floor || 0);
     const totalFloors = Number(item.totalFloors || 0);
     const ceilingHeight = Number(item.ceilingHeight || 0);
@@ -965,6 +1139,15 @@ async function loadMapData() {
     const byReadiness = state.filters.readiness ? item.readiness === state.filters.readiness : true;
     return byFloor && byTotalFloors && byCeiling && byFinishing && byReadiness;
   });
+}
+
+async function loadMapData() {
+  const query = new URLSearchParams();
+  if (state.filters.minPrice) query.append("minPrice", toRawNumberString(state.filters.minPrice));
+  if (state.filters.maxPrice) query.append("maxPrice", toRawNumberString(state.filters.maxPrice));
+  if (state.filters.bedrooms) query.append("bedrooms", state.filters.bedrooms);
+  const list = await api(`/api/properties?${query.toString()}`);
+  state.properties = filterPropertiesByState(list);
   initMap();
 }
 
@@ -1085,6 +1268,99 @@ function initMap() {
       state.areaPolygonObject = null;
       if (!state.panelCollapsed) {
         renderViewportPanel();
+      }
+    }
+    ensureMapDrawControls();
+  };
+
+  if (window.ymaps) {
+    ymaps.ready(ensureMap);
+  }
+}
+
+function reinitActiveMap() {
+  if (document.getElementById("demoMap")) {
+    initDemoMap();
+  } else {
+    initMap();
+  }
+}
+
+function initDemoMap() {
+  const ensureMap = () => {
+    if (state.mapInstance) {
+      state.mapView = {
+        center: state.mapInstance.getCenter(),
+        zoom: state.mapInstance.getZoom()
+      };
+    }
+    const grouped = groupByHouse(getAreaFilteredProperties());
+    if (state.mapInstance) {
+      state.mapInstance.destroy();
+      state.mapInstance = null;
+    }
+
+    const map = new ymaps.Map("demoMap", {
+      center: state.mapView?.center || [55.751244, 37.618423],
+      zoom: state.mapView?.zoom || 5,
+      controls: ["zoomControl"]
+    });
+    state.mapInstance = map;
+    map.events.add("boundschange", () => {
+      state.mapView = {
+        center: map.getCenter(),
+        zoom: map.getZoom()
+      };
+      if (state.areaDrawMode) return;
+      if (state.panelCollapsed) return;
+      if (state.viewportUpdateTimer) {
+        clearTimeout(state.viewportUpdateTimer);
+      }
+      state.viewportUpdateTimer = setTimeout(() => {
+        if (state.areaPolygonCoords?.length) {
+          renderDemoAreaSelectionPanel();
+        } else {
+          renderDemoViewportPanel();
+        }
+      }, 120);
+    });
+
+    grouped.forEach((group) => {
+      const top = group.sort((a, b) => b.commissionPartner - a.commissionPartner)[0];
+      const placemark = new ymaps.Placemark(
+        [top.lat, top.lon],
+        {
+          balloonContent: `${group.length} объект(а)`,
+          hintContent: `${group.length} объект(а) по адресу`,
+          iconContent: String(group.length)
+        },
+        {
+          preset: top.commissionPartner >= 4 ? "islands#orangeCircleIcon" : "islands#blueCircleIcon"
+        }
+      );
+      placemark.events.add("click", () => showDemoGroup(group));
+      map.geoObjects.add(placemark);
+    });
+
+    if (state.areaPolygonCoords?.length) {
+      const polygon = new ymaps.Polygon(
+        state.areaPolygonCoords,
+        {},
+        {
+          fillColor: "rgba(23,96,255,0.15)",
+          strokeColor: "#1760ff",
+          strokeWidth: 2
+        }
+      );
+      map.geoObjects.add(polygon);
+      state.areaPolygonObject = polygon;
+      if (!state.panelCollapsed) {
+        renderDemoAreaSelectionPanel();
+      }
+    } else {
+      state.areaPolygonObject = null;
+      if (!state.panelCollapsed) {
+        renderDemoViewportPanel();
       }
     }
     ensureMapDrawControls();
