@@ -513,6 +513,18 @@ function demoLeftPanelHandleHtml() {
   </div>`;
 }
 
+function updateDemoOpenPanelButton() {
+  const btn = document.getElementById("openDemoLeftPanelBtn");
+  if (!btn) return;
+  if (state.panelCollapsed) {
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("aria-hidden", "false");
+  } else {
+    btn.setAttribute("aria-expanded", "true");
+    btn.setAttribute("aria-hidden", "true");
+  }
+}
+
 function demoCollapseLeftPanel() {
   state.panelCollapsed = true;
   document.getElementById("demoMapLayout")?.classList.add("collapsed");
@@ -521,6 +533,7 @@ function demoCollapseLeftPanel() {
     p.classList.remove("left-panel--drag");
     p.style.removeProperty("transform");
   }
+  updateDemoOpenPanelButton();
   ensureMapDrawControls();
   refreshMapViewport();
 }
@@ -560,6 +573,7 @@ function renderDemoAreaSelectionPanel() {
 function showDemoGroup(properties) {
   state.panelCollapsed = false;
   document.getElementById("demoMapLayout")?.classList.remove("collapsed");
+  updateDemoOpenPanelButton();
   refreshMapViewport();
   const sorted = properties.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
   renderDemoPanel(sorted, "Объектов в точке");
@@ -597,10 +611,23 @@ function renderPublicDemoPage() {
         <div class="map-wrap demo-map-wrap">
           <div id="demoMap" class="map"></div>
           <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
-          <button class="open-left-panel-btn" id="openDemoLeftPanelBtn" aria-label="Открыть список">❯</button>
+          <button
+            class="open-left-panel-btn open-left-panel-btn--demo"
+            type="button"
+            id="openDemoLeftPanelBtn"
+            aria-label="Открыть список объектов"
+            aria-controls="demoLeftPanel"
+            aria-expanded="false"
+            aria-hidden="true"
+          >
+            <span class="open-left-panel-ico open-left-panel-ico--mob" aria-hidden="true">▲</span>
+            <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
+            <span class="open-left-panel-label">Список</span>
+          </button>
           <div class="map-draw-tools">
             <button class="map-draw-btn" type="button" id="mapDrawAreaBtn" title="Рисовать область">✍</button>
           </div>
+          <div class="demo-left-panel-scrim" id="demoLeftPanelScrim" aria-hidden="true"></div>
         </div>
       </main>
       <div class="demo-hero">
@@ -714,7 +741,7 @@ function renderPublicDemoPage() {
   });
 
   applyDemoFilters();
-  document.getElementById("openDemoLeftPanelBtn")?.addEventListener("click", () => {
+  function openDemoLeftPanel() {
     state.panelCollapsed = false;
     const layout = document.getElementById("demoMapLayout");
     layout?.classList.remove("collapsed");
@@ -725,10 +752,19 @@ function renderPublicDemoPage() {
     } else {
       renderDemoViewportPanel();
     }
+    updateDemoOpenPanelButton();
     ensureMapDrawControls();
     refreshMapViewport();
+  }
+
+  document.getElementById("openDemoLeftPanelBtn")?.addEventListener("click", openDemoLeftPanel);
+  document.getElementById("demoLeftPanelScrim")?.addEventListener("click", () => {
+    if (window.matchMedia("(max-width: 900px)").matches) {
+      demoCollapseLeftPanel();
+    }
   });
 
+  updateDemoOpenPanelButton();
   bindDemoLeftPanelSwipe();
 }
 
