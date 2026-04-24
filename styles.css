@@ -357,6 +357,19 @@ body.view-map #app {
   background: #eff4ff;
 }
 
+/* Демо: плашка «Демо BrokerMap» вверху справа — кисть смещена вниз, не перекрывает текст */
+.demo-page .map-wrap .map-draw-tools {
+  top: 200px;
+  right: 14px;
+  bottom: auto;
+}
+
+@media (max-width: 900px) {
+  .demo-page .map-wrap .map-draw-tools {
+    top: 14px;
+  }
+}
+
 .card {
   border: 1px solid var(--border);
   border-radius: 14px;

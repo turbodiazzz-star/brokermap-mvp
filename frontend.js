@@ -28,8 +28,12 @@ const state = {
     readiness: ""
   },
   /** Фиксированный набор демо-объектов на сессию (фильтры не меняют «источник») */
-  demoAllProperties: null
+  demoAllProperties: null,
+  /** увеличивать, чтобы сбросить кэш демо после смены логики точек/адресов */
+  demoDataVersion: 0
 };
+
+const CURRENT_DEMO_DATA_VERSION = 2;
 
 let didSyncUserFromServer = false;
 
@@ -383,22 +387,86 @@ function setMapBodyClass(isMap) {
 const MOSCOW_DEFAULT_CENTER = [55.751244, 37.618423];
 const MOSCOW_DEFAULT_ZOOM = 11;
 
-/** Адреса вдоль реальных осьмых улиц: координаты линейно вдоль сегмента (для демо совпадают с пином). */
-const DEMO_MOSCOW_SEGMENTS = [
-  { street: "Тверская улица", from: [55.7558, 37.6173], to: [55.767, 37.604], houses: [4, 6, 10, 14, 17, 18, 20, 22, 24, 26] },
-  { street: "Ленинский проспект", from: [55.7075, 37.5755], to: [55.655, 37.5], houses: [12, 24, 38, 45, 57, 66, 78, 88, 95, 123] },
-  { street: "Кутузовский проспект", from: [55.7415, 37.534], to: [55.726, 37.456], houses: [15, 23, 33, 41, 55, 67, 82, 95, 108, 124] },
-  { street: "Проспект Мира", from: [55.7785, 37.631], to: [55.826, 37.64], houses: [5, 12, 25, 36, 48, 64, 72, 88, 102, 120] },
-  { street: "Ленинградский проспект", from: [55.7775, 37.5805], to: [55.819, 37.52], houses: [8, 18, 29, 36, 45, 58, 66, 79, 90, 105] },
-  { street: "Мичуринский проспект", from: [55.696, 37.499], to: [55.665, 37.45], houses: [3, 9, 15, 25, 31, 44, 56, 63, 77, 89] },
-  { street: "Варшавское шоссе", from: [55.64, 37.625], to: [55.58, 37.6], houses: [10, 22, 35, 48, 56, 68, 77, 90, 102, 118] },
-  { street: "Профсоюзная улица", from: [55.666, 37.555], to: [55.618, 37.512], houses: [7, 15, 28, 36, 44, 52, 61, 73, 84, 95] },
-  { street: "Садовая-Самотёчная улица", from: [55.772, 37.61], to: [55.768, 37.6], houses: [1, 3, 5, 7, 9, 11, 13, 15, 17, 19] },
-  { street: "Новый Арбат", from: [55.7525, 37.588], to: [55.749, 37.5805], houses: [5, 8, 11, 15, 19, 22, 26, 29, 33, 36] }
+/** Ориентировочный прямоугольник внутри Москвы (равномерный «разброс» по карте). */
+const MOSCOW_DEMO_BBOX = { minLat: 55.57, maxLat: 55.835, minLon: 37.38, maxLon: 37.88 };
+
+const MOSCOW_DEMO_STREETS = [
+  "Тверская улица",
+  "Кутузовский проспект",
+  "Ленинский проспект",
+  "Проспект Мира",
+  "Ленинградский проспект",
+  "Мичуринский проспект",
+  "Варшавское шоссе",
+  "Профсоюзная улица",
+  "Новый Арбат",
+  "Садовая-Самотёчная улица",
+  "Новослободская улица",
+  "Пятницкая улица",
+  "Рублёвское шоссе",
+  "Мосфильмовская улица",
+  "Улица Академика Королёва",
+  "Бескудниковский бульвар",
+  "Дмитровское шоссе",
+  "Алтуфьевское шоссе",
+  "Ярославское шоссе",
+  "Открытое шоссе",
+  "Щёлковское шоссе",
+  "Измайловское шоссе",
+  "Рязанский проспект",
+  "Каширское шоссе",
+  "Пятницкое шоссе",
+  "Можайское шоссе",
+  "Боровское шоссе",
+  "Сколковское шоссе",
+  "Аминьевское шоссе",
+  "Улица Маршала Тимошенко",
+  "Улица 1812 года",
+  "Улица Крупской",
+  "Староконюшенный переулок",
+  "Остоженка",
+  "Пречистенка",
+  "Большая Якиманка",
+  "Рочдельская улица",
+  "Береговой проезд",
+  "Савёловская улица",
+  "Беговая улица",
+  "3-я Хорошёвская улица",
+  "Улица Барклая",
+  "Университетский проспект",
+  "Ломоносовский проспект",
+  "Улица Грина",
+  "Симоновский вал",
+  "Волгоградский проспект",
+  "Перовское шоссе",
+  "Братиславская улица",
+  "Марьинский бульвар",
+  "Снежная улица",
+  "Свободы улица",
+  "Сходненская улица",
+  "Планерная улица",
+  "Улица Народного Ополчения"
 ];
 
-function lerp(a, b, t) {
-  return a + (b - a) * t;
+function randomPointInMoscowDemoBox() {
+  const b = MOSCOW_DEMO_BBOX;
+  return {
+    lat: b.minLat + Math.random() * (b.maxLat - b.minLat),
+    lon: b.minLon + Math.random() * (b.maxLon - b.minLon)
+  };
+}
+
+function randomMoscowStyleAddress() {
+  const street = MOSCOW_DEMO_STREETS[Math.floor(Math.random() * MOSCOW_DEMO_STREETS.length)];
+  const house = 1 + Math.floor(Math.random() * 135);
+  if (Math.random() < 0.18) {
+    const k = 1 + Math.floor(Math.random() * 3);
+    return `Москва, ${street}, ${house}к${k}`;
+  }
+  if (Math.random() < 0.12) {
+    return `Москва, ${street}, ${house}, корп. ${1 + Math.floor(Math.random() * 3)}`;
+  }
+  return `Москва, ${street}, ${house}`;
 }
 
 function priceRoundedThousands(value) {
@@ -422,17 +490,10 @@ function createDemoProperties(count = 100) {
   ];
   const finishingOptions = ["finished", "whitebox", "concrete"];
   const readinessOptions = ["resale", "assignment"];
-  const nSeg = DEMO_MOSCOW_SEGMENTS.length;
-  const perSeg = 10;
   const demo = [];
   for (let i = 0; i < count; i++) {
-    const slot = i % (nSeg * perSeg);
-    const seg = DEMO_MOSCOW_SEGMENTS[Math.floor(slot / perSeg)];
-    const houseIndex = slot % perSeg;
-    const t = houseIndex / (perSeg - 1);
-    const lat = lerp(seg.from[0], seg.to[0], t);
-    const lon = lerp(seg.from[1], seg.to[1], t);
-    const address = `Москва, ${seg.street}, ${seg.houses[houseIndex]}`;
+    const { lat, lon } = randomPointInMoscowDemoBox();
+    const address = randomMoscowStyleAddress();
     const priceBase = priceRoundedThousands(12_000_000 + (i * 601_001) % 59_000_000);
     demo.push({
       id: `demo-${i + 1}`,
@@ -543,6 +604,10 @@ function applyDemoFilters() {
 
 function renderPublicDemoPage() {
   setMapBodyClass(true);
+  if (state.demoDataVersion !== CURRENT_DEMO_DATA_VERSION) {
+    state.demoAllProperties = null;
+    state.demoDataVersion = CURRENT_DEMO_DATA_VERSION;
+  }
   if (!state.demoAllProperties || !state.demoAllProperties.length) {
     state.demoAllProperties = createDemoProperties(100);
   }
