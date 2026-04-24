@@ -1739,21 +1739,38 @@ function setupAddressSuggest() {
   };
 
   const requestSuggestions = (value) => {
-    if (!value || value.length < 3 || !window.ymaps || typeof ymaps.suggest !== "function") {
+    if (!value || value.length < 3 || !window.ymaps || typeof ymaps.geocode !== "function") {
       hideSuggestList();
       return;
     }
     const requestId = ++suggestRequestId;
-    ymaps
-      .suggest(value, { results: 6 })
-      .then((items) => {
+    ymaps.geocode(value, { results: 6 }).then(
+      (result) => {
         if (requestId !== suggestRequestId) return;
-        showSuggestList(Array.isArray(items) ? items : []);
-      })
-      .catch(() => {
+        const list = [];
+        result.geoObjects.each((geoObject) => {
+          const line = geoObject.getAddressLine();
+          if (!line) return;
+          list.push({
+            value: line,
+            description: geoObject.properties?.get("text") || ""
+          });
+        });
+        const unique = [];
+        const seen = new Set();
+        for (const item of list) {
+          const key = String(item.value).trim().toLowerCase();
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          unique.push(item);
+        }
+        showSuggestList(unique);
+      },
+      () => {
         if (requestId !== suggestRequestId) return;
         hideSuggestList();
-      });
+      }
+    );
   };
 
   addressInput.addEventListener("input", () => {
