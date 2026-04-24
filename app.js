@@ -161,6 +161,21 @@ function resolvePropertyPhotoPath(photoUrl) {
   return null;
 }
 
+function normalizePdfText(value) {
+  const text = String(value ?? "");
+  if (!text) return "";
+  const suspicious = /[ÐÑÃÂ]/.test(text);
+  if (!suspicious) return text;
+  try {
+    const converted = Buffer.from(text, "latin1").toString("utf8");
+    const cyrCount = (converted.match(/[А-Яа-яЁё]/g) || []).length;
+    const srcCyrCount = (text.match(/[А-Яа-яЁё]/g) || []).length;
+    return cyrCount > srcCyrCount ? converted : text;
+  } catch {
+    return text;
+  }
+}
+
 async function generatePresentationPdf(property) {
   const filename = `auto-${property.id}.pdf`;
   const filePath = path.join(PDFS_DIR, filename);
@@ -178,6 +193,9 @@ async function generatePresentationPdf(property) {
       doc.font(unicodeFontPath);
     }
 
+    const titleText = normalizePdfText(property.title || "Объект недвижимости");
+    const addressText = normalizePdfText(property.address || "Адрес не указан");
+    const descriptionText = normalizePdfText(property.description || "");
     const mainPhotoPath = resolvePropertyPhotoPath(Array.isArray(property.photos) ? property.photos[0] : null);
     if (mainPhotoPath) {
       try {
@@ -195,7 +213,9 @@ async function generatePresentationPdf(property) {
     doc.fillColor("#111");
     doc.fontSize(30).text(`${money(property.price)} ₽`, { align: "left" });
     doc.moveDown(0.3);
-    doc.fontSize(20).text(property.address || "Адрес не указан", { align: "left" });
+    doc.fontSize(18).text(titleText, { align: "left" });
+    doc.moveDown(0.2);
+    doc.fontSize(13).fillColor("#2f3b52").text(addressText, { align: "left" });
     doc.moveDown(0.8);
 
     doc.fontSize(13).fillColor("#2f3b52").text(`Площадь: ${property.area ?? "-"} м²`);
@@ -206,11 +226,11 @@ async function generatePresentationPdf(property) {
     doc.text(`Отделка: ${finishingLabel(property.finishing)}`);
     doc.text(`Готовность дома: ${readinessLabel(property.readiness)}`);
 
-    if (property.description) {
+    if (descriptionText) {
       doc.moveDown(0.8);
       doc.fontSize(13).fillColor("#1f2a44").text("Описание");
       doc.moveDown(0.2);
-      doc.fontSize(11).fillColor("#3a4660").text(property.description, {
+      doc.fontSize(11).fillColor("#3a4660").text(descriptionText, {
         width: doc.page.width - doc.page.margins.left - doc.page.margins.right,
         align: "left"
       });
