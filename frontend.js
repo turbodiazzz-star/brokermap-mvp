@@ -515,13 +515,19 @@ function leftPanelHandleHtml(handleAreaId) {
   </div>`;
 }
 
-/** Скролл списка (моб.): ручка и шапка внутри — при прокрутке уходят вверх вместе с лентой */
-function leftPanelScrollWrap(innerHtml) {
-  return `<div class="left-panel__scroll" data-left-scroll>${innerHtml}</div>`;
+/** Один трек без внутр. scroll — положение ленты задаётся transform на всём блоке, палец 1:1 */
+function leftPanelTrackWrap(innerHtml) {
+  return `<div class="left-panel__track" data-sheet-track>${innerHtml}</div>`;
 }
 
 function leftPanelMobileBlock(handleAreaId, headHtml, bodyHtml) {
-  return leftPanelScrollWrap(leftPanelHandleHtml(handleAreaId) + headHtml + bodyHtml);
+  return leftPanelTrackWrap(leftPanelHandleHtml(handleAreaId) + headHtml + bodyHtml);
+}
+
+/** Узел с transform: внутр. трек (контент), не внешний clip — тогда «окно» стоит, едет лента */
+function getSheetNode(panel) {
+  if (!panel) return null;
+  return panel.querySelector("[data-sheet-track]") || panel;
 }
 
 function getPanelTranslateY(el) {
@@ -556,19 +562,23 @@ function setPanelTranslateY(el, y, withTransition) {
 }
 
 /**
- * t = 0 — максимум вверх; t растёт — панель уезжает вниз.
+ * t = 0 — верх трека у верхнего края окна; t растёт — весь блок уезжает вниз (лента, ручка, шапка вместе).
+ * clipH — высота «окна» панели, H — полная высота трека с контентом.
  */
 function getSheetGeometry(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return null;
   const vh = window.innerHeight;
-  const h = Math.max(1, Math.round(panel.offsetHeight));
+  const track = panel.querySelector("[data-sheet-track]");
+  const H = track ? Math.max(1, Math.round(track.offsetHeight)) : Math.max(1, Math.round(panel.offsetHeight));
+  const clipH = Math.max(1, Math.round(panel.clientHeight));
   const PEEK = 64;
-  const tPeek = Math.max(0, h - PEEK);
-  const tMid = Math.max(0, h - 0.5 * vh);
-  return { h, tPeek, tMid, tMax: tPeek, vh };
+  const tPeekStrip = Math.max(0, clipH - PEEK);
+  const tScrollMax = Math.max(0, H - clipH);
+  const tMax = Math.max(tScrollMax, tPeekStrip);
+  const tMid = Math.max(0, clipH - 0.5 * vh);
+  return { h: H, clipH, tPeek: tPeekStrip, tScrollMax, tMax, tMid, vh };
 }
 
-/** Упругое сопротивление у 0 и tMax (во время жеста) */
 function sheetRubber(t, g) {
   if (!g) return t;
   if (t < 0) return t * 0.32;
@@ -582,14 +592,13 @@ function clampSheetT(t, g) {
 }
 
 /**
- * Моб. нижний лист: тянем за любую область; в [data-left-scroll] — ручка, шапка и лента (цельный скролл);
- * пока лента не в самом верху — двигается скролл; у верхней границы — снова движется вся панель.
- * Отпускание: фиксируем высоту как есть, с мягким дожатием; пружина — в CSS.
+ * Моб. нижний лист: один transform на весь блок (трек внутри clip), без внутр. scroll — блок едет с пальцем 1:1.
  */
 function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   const panel = document.getElementById(panelId);
   if (!panel || panel.dataset.mobileSheetBound === "1") return;
   const layout = () => document.getElementById(layoutId);
+  const sheetEl = () => getSheetNode(panel);
   const mq = () => window.matchMedia("(max-width: 900px)").matches;
 
   let startY = 0;
@@ -606,34 +615,23 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const L = layout();
     if (!L) return;
     if (e.target.closest("button.close-left-panel")) return;
+    const s = sheetEl();
+    if (!s) return;
     startY = e.clientY;
-    startT = getPanelTranslateY(panel);
+    startT = getPanelTranslateY(s);
     mode = "decide";
     activeId = e.pointerId;
     fromOpenBtn = Boolean(e.target.closest(".open-left-panel-btn--sheet, #openLeftPanelBtn, #openDemoLeftPanelBtn"));
   };
 
   const onPointerMove = (e) => {
-    if (mode === "idle" || mode === "scroll") return;
+    if (mode === "idle") return;
     if (e.pointerId != null && e.pointerId !== activeId) return;
     if (!mq()) return;
     const rawDy = e.clientY - startY;
     if (mode === "decide" && Math.abs(rawDy) < 5) return;
 
-    const scrollEl = panel.querySelector("[data-left-scroll]");
-    if (mode === "decide" && scrollEl) {
-      const st = scrollEl.scrollTop;
-      const maxS = Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight);
-      if (st > 2) {
-        mode = "scroll";
-        return;
-      }
-      const g0 = getSheetGeometry(panel);
-      const sheetFullUp = g0 && startT < 8;
-      if (st <= 2 && maxS > 2 && sheetFullUp && rawDy < 0) {
-        mode = "scroll";
-        return;
-      }
+    if (mode === "decide") {
       if (isInteractiveOpen(e.target) && !fromOpenBtn && Math.abs(rawDy) < 18) {
         return;
       }
@@ -646,24 +644,20 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       } catch (_) {
         /* */
       }
-      panel.classList.add("left-panel--sheet-live");
+      const s0 = sheetEl();
+      s0?.classList.add("left-panel--sheet-live");
     }
     if (mode !== "sheet") return;
+    const s = sheetEl();
+    if (!s) return;
     const g = getSheetGeometry(panel);
     if (!g) return;
     const t = sheetRubber(startT + (e.clientY - startY), g);
-    setPanelTranslateY(panel, t, false);
+    setPanelTranslateY(s, t, false);
   };
 
   const onPointerUp = (e) => {
     const L = layout();
-
-    if (mode === "scroll") {
-      activeId = null;
-      mode = "idle";
-      fromOpenBtn = false;
-      return;
-    }
 
     if (
       mode === "decide" &&
@@ -679,7 +673,10 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
           state.panelSheetT != null
             ? clampSheetT(state.panelSheetT, g0)
             : g0.tMid;
-        setPanelTranslateY(panel, tOpen, true);
+        const s0 = getSheetNode(panel);
+        if (s0) {
+          setPanelTranslateY(s0, tOpen, true);
+        }
         state.panelSheetT = tOpen;
         if (isDemo) {
           updateDemoOpenPanelButton();
@@ -695,12 +692,19 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
 
     if (mode === "sheet") {
       e.preventDefault();
-      const rawT = getPanelTranslateY(panel);
+      const s = sheetEl();
+      if (!s) {
+        activeId = null;
+        mode = "idle";
+        fromOpenBtn = false;
+        return;
+      }
+      const rawT = getPanelTranslateY(s);
       const g = getSheetGeometry(panel);
       if (g) {
         const snap = clampSheetT(rawT, g);
-        const atPeek = snap >= g.tMax - 4;
-        setPanelTranslateY(panel, snap, true);
+        const atPeek = Math.abs(snap - g.tPeek) < 8;
+        setPanelTranslateY(s, snap, true);
         state.panelCollapsed = atPeek;
         if (!atPeek) {
           state.panelSheetT = snap;
@@ -729,17 +733,11 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     activeId = null;
     mode = "idle";
     fromOpenBtn = false;
-    panel.classList.remove("left-panel--sheet-live");
+    sheetEl()?.classList.remove("left-panel--sheet-live");
   };
 
   const onPointerCancel = (e) => {
     if (e.pointerId === activeId) {
-      if (mode === "scroll") {
-        mode = "idle";
-        fromOpenBtn = false;
-        activeId = null;
-        return;
-      }
       if (mode === "sheet") {
         onPointerUp(e);
         return;
@@ -783,8 +781,10 @@ function updateMapOpenPanelButton() {
 
 function mobileSheetSettleAfterRender(panel, layout) {
   if (!panel) return;
+  const s = getSheetNode(panel);
+  if (!s) return;
   if (!window.matchMedia("(max-width: 900px)").matches) {
-    setPanelTranslateY(panel, 0, false);
+    setPanelTranslateY(s, 0, false);
     return;
   }
   requestAnimationFrame(() => {
@@ -794,7 +794,7 @@ function mobileSheetSettleAfterRender(panel, layout) {
     if (state.panelCollapsed) t = g.tPeek;
     else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
     else t = g.tMid;
-    setPanelTranslateY(panel, t, true);
+    setPanelTranslateY(s, t, true);
   });
 }
 
@@ -804,10 +804,13 @@ function mapCollapseLeftPanel() {
   const p = document.getElementById("leftPanel");
   layout?.classList.add("collapsed");
   if (p) {
-    p.classList.remove("left-panel--sheet-live");
+    getSheetNode(p)?.classList.remove("left-panel--sheet-live");
     const g = getSheetGeometry(p);
     if (g) {
-      setPanelTranslateY(p, g.tPeek, true);
+      const s = getSheetNode(p);
+      if (s) {
+        setPanelTranslateY(s, g.tPeek, true);
+      }
     }
   }
   updateMapOpenPanelButton();
@@ -821,7 +824,9 @@ function openMapLeftPanel() {
   const layout = document.getElementById("mapLayout");
   layout?.classList.remove("collapsed");
   const p = document.getElementById("leftPanel");
-  if (p) p.classList.remove("left-panel--sheet-live");
+  if (p) {
+    getSheetNode(p)?.classList.remove("left-panel--sheet-live");
+  }
   if (state.areaPolygonCoords?.length) {
     renderAreaSelectionPanel(getAreaFilteredProperties());
   } else {
@@ -857,10 +862,13 @@ function demoCollapseLeftPanel() {
   const p = document.getElementById("demoLeftPanel");
   layout?.classList.add("collapsed");
   if (p) {
-    p.classList.remove("left-panel--sheet-live");
+    getSheetNode(p)?.classList.remove("left-panel--sheet-live");
     const g = getSheetGeometry(p);
     if (g) {
-      setPanelTranslateY(p, g.tPeek, true);
+      const s = getSheetNode(p);
+      if (s) {
+        setPanelTranslateY(s, g.tPeek, true);
+      }
     }
   }
   updateDemoOpenPanelButton();
@@ -1111,7 +1119,9 @@ function renderPublicDemoPage() {
     const layout = document.getElementById("demoMapLayout");
     layout?.classList.remove("collapsed");
     const p = document.getElementById("demoLeftPanel");
-    if (p) p.classList.remove("left-panel--sheet-live");
+    if (p) {
+      getSheetNode(p)?.classList.remove("left-panel--sheet-live");
+    }
     if (state.areaPolygonCoords?.length) {
       renderDemoAreaSelectionPanel();
     } else {

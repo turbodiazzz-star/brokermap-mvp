@@ -1132,19 +1132,16 @@ textarea {
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     -webkit-overflow-scrolling: touch;
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
     max-height: min(96dvh, 96svh);
-    will-change: transform;
   }
 
-  .map-page .map-layout--app-sheet .left-panel.left-panel--sheet-anim,
-  .demo-page .map-layout--app-sheet .left-panel.left-panel--sheet-anim {
+  .map-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-anim,
+  .demo-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-anim {
     transition: transform 0.48s cubic-bezier(0.32, 1.16, 0.34, 1);
   }
 
-  .map-page .map-layout--app-sheet .left-panel.left-panel--sheet-live,
-  .demo-page .map-layout--app-sheet .left-panel.left-panel--sheet-live {
+  .map-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-live,
+  .demo-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-live {
     transition: none !important;
   }
 
@@ -1189,13 +1186,11 @@ textarea {
     flex-shrink: 0;
   }
 
-  .map-page .map-layout--app-sheet .left-panel__scroll,
-  .demo-page .map-layout--app-sheet .left-panel__scroll {
-    flex: 1 1 auto;
+  .map-page .map-layout--app-sheet .left-panel__track,
+  .demo-page .map-layout--app-sheet .left-panel__track {
+    will-change: transform;
     min-height: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
   }
 
   .grid-2 {
