@@ -1082,16 +1082,6 @@ textarea {
     display: none !important;
   }
 
-  .map-page .map-layout--app-sheet.collapsed .map-sheet-peek,
-  .demo-page .map-layout--app-sheet.collapsed .map-sheet-peek {
-    display: flex;
-  }
-
-  .map-page .map-layout--app-sheet:not(.collapsed) .map-sheet-peek,
-  .demo-page .map-layout--app-sheet:not(.collapsed) .map-sheet-peek {
-    display: none !important;
-  }
-
   .open-left-panel-btn--sheet .open-left-panel-ico--desk {
     display: none !important;
   }
@@ -1141,23 +1131,21 @@ textarea {
     padding: 0 12px 12px;
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     -webkit-overflow-scrolling: touch;
-    overflow: auto;
-    transition: max-height 0.32s ease, transform 0.22s ease, visibility 0.22s ease;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    max-height: min(96dvh, 96svh);
+    will-change: transform;
   }
 
-  .map-page .map-layout--app-sheet .left-panel.left-panel--snap-mid,
-  .demo-page .map-layout--app-sheet .left-panel.left-panel--snap-mid {
-    max-height: min(48dvh, 52svh, 420px);
+  .map-page .map-layout--app-sheet .left-panel.left-panel--sheet-anim,
+  .demo-page .map-layout--app-sheet .left-panel.left-panel--sheet-anim {
+    transition: transform 0.25s ease;
   }
 
-  .map-page .map-layout--app-sheet .left-panel.left-panel--snap-full,
-  .demo-page .map-layout--app-sheet .left-panel.left-panel--snap-full {
-    max-height: min(91dvh, calc(100svh - env(safe-area-inset-top, 0px) - 6px)) !important;
-  }
-
-  .map-page .map-layout--app-sheet .left-panel.left-panel--drag,
-  .demo-page .map-layout--app-sheet .left-panel.left-panel--drag {
-    transition: none;
+  .map-page .map-layout--app-sheet .left-panel.left-panel--sheet-live,
+  .demo-page .map-layout--app-sheet .left-panel.left-panel--sheet-live {
+    transition: none !important;
   }
 
   .map-page .map-layout--app-sheet:not(.collapsed) .left-panel,
@@ -1167,10 +1155,9 @@ textarea {
 
   .map-page .map-layout--app-sheet.collapsed .left-panel,
   .demo-page .map-layout--app-sheet.collapsed .left-panel {
-    display: block !important;
-    transform: translate3d(0, 108%, 0) !important;
-    pointer-events: none;
-    visibility: hidden;
+    display: flex !important;
+    visibility: visible;
+    pointer-events: auto;
   }
 
   .map-page .map-layout--app-sheet .left-panel-handle-wrap,
@@ -1196,6 +1183,20 @@ textarea {
     font-size: 11px;
     color: var(--muted);
     text-align: center;
+  }
+
+  .map-page .map-layout--app-sheet .left-panel-head,
+  .demo-page .map-layout--app-sheet .left-panel-head {
+    flex-shrink: 0;
+  }
+
+  .map-page .map-layout--app-sheet .left-panel__scroll,
+  .demo-page .map-layout--app-sheet .left-panel__scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .grid-2 {
