@@ -397,13 +397,10 @@ function renderPublicDemoPage() {
   initDemoMap();
 
   document.getElementById("demoLoginBtn")?.addEventListener("click", () => {
-    location.hash = "#/auth";
+    location.hash = "#/auth-form";
   });
   document.getElementById("demoRegisterBtn")?.addEventListener("click", () => {
-    location.hash = "#/auth";
-    setTimeout(() => {
-      document.getElementById("openRegister")?.click();
-    }, 0);
+    location.hash = "#/auth-register";
   });
 }
 
@@ -2887,8 +2884,13 @@ async function renderAdminPage() {
 async function router() {
   const hash = location.hash || "#/";
   if (!state.token) {
-    if (hash === "#/auth") {
+    if (hash === "#/auth-form" || hash === "#/auth-register") {
       renderAuthPage();
+      if (hash === "#/auth-register") {
+        setTimeout(() => {
+          document.getElementById("openRegister")?.click();
+        }, 0);
+      }
       return;
     }
     renderPublicDemoPage();
