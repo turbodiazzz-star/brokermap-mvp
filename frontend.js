@@ -33,7 +33,7 @@ const state = {
   demoDataVersion: 0
 };
 
-const CURRENT_DEMO_DATA_VERSION = 2;
+const CURRENT_DEMO_DATA_VERSION = 3;
 
 let didSyncUserFromServer = false;
 
@@ -387,86 +387,43 @@ function setMapBodyClass(isMap) {
 const MOSCOW_DEFAULT_CENTER = [55.751244, 37.618423];
 const MOSCOW_DEFAULT_ZOOM = 11;
 
-/** Ориентировочный прямоугольник внутри Москвы (равномерный «разброс» по карте). */
-const MOSCOW_DEMO_BBOX = { minLat: 55.57, maxLat: 55.835, minLon: 37.38, maxLon: 37.88 };
-
-const MOSCOW_DEMO_STREETS = [
-  "Тверская улица",
-  "Кутузовский проспект",
-  "Ленинский проспект",
-  "Проспект Мира",
-  "Ленинградский проспект",
-  "Мичуринский проспект",
-  "Варшавское шоссе",
-  "Профсоюзная улица",
-  "Новый Арбат",
-  "Садовая-Самотёчная улица",
-  "Новослободская улица",
-  "Пятницкая улица",
-  "Рублёвское шоссе",
-  "Мосфильмовская улица",
-  "Улица Академика Королёва",
-  "Бескудниковский бульвар",
-  "Дмитровское шоссе",
-  "Алтуфьевское шоссе",
-  "Ярославское шоссе",
-  "Открытое шоссе",
-  "Щёлковское шоссе",
-  "Измайловское шоссе",
-  "Рязанский проспект",
-  "Каширское шоссе",
-  "Пятницкое шоссе",
-  "Можайское шоссе",
-  "Боровское шоссе",
-  "Сколковское шоссе",
-  "Аминьевское шоссе",
-  "Улица Маршала Тимошенко",
-  "Улица 1812 года",
-  "Улица Крупской",
-  "Староконюшенный переулок",
-  "Остоженка",
-  "Пречистенка",
-  "Большая Якиманка",
-  "Рочдельская улица",
-  "Береговой проезд",
-  "Савёловская улица",
-  "Беговая улица",
-  "3-я Хорошёвская улица",
-  "Улица Барклая",
-  "Университетский проспект",
-  "Ломоносовский проспект",
-  "Улица Грина",
-  "Симоновский вал",
-  "Волгоградский проспект",
-  "Перовское шоссе",
-  "Братиславская улица",
-  "Марьинский бульвар",
-  "Снежная улица",
-  "Свободы улица",
-  "Сходненская улица",
-  "Планерная улица",
-  "Улица Народного Ополчения"
+const FALLBACK_MOSCOW_DEMO = [
+  { lat: 55.7527, lon: 37.6154, address: "Москва, улица Варварка, 4" },
+  { lat: 55.7895, lon: 37.5556, address: "Москва, Ленинградский проспект, 80" },
+  { lat: 55.6785, lon: 37.7125, address: "Москва, Нагатинская набережная, 10" }
 ];
 
-function randomPointInMoscowDemoBox() {
-  const b = MOSCOW_DEMO_BBOX;
-  return {
-    lat: b.minLat + Math.random() * (b.maxLat - b.minLat),
-    lon: b.minLon + Math.random() * (b.maxLon - b.minLon)
-  };
+function shuffleArrayInPlace(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
 
-function randomMoscowStyleAddress() {
-  const street = MOSCOW_DEMO_STREETS[Math.floor(Math.random() * MOSCOW_DEMO_STREETS.length)];
-  const house = 1 + Math.floor(Math.random() * 135);
-  if (Math.random() < 0.18) {
-    const k = 1 + Math.floor(Math.random() * 3);
-    return `Москва, ${street}, ${house}к${k}`;
+function getMoscowRealDemoPicks() {
+  const g = typeof globalThis !== "undefined" ? globalThis : null;
+  if (g && Array.isArray(g.MOSCOW_REAL_DEMO_PICKS) && g.MOSCOW_REAL_DEMO_PICKS.length) {
+    return g.MOSCOW_REAL_DEMO_PICKS;
   }
-  if (Math.random() < 0.12) {
-    return `Москва, ${street}, ${house}, корп. ${1 + Math.floor(Math.random() * 3)}`;
+  return FALLBACK_MOSCOW_DEMO;
+}
+
+/**
+ * 100 (или count) демо-объектов: адрес = координаты из списка; порядок случайный;
+ * если точек < count — добираем дубликатами (2–3 объекта в одной точке).
+ */
+function buildShuffledMoscowDemoSlots(count) {
+  const source = getMoscowRealDemoPicks().map((p) => ({ address: p.address, lat: p.lat, lon: p.lon }));
+  if (!source.length) return [];
+  const shuffled = shuffleArrayInPlace(source.slice());
+  const out = shuffled.slice(0, Math.min(count, shuffled.length));
+  while (out.length < count) {
+    const pick = shuffled[Math.floor(Math.random() * shuffled.length)];
+    out.push({ address: pick.address, lat: pick.lat, lon: pick.lon });
   }
-  return `Москва, ${street}, ${house}`;
+  shuffleArrayInPlace(out);
+  return out.slice(0, count);
 }
 
 function priceRoundedThousands(value) {
@@ -490,10 +447,10 @@ function createDemoProperties(count = 100) {
   ];
   const finishingOptions = ["finished", "whitebox", "concrete"];
   const readinessOptions = ["resale", "assignment"];
+  const slots = buildShuffledMoscowDemoSlots(count);
   const demo = [];
   for (let i = 0; i < count; i++) {
-    const { lat, lon } = randomPointInMoscowDemoBox();
-    const address = randomMoscowStyleAddress();
+    const { lat, lon, address } = slots[i] || slots[0];
     const priceBase = priceRoundedThousands(12_000_000 + (i * 601_001) % 59_000_000);
     demo.push({
       id: `demo-${i + 1}`,
