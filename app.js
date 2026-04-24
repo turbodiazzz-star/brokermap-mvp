@@ -177,7 +177,7 @@ function normalizePdfText(value) {
 }
 
 async function generatePresentationPdf(property) {
-  const filename = `auto-${property.id}.pdf`;
+  const filename = `auto-${property.id}-${Date.now()}.pdf`;
   const filePath = path.join(PDFS_DIR, filename);
   const doc = new PDFDocument({ size: "A4", margin: 48 });
   const unicodeFontPath = resolvePdfFontPath();
