@@ -6,6 +6,8 @@ const state = {
   selectedGroup: [],
   selectedPropertyId: null,
   panelCollapsed: false,
+  /** моб. нижний лист: mid — пол-экрана, full — почти на весь экран (как в Циане) */
+  panelSheetSnap: "mid",
   areaPolygonCoords: null,
   areaPolygonObject: null,
   areaDrawMode: false,
@@ -537,6 +539,29 @@ function updateMapOpenPanelButton() {
   }
 }
 
+function syncLeftPanelSheetSnapClass(panel) {
+  if (!panel) return;
+  if (!window.matchMedia("(max-width: 900px)").matches) {
+    panel.classList.remove("left-panel--snap-mid", "left-panel--snap-full");
+    return;
+  }
+  const collapsed =
+    (panel.id === "leftPanel" && document.getElementById("mapLayout")?.classList.contains("collapsed")) ||
+    (panel.id === "demoLeftPanel" && document.getElementById("demoMapLayout")?.classList.contains("collapsed"));
+  panel.classList.remove("left-panel--snap-mid", "left-panel--snap-full");
+  if (collapsed) return;
+  panel.classList.add(state.panelSheetSnap === "full" ? "left-panel--snap-full" : "left-panel--snap-mid");
+}
+
+function syncSheetHandleHint(panel) {
+  const hint = panel?.querySelector(".left-panel-handle-hint");
+  if (!hint || !window.matchMedia("(max-width: 900px)").matches) return;
+  hint.textContent =
+    state.panelSheetSnap === "full"
+      ? "Вниз — уменьшить или сильнее — к карте"
+      : "Вверх — на весь экран · вниз — к карте";
+}
+
 /**
  * Моб. нижняя «усыпка» (как в Циане): подпись = заголовок панели, подсказка фиксирована.
  */
@@ -551,6 +576,11 @@ function syncMapSheetPeek(mode) {
     el.textContent = h3.textContent.replace(/\s+/g, " ").trim();
   } else {
     el.textContent = mode === "demo" ? "Демо — список" : "Список";
+  }
+  const subId = mode === "demo" ? "demoMapSheetPeekSub" : "mapSheetPeekSub";
+  const sub = document.getElementById(subId);
+  if (sub) {
+    sub.textContent = "Вверх — откроется список на пол-экрана, снова вверх — на весь";
   }
 }
 
@@ -594,7 +624,7 @@ function bindMapSheetPeek({ peekId, layoutId, openFn }) {
 }
 
 /**
- * Моб. свайп вниз за ручку/заголовок — свернуть панель.
+ * Моб. ручка/заголовок: вверх (mid→full), вниз (full→mid, mid→свернуть, сильный вниз с full→свернуть).
  */
 function bindMobileLeftPanelSwipe({ panelId, layoutId, onCollapse }) {
   const panel = document.getElementById(panelId);
@@ -614,7 +644,7 @@ function bindMobileLeftPanelSwipe({ panelId, layoutId, onCollapse }) {
     return Boolean(el.closest(".left-panel-handle-wrap") || el.closest(".left-panel-head"));
   };
 
-  const endDrag = (dy, forceReset) => {
+  const releaseDrag = (forceReset) => {
     panel.classList.remove("left-panel--drag");
     if (activeId != null) {
       try {
@@ -627,14 +657,43 @@ function bindMobileLeftPanelSwipe({ panelId, layoutId, onCollapse }) {
     dragging = false;
     if (forceReset) {
       panel.style.removeProperty("transform");
+    }
+  };
+
+  const finishWithSnap = (rawDy) => {
+    const dyDown = Math.max(0, rawDy);
+    const L = layout();
+    if (!L || L.classList.contains("collapsed")) {
+      panel.style.removeProperty("transform");
       return;
     }
-    if (dy > 72) {
-      panel.style.removeProperty("transform");
+    if (mq() && (panelId === "leftPanel" || panelId === "demoLeftPanel")) {
+      if (rawDy < -36 && state.panelSheetSnap === "mid") {
+        state.panelSheetSnap = "full";
+        syncLeftPanelSheetSnapClass(panel);
+        syncSheetHandleHint(panel);
+        panel.style.removeProperty("transform");
+        return;
+      }
+      if (state.panelSheetSnap === "full" && dyDown > 140) {
+        onCollapse();
+        return;
+      }
+      if (state.panelSheetSnap === "full" && dyDown > 52) {
+        state.panelSheetSnap = "mid";
+        syncLeftPanelSheetSnapClass(panel);
+        syncSheetHandleHint(panel);
+        panel.style.removeProperty("transform");
+        return;
+      }
+      if (state.panelSheetSnap === "mid" && dyDown > 72) {
+        onCollapse();
+        return;
+      }
+    } else if (dyDown > 72) {
       onCollapse();
-    } else {
-      panel.style.removeProperty("transform");
     }
+    panel.style.removeProperty("transform");
   };
 
   panel.addEventListener("pointerdown", (e) => {
@@ -654,7 +713,7 @@ function bindMobileLeftPanelSwipe({ panelId, layoutId, onCollapse }) {
   panel.addEventListener("pointermove", (e) => {
     if (!dragging || e.pointerId !== activeId) return;
     if (!mq()) {
-      endDrag(0, true);
+      releaseDrag(true);
       return;
     }
     const dy = Math.max(0, e.clientY - startY);
@@ -663,14 +722,15 @@ function bindMobileLeftPanelSwipe({ panelId, layoutId, onCollapse }) {
 
   const onUp = (e) => {
     if (!dragging || e.pointerId !== activeId) return;
-    const dy = Math.max(0, e.clientY - startY);
-    endDrag(dy, false);
+    const rawDy = e.clientY - startY;
+    releaseDrag(false);
+    finishWithSnap(rawDy);
   };
 
   panel.addEventListener("pointerup", onUp);
   panel.addEventListener("pointercancel", (e) => {
     if (dragging && e.pointerId === activeId) {
-      endDrag(0, true);
+      releaseDrag(true);
     }
   });
   panel.dataset.swipeBound = "1";
@@ -678,10 +738,11 @@ function bindMobileLeftPanelSwipe({ panelId, layoutId, onCollapse }) {
 
 function mapCollapseLeftPanel() {
   state.panelCollapsed = true;
+  state.panelSheetSnap = "mid";
   document.getElementById("mapLayout")?.classList.add("collapsed");
   const p = document.getElementById("leftPanel");
   if (p) {
-    p.classList.remove("left-panel--drag");
+    p.classList.remove("left-panel--drag", "left-panel--snap-mid", "left-panel--snap-full");
     p.style.removeProperty("transform");
   }
   updateMapOpenPanelButton();
@@ -692,6 +753,7 @@ function mapCollapseLeftPanel() {
 
 function openMapLeftPanel() {
   state.panelCollapsed = false;
+  state.panelSheetSnap = "mid";
   const layout = document.getElementById("mapLayout");
   layout?.classList.remove("collapsed");
   const p = document.getElementById("leftPanel");
@@ -701,6 +763,8 @@ function openMapLeftPanel() {
   } else {
     renderViewportPanel();
   }
+  syncLeftPanelSheetSnapClass(p);
+  syncSheetHandleHint(p);
   updateMapOpenPanelButton();
   syncMapSheetPeek("map");
   ensureMapDrawControls();
@@ -720,15 +784,19 @@ function setMapDefaultLeftPanel() {
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
     mapCollapseLeftPanel();
   });
+  const lp = document.getElementById("leftPanel");
+  syncLeftPanelSheetSnapClass(lp);
+  syncSheetHandleHint(lp);
   syncMapSheetPeek("map");
 }
 
 function demoCollapseLeftPanel() {
   state.panelCollapsed = true;
+  state.panelSheetSnap = "mid";
   document.getElementById("demoMapLayout")?.classList.add("collapsed");
   const p = document.getElementById("demoLeftPanel");
   if (p) {
-    p.classList.remove("left-panel--drag");
+    p.classList.remove("left-panel--drag", "left-panel--snap-mid", "left-panel--snap-full");
     p.style.removeProperty("transform");
   }
   updateDemoOpenPanelButton();
@@ -748,6 +816,8 @@ function renderDemoPanel(list, title) {
     demoCollapseLeftPanel();
   });
   bindDemoCardButtons(panel);
+  syncLeftPanelSheetSnapClass(panel);
+  syncSheetHandleHint(panel);
   syncMapSheetPeek("demo");
 }
 
@@ -772,11 +842,15 @@ function renderDemoAreaSelectionPanel() {
 
 function showDemoGroup(properties) {
   state.panelCollapsed = false;
+  state.panelSheetSnap = "mid";
   document.getElementById("demoMapLayout")?.classList.remove("collapsed");
   updateDemoOpenPanelButton();
   refreshMapViewport();
   const sorted = properties.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
   renderDemoPanel(sorted, "Объектов в точке");
+  const p = document.getElementById("demoLeftPanel");
+  syncLeftPanelSheetSnapClass(p);
+  syncSheetHandleHint(p);
 }
 
 function applyDemoFilters() {
@@ -836,7 +910,7 @@ function renderPublicDemoPage() {
           <div class="map-sheet-peek" id="demoMapSheetPeek" role="button" tabindex="0" aria-label="Открыть список снизу">
             <div class="map-sheet-peek__handle" aria-hidden="true"></div>
             <p class="map-sheet-peek__title" id="demoMapSheetPeekTitle">Список</p>
-            <p class="map-sheet-peek__sub">Подтяните вверх / нажмите</p>
+            <p class="map-sheet-peek__sub" id="demoMapSheetPeekSub">Свайп вверх — список</p>
           </div>
           <div class="map-sheet-left-scrim" id="demoLeftPanelScrim" aria-hidden="true"></div>
         </div>
@@ -978,6 +1052,7 @@ function renderPublicDemoPage() {
   applyDemoFilters();
   function openDemoLeftPanel() {
     state.panelCollapsed = false;
+    state.panelSheetSnap = "mid";
     const layout = document.getElementById("demoMapLayout");
     layout?.classList.remove("collapsed");
     const p = document.getElementById("demoLeftPanel");
@@ -987,6 +1062,8 @@ function renderPublicDemoPage() {
     } else {
       renderDemoViewportPanel();
     }
+    syncLeftPanelSheetSnapClass(p);
+    syncSheetHandleHint(p);
     updateDemoOpenPanelButton();
     syncMapSheetPeek("demo");
     ensureMapDrawControls();
@@ -1000,9 +1077,11 @@ function renderPublicDemoPage() {
     }
   });
 
-  updateDemoOpenPanelButton();
-  syncMapSheetPeek("demo");
   const demoP = document.getElementById("demoLeftPanel");
+  updateDemoOpenPanelButton();
+  syncLeftPanelSheetSnapClass(demoP);
+  syncSheetHandleHint(demoP);
+  syncMapSheetPeek("demo");
   if (demoP) demoP.dataset.swipeBound = "";
   bindMobileLeftPanelSwipe({
     panelId: "demoLeftPanel",
@@ -1093,7 +1172,7 @@ function renderMapPage() {
         <div class="map-sheet-peek" id="mapSheetPeek" role="button" tabindex="0" aria-label="Открыть список снизу">
           <div class="map-sheet-peek__handle" aria-hidden="true"></div>
           <p class="map-sheet-peek__title" id="mapSheetPeekTitle">Список</p>
-          <p class="map-sheet-peek__sub">Подтяните вверх / нажмите</p>
+          <p class="map-sheet-peek__sub" id="mapSheetPeekSub">Свайп вверх — список</p>
         </div>
         <div class="map-sheet-left-scrim" id="mapLeftPanelScrim" aria-hidden="true"></div>
       </div>
@@ -1162,6 +1241,8 @@ function renderMapPage() {
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
   ensureMapDrawControls();
   updateMapOpenPanelButton();
+  syncLeftPanelSheetSnapClass(document.getElementById("leftPanel"));
+  syncSheetHandleHint(document.getElementById("leftPanel"));
   syncMapSheetPeek("map");
 
   document.getElementById("maxPrice").addEventListener("input", (e) => {
@@ -1237,6 +1318,8 @@ function renderAreaSelectionPanel(list) {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  syncLeftPanelSheetSnapClass(panel);
+  syncSheetHandleHint(panel);
   syncMapSheetPeek("map");
 }
 
@@ -1273,6 +1356,8 @@ function renderViewportPanel() {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  syncLeftPanelSheetSnapClass(panel);
+  syncSheetHandleHint(panel);
   syncMapSheetPeek("map");
 }
 
@@ -1300,6 +1385,8 @@ function setDemoDefaultLeftPanel() {
   document.getElementById("closeDemoLeftPanel")?.addEventListener("click", () => {
     demoCollapseLeftPanel();
   });
+  syncLeftPanelSheetSnapClass(panel);
+  syncSheetHandleHint(panel);
   syncMapSheetPeek("demo");
 }
 
@@ -1532,6 +1619,7 @@ function groupByHouse(list) {
 
 function showGroup(properties) {
   state.panelCollapsed = false;
+  state.panelSheetSnap = "mid";
   document.getElementById("mapLayout")?.classList.remove("collapsed");
   refreshMapViewport();
   const panel = document.getElementById("leftPanel");
@@ -1545,6 +1633,8 @@ function showGroup(properties) {
     mapCollapseLeftPanel();
   });
   updateMapOpenPanelButton();
+  syncLeftPanelSheetSnapClass(panel);
+  syncSheetHandleHint(panel);
   syncMapSheetPeek("map");
   ensureMapDrawControls();
   panel.querySelectorAll(".open-object").forEach((btn) => {

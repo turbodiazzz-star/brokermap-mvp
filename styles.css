@@ -1029,6 +1029,53 @@ textarea {
     display: none !important;
   }
 
+  /* Карта/демо: компактный верх, больше места для карты */
+  .map-page > .topbar,
+  .demo-page > .topbar {
+    padding: 5px 10px;
+    min-height: 0;
+    padding-top: max(5px, env(safe-area-inset-top, 0px));
+  }
+
+  .map-page > .topbar .brand,
+  .demo-page > .topbar .brand {
+    font-size: 16px;
+  }
+
+  .map-page > .topbar .auth .top-action,
+  .map-page > .topbar .auth .btn,
+  .map-page > .topbar .auth button,
+  .demo-page > .topbar .auth .top-action,
+  .demo-page > .topbar .auth .btn,
+  .demo-page > .topbar .auth button {
+    padding: 5px 9px;
+    font-size: 12px;
+    min-height: 36px;
+  }
+
+  .map-page > .topbar .filters,
+  .demo-page > .topbar .filters {
+    margin-top: 3px;
+    gap: 5px;
+  }
+
+  .map-page > .topbar .filters .price-input,
+  .map-page > .topbar .filters .bedrooms-select,
+  .map-page > .topbar .filters button,
+  .map-page > .topbar .filters .btn,
+  .demo-page > .topbar .filters .price-input,
+  .demo-page > .topbar .filters .bedrooms-select,
+  .demo-page > .topbar .filters button,
+  .demo-page > .topbar .filters .btn {
+    min-height: 36px;
+    font-size: 14px;
+    padding: 6px 8px;
+  }
+
+  .demo-page > .demo-top-strip {
+    margin-top: 0;
+  }
+
   /* Круглую кнопку на моб. убираем: открытие — усыпка снизу (как в Циане) */
   .map-page .map-wrap .open-left-panel-btn--sheet,
   .demo-page .map-wrap .open-left-panel-btn--sheet {
@@ -1086,7 +1133,6 @@ textarea {
     bottom: 0;
     width: 100% !important;
     max-width: none !important;
-    max-height: min(50dvh, 480px);
     z-index: 25;
     border-right: 0;
     border-top: 1px solid var(--border);
@@ -1096,7 +1142,17 @@ textarea {
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     -webkit-overflow-scrolling: touch;
     overflow: auto;
-    transition: transform 0.22s ease, visibility 0.22s ease;
+    transition: max-height 0.32s ease, transform 0.22s ease, visibility 0.22s ease;
+  }
+
+  .map-page .map-layout--app-sheet .left-panel.left-panel--snap-mid,
+  .demo-page .map-layout--app-sheet .left-panel.left-panel--snap-mid {
+    max-height: min(48dvh, 52svh, 420px);
+  }
+
+  .map-page .map-layout--app-sheet .left-panel.left-panel--snap-full,
+  .demo-page .map-layout--app-sheet .left-panel.left-panel--snap-full {
+    max-height: min(91dvh, calc(100svh - env(safe-area-inset-top, 0px) - 6px)) !important;
   }
 
   .map-page .map-layout--app-sheet .left-panel.left-panel--drag,
