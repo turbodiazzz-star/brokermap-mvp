@@ -592,7 +592,7 @@ function getSheetGeometry(panel) {
   const PEEK = 118;
   const yMax = Math.max(0, vh - PEEK);
   const yMin = Math.min(0, vh - H);
-  const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.42)));
+  const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.35)));
   return { h: H, yMin, yMax, yPeek: yMax, yMid, vh };
 }
 
@@ -713,19 +713,19 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
         return;
       }
 
-      v *= Math.exp(-0.006 * dt);
+      v *= Math.exp(-0.0032 * dt);
       y += v * dt;
 
       if (y < g.yMin || y > g.yMax) {
         const bound = y < g.yMin ? g.yMin : g.yMax;
         const overshoot = y - bound;
-        v += (-overshoot * 0.0038 - v * 0.03) * dt;
+        v += (-overshoot * 0.0062 - v * 0.022) * dt;
       }
 
       setPanelTranslateY(s, y, false);
 
       const inRange = y >= g.yMin - 0.6 && y <= g.yMax + 0.6;
-      if (Math.abs(v) < 0.02 && inRange) {
+      if (Math.abs(v) < 0.012 && inRange) {
         const snap = clampSheetT(y, g);
         setPanelTranslateY(s, snap, false);
         commitSheetState(snap, g);
@@ -792,10 +792,19 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     if (!g) return;
     const t = sheetRubber(startT + (e.clientY - startY), g);
     setPanelTranslateY(s, t, false);
+    const unclamped = clampSheetT(t, g);
+    state.panelSheetT = unclamped;
+    if (unclamped < g.yPeek - 2) {
+      state.panelCollapsed = false;
+      const lay = layout();
+      lay?.classList.remove("collapsed");
+      if (isDemo) updateDemoOpenPanelButton();
+      else updateMapOpenPanelButton();
+    }
     const now = performance.now();
     const dt = Math.max(1, now - lastMoveTs);
     const vy = (e.clientY - lastMoveY) / dt;
-    velocityY = velocityY * 0.75 + vy * 0.25;
+    velocityY = velocityY * 0.35 + vy * 0.65;
     lastMoveY = e.clientY;
     lastMoveTs = now;
   };
@@ -846,7 +855,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       const rawT = getPanelTranslateY(s);
       const g = getSheetGeometry(panel);
       if (g) {
-        if (Math.abs(velocityY) > 0.045) {
+        if (Math.abs(velocityY) > 0.018) {
           animateInertia(velocityY);
         } else {
           const snap = clampSheetT(rawT, g);
@@ -925,6 +934,7 @@ function mobileSheetSettleAfterRender(panel, layout) {
   if (!panel) return;
   const s = getSheetNode(panel);
   if (!s) return;
+  if (s.classList.contains("left-panel--sheet-live")) return;
   if (!window.matchMedia("(max-width: 900px)").matches) {
     setPanelTranslateY(s, 0, false);
     return;
@@ -935,7 +945,10 @@ function mobileSheetSettleAfterRender(panel, layout) {
     let t;
     if (state.panelCollapsed) t = g.yPeek;
     else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
-    else t = g.yMid;
+    else {
+      const cur = getPanelTranslateY(s);
+      t = Number.isFinite(cur) ? clampSheetT(cur, g) : g.yMid;
+    }
     setPanelTranslateY(s, t, true, 320);
   });
 }
