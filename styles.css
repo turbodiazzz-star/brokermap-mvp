@@ -1127,13 +1127,9 @@ textarea {
     line-height: 1;
   }
 
-  .map-layout:not(.collapsed) .map-sheet-left-scrim {
-    display: block;
-    pointer-events: auto;
-  }
-
-  .map-layout.collapsed .map-sheet-left-scrim {
-    display: none;
+  .map-layout .map-sheet-left-scrim {
+    display: none !important;
+    pointer-events: none !important;
   }
 
   .map-page .map-layout--app-sheet,

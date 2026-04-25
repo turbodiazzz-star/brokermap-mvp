@@ -192,6 +192,24 @@ function moreFiltersModalHtml() {
         <h3>Дополнительные фильтры</h3>
         <div class="form-grid">
           <div class="field-block">
+            <label class="field-label" for="modalMinPrice">Цена от</label>
+            <input id="modalMinPrice" type="text" inputmode="numeric" value="${formatSpacedNumber(state.filters.minPrice)}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="modalMaxPrice">Цена до</label>
+            <input id="modalMaxPrice" type="text" inputmode="numeric" value="${formatSpacedNumber(state.filters.maxPrice)}" />
+          </div>
+          <div class="field-block field-span-2">
+            <label class="field-label" for="modalBedrooms">Спален</label>
+            <select id="modalBedrooms">
+              <option value="">Любое</option>
+              <option value="1" ${state.filters.bedrooms === "1" ? "selected" : ""}>1</option>
+              <option value="2" ${state.filters.bedrooms === "2" ? "selected" : ""}>2</option>
+              <option value="3" ${state.filters.bedrooms === "3" ? "selected" : ""}>3</option>
+              <option value="4" ${state.filters.bedrooms === "4" ? "selected" : ""}>4+</option>
+            </select>
+          </div>
+          <div class="field-block">
             <label class="field-label" for="filterFloorMin">Этаж от</label>
             <input id="filterFloorMin" type="number" min="1" value="${escapeHtml(state.filters.floorMin)}" />
           </div>
@@ -337,13 +355,15 @@ function topbar(options = {}) {
 }
 
 function mobileMapChromeHtml(isDemo) {
+  const searchHref = isDemo ? "#/" : "#/map";
+  const cabinetHref = state.user ? "#/cabinet" : "#/auth";
   return `
     <div class="mobile-map-top">
       <button type="button" class="btn" id="${isDemo ? "demoMobileFiltersBtn" : "mapMobileFiltersBtn"}">Фильтры</button>
     </div>
     <nav class="mobile-map-bottom-nav" aria-label="Навигация">
-      <button type="button" class="mobile-map-bottom-nav__btn active" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}">Поиск</button>
-      <button type="button" class="mobile-map-bottom-nav__btn" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}">Личный кабинет</button>
+      <a class="mobile-map-bottom-nav__btn active" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}" href="${searchHref}">Поиск</a>
+      <a class="mobile-map-bottom-nav__btn" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}" href="${cabinetHref}">Личный кабинет</a>
     </nav>
   `;
 }
@@ -1194,6 +1214,12 @@ function renderPublicDemoPage() {
     if (e.target === demoAbout) closeAbout();
   });
   document.getElementById("applyMoreFilters")?.addEventListener("click", () => {
+    const modalMin = document.getElementById("modalMinPrice")?.value || "";
+    const modalMax = document.getElementById("modalMaxPrice")?.value || "";
+    const modalBedrooms = document.getElementById("modalBedrooms")?.value || "";
+    state.filters.minPrice = toRawNumberString(modalMin);
+    state.filters.maxPrice = toRawNumberString(modalMax);
+    state.filters.bedrooms = modalBedrooms;
     state.filters.floorMin = document.getElementById("filterFloorMin")?.value.trim() || "";
     state.filters.floorMax = document.getElementById("filterFloorMax")?.value.trim() || "";
     state.filters.totalFloorsMin = document.getElementById("filterTotalFloorsMin")?.value.trim() || "";
@@ -1205,6 +1231,9 @@ function renderPublicDemoPage() {
     applyDemoFilters();
   });
   document.getElementById("resetMoreFilters")?.addEventListener("click", () => {
+    state.filters.minPrice = "";
+    state.filters.maxPrice = "";
+    state.filters.bedrooms = "";
     state.filters.floorMin = "";
     state.filters.floorMax = "";
     state.filters.totalFloorsMin = "";
@@ -1212,6 +1241,9 @@ function renderPublicDemoPage() {
     state.filters.ceilingHeightMin = "";
     state.filters.finishing = "";
     state.filters.readiness = "";
+    if (document.getElementById("modalMinPrice")) document.getElementById("modalMinPrice").value = "";
+    if (document.getElementById("modalMaxPrice")) document.getElementById("modalMaxPrice").value = "";
+    if (document.getElementById("modalBedrooms")) document.getElementById("modalBedrooms").value = "";
     document.getElementById("filterFloorMin").value = "";
     document.getElementById("filterFloorMax").value = "";
     document.getElementById("filterTotalFloorsMin").value = "";
@@ -1422,6 +1454,9 @@ function renderMapPage() {
     document.getElementById("filtersModal").classList.remove("open");
   });
   document.getElementById("applyMoreFilters").addEventListener("click", () => {
+    state.filters.minPrice = toRawNumberString(document.getElementById("modalMinPrice")?.value || "");
+    state.filters.maxPrice = toRawNumberString(document.getElementById("modalMaxPrice")?.value || "");
+    state.filters.bedrooms = document.getElementById("modalBedrooms")?.value || "";
     state.filters.floorMin = document.getElementById("filterFloorMin").value.trim();
     state.filters.floorMax = document.getElementById("filterFloorMax").value.trim();
     state.filters.totalFloorsMin = document.getElementById("filterTotalFloorsMin").value.trim();
@@ -1433,6 +1468,9 @@ function renderMapPage() {
     loadMapData();
   });
   document.getElementById("resetMoreFilters").addEventListener("click", () => {
+    state.filters.minPrice = "";
+    state.filters.maxPrice = "";
+    state.filters.bedrooms = "";
     state.filters.floorMin = "";
     state.filters.floorMax = "";
     state.filters.totalFloorsMin = "";
