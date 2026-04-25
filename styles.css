@@ -292,6 +292,11 @@ body.view-map #app {
   gap: 12px;
 }
 
+.mobile-map-top,
+.mobile-map-bottom-nav {
+  display: none;
+}
+
 .brand {
   font-weight: 700;
   font-size: 20px;
@@ -1029,47 +1034,57 @@ textarea {
     display: none !important;
   }
 
-  /* Карта/демо: компактный верх, больше места для карты */
   .map-page > .topbar,
   .demo-page > .topbar {
-    padding: 5px 10px;
-    min-height: 0;
-    padding-top: max(5px, env(safe-area-inset-top, 0px));
+    display: none !important;
   }
 
-  .map-page > .topbar .brand,
-  .demo-page > .topbar .brand {
-    font-size: 16px;
+  .mobile-map-top {
+    display: flex;
+    position: fixed;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    left: max(10px, env(safe-area-inset-left, 0px));
+    right: max(10px, env(safe-area-inset-right, 0px));
+    z-index: 60;
+    justify-content: flex-end;
+    pointer-events: none;
   }
 
-  .map-page > .topbar .auth .top-action,
-  .map-page > .topbar .auth .btn,
-  .map-page > .topbar .auth button,
-  .demo-page > .topbar .auth .top-action,
-  .demo-page > .topbar .auth .btn,
-  .demo-page > .topbar .auth button {
-    padding: 5px 9px;
-    font-size: 12px;
-    min-height: 36px;
+  .mobile-map-top .btn {
+    pointer-events: auto;
+    height: 36px;
+    border-radius: 12px;
+    padding: 0 12px;
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.14);
   }
 
-  .map-page > .topbar .filters,
-  .demo-page > .topbar .filters {
-    margin-top: 3px;
-    gap: 5px;
+  .mobile-map-bottom-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 70;
+    background: rgba(255, 255, 255, 0.98);
+    border-top: 1px solid var(--border);
+    padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px));
+    gap: 8px;
   }
 
-  .map-page > .topbar .filters .price-input,
-  .map-page > .topbar .filters .bedrooms-select,
-  .map-page > .topbar .filters button,
-  .map-page > .topbar .filters .btn,
-  .demo-page > .topbar .filters .price-input,
-  .demo-page > .topbar .filters .bedrooms-select,
-  .demo-page > .topbar .filters button,
-  .demo-page > .topbar .filters .btn {
-    min-height: 36px;
+  .mobile-map-bottom-nav__btn {
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #fff;
     font-size: 14px;
-    padding: 6px 8px;
+  }
+
+  .mobile-map-bottom-nav__btn.active {
+    border-color: var(--brand);
+    color: var(--brand);
+    font-weight: 600;
   }
 
   .demo-page > .demo-top-strip {
@@ -1278,6 +1293,11 @@ textarea {
 
   .address-row {
     flex-direction: column;
+  }
+
+  .map-page,
+  .demo-page {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
   }
 }
 

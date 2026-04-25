@@ -336,6 +336,18 @@ function topbar(options = {}) {
   `;
 }
 
+function mobileMapChromeHtml(isDemo) {
+  return `
+    <div class="mobile-map-top">
+      <button type="button" class="btn" id="${isDemo ? "demoMobileFiltersBtn" : "mapMobileFiltersBtn"}">Фильтры</button>
+    </div>
+    <nav class="mobile-map-bottom-nav" aria-label="Навигация">
+      <button type="button" class="mobile-map-bottom-nav__btn active" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}">Поиск</button>
+      <button type="button" class="mobile-map-bottom-nav__btn" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}">Личный кабинет</button>
+    </nav>
+  `;
+}
+
 function bindBrandHomeButton() {
   document.getElementById("brandHomeBtn")?.addEventListener("click", () => {
     location.hash = "#/";
@@ -577,7 +589,7 @@ function getSheetGeometry(panel) {
   const vh = window.innerHeight;
   const track = panel.querySelector("[data-sheet-track]");
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
-  const PEEK = 64;
+  const PEEK = 118;
   const yMax = Math.max(0, vh - PEEK);
   const yMin = Math.min(0, vh - H);
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.42)));
@@ -1078,6 +1090,7 @@ function renderPublicDemoPage() {
   app.innerHTML = `
     <section class="demo-page">
       ${demoPublicTopbar()}
+      ${mobileMapChromeHtml(true)}
       <div class="demo-top-strip" id="demoTopStrip" aria-label="Справка по демо">
         <p class="demo-top-strip__line">
           <strong>Демо</strong> · 100 точек · список снизу: тяните панель, нажмите метку или обведите район ✍
@@ -1141,6 +1154,15 @@ function renderPublicDemoPage() {
   `;
 
   bindBrandHomeButton();
+  document.getElementById("demoMobileFiltersBtn")?.addEventListener("click", () => {
+    document.getElementById("filtersModal")?.classList.add("open");
+  });
+  document.getElementById("demoNavSearchBtn")?.addEventListener("click", () => {
+    location.hash = "#/";
+  });
+  document.getElementById("demoNavCabinetBtn")?.addEventListener("click", () => {
+    location.hash = state.user ? "#/cabinet" : "#/auth";
+  });
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
   ensureMapDrawControls();
 
@@ -1323,6 +1345,7 @@ function renderMapPage() {
   app.innerHTML = `
     <section class="map-page">
     ${topbar()}
+    ${mobileMapChromeHtml(false)}
     <main class="map-layout map-layout--app-sheet ${state.panelCollapsed ? "collapsed" : ""}" id="mapLayout">
       <aside class="left-panel" id="leftPanel">
         ${leftPanelMobileBlock(
@@ -1361,6 +1384,15 @@ function renderMapPage() {
   `;
 
   bindBrandHomeButton();
+  document.getElementById("mapMobileFiltersBtn")?.addEventListener("click", () => {
+    document.getElementById("filtersModal")?.classList.add("open");
+  });
+  document.getElementById("mapNavSearchBtn")?.addEventListener("click", () => {
+    if (location.hash !== "#/map") location.hash = "#/map";
+  });
+  document.getElementById("mapNavCabinetBtn")?.addEventListener("click", () => {
+    location.hash = state.user ? "#/cabinet" : "#/auth";
+  });
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
     location.hash = state.user ? "#/cabinet" : "#/auth";
   });
