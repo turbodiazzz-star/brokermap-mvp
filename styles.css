@@ -1120,19 +1120,16 @@ textarea {
     position: fixed;
     left: 0;
     right: 0;
+    top: 0;
     bottom: 0;
     width: 100% !important;
     max-width: none !important;
     z-index: 25;
-    border-right: 0;
-    border-top: 1px solid var(--border);
-    border-radius: 16px 16px 0 0;
-    box-shadow: 0 -6px 28px rgba(16, 24, 40, 0.18);
-    padding: 0 12px 12px;
-    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
-    -webkit-overflow-scrolling: touch;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0;
     overflow: hidden;
-    max-height: min(96dvh, 96svh);
   }
 
   .map-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-anim,
@@ -1189,8 +1186,15 @@ textarea {
   .map-page .map-layout--app-sheet .left-panel__track,
   .demo-page .map-layout--app-sheet .left-panel__track {
     will-change: transform;
-    min-height: 0;
+    min-height: 100%;
     overflow: visible;
+    border-top: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -6px 28px rgba(16, 24, 40, 0.18);
+    padding: 0 12px 12px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    background: #fff;
+    pointer-events: auto;
   }
 
   .grid-2 {
