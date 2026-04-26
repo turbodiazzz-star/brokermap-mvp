@@ -609,7 +609,7 @@ function getSheetGeometry(panel) {
   const vh = window.innerHeight;
   const track = panel.querySelector("[data-sheet-track]");
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
-  const PEEK = 118;
+  const PEEK = 170;
   const yMax = Math.max(0, vh - PEEK);
   const yMin = Math.min(0, vh - H);
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.35)));
@@ -875,7 +875,12 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       const rawT = getPanelTranslateY(s);
       const g = getSheetGeometry(panel);
       if (g) {
-        if (Math.abs(velocityY) > 0.018) {
+        if (rawT >= g.yPeek - 24 && velocityY > -0.02) {
+          const snap = g.yPeek;
+          setPanelTranslateY(s, snap, false);
+          commitSheetState(snap, g);
+          s.classList.remove("left-panel--sheet-live");
+        } else if (Math.abs(velocityY) > 0.018) {
           animateInertia(velocityY);
         } else {
           const snap = clampSheetT(rawT, g);

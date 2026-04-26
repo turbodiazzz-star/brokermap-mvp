@@ -1095,17 +1095,24 @@ textarea {
   }
 
   .mobile-map-bottom-nav__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
     height: 38px;
     border-radius: 10px;
     border: 1px solid var(--border);
     background: #fff;
     font-size: 14px;
+    color: var(--text);
+    box-shadow: 0 1px 6px rgba(15, 23, 42, 0.08);
   }
 
   .mobile-map-bottom-nav__btn.active {
     border-color: var(--brand);
     color: var(--brand);
     font-weight: 600;
+    background: rgba(23, 96, 255, 0.06);
   }
 
   .demo-page > .demo-top-strip {
@@ -1162,6 +1169,7 @@ textarea {
     box-shadow: none;
     padding: 0;
     overflow: hidden;
+    pointer-events: none;
   }
 
   .map-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-anim,
@@ -1227,6 +1235,10 @@ textarea {
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     background: #fff;
     pointer-events: auto;
+  }
+
+  .map-draw-tools {
+    top: max(64px, env(safe-area-inset-top, 0px)) !important;
   }
 
   .grid-2 {
