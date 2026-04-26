@@ -1100,6 +1100,7 @@ textarea {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    -webkit-appearance: none;
     text-decoration: none;
     height: 38px;
     border-radius: 10px;

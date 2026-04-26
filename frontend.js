@@ -355,15 +355,13 @@ function topbar(options = {}) {
 }
 
 function mobileMapChromeHtml(isDemo) {
-  const searchHref = isDemo ? "#/" : "#/map";
-  const cabinetHref = state.user ? "#/cabinet" : "#/auth";
   return `
     <div class="mobile-map-top">
       <button type="button" class="btn" id="${isDemo ? "demoMobileFiltersBtn" : "mapMobileFiltersBtn"}">Фильтры</button>
     </div>
     <nav class="mobile-map-bottom-nav" aria-label="Навигация">
-      <a class="mobile-map-bottom-nav__btn active" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}" href="${searchHref}">Поиск</a>
-      <a class="mobile-map-bottom-nav__btn" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}" href="${cabinetHref}">Личный кабинет</a>
+      <button type="button" class="mobile-map-bottom-nav__btn active" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}">Поиск</button>
+      <button type="button" class="mobile-map-bottom-nav__btn" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}">Личный кабинет</button>
     </nav>
   `;
 }
@@ -611,7 +609,10 @@ function getSheetGeometry(panel) {
   const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
   const PEEK = 124;
-  const yMax = Math.max(0, vh - navH - PEEK);
+  const yMaxScreen = Math.max(0, vh - navH - PEEK);
+  const firstCard = track?.querySelector(".card");
+  const yPeekContent = firstCard ? Math.max(0, Math.round(firstCard.offsetTop - 10)) : yMaxScreen;
+  const yMax = Math.min(yMaxScreen, yPeekContent);
   const yMin = Math.min(0, vh - H);
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
   const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
@@ -621,7 +622,7 @@ function getSheetGeometry(panel) {
 function sheetRubber(t, g) {
   if (!g) return t;
   if (t < g.yMin) return g.yMin + (t - g.yMin) * 0.32;
-  if (t > g.yMax) return g.yMax + (t - g.yMax) * 0.32;
+  if (t > g.yMax) return g.yMax;
   return t;
 }
 
@@ -1008,6 +1009,32 @@ function bindMapZoomGuards() {
   }
 }
 
+function bindMobileBottomNavActions(isDemo) {
+  const searchId = isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn";
+  const cabinetId = isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn";
+  const searchBtn = document.getElementById(searchId);
+  const cabinetBtn = document.getElementById(cabinetId);
+  if (searchBtn) {
+    searchBtn.onclick = (e) => {
+      e.preventDefault();
+      if (!isDemo && location.hash !== "#/map") {
+        location.hash = "#/map";
+      } else if (isDemo && location.hash !== "#/") {
+        location.hash = "#/";
+      }
+      requestAnimationFrame(() => {
+        snapSheetToPeek(isDemo ? "demoLeftPanel" : "leftPanel", isDemo ? "demoMapLayout" : "mapLayout", isDemo);
+      });
+    };
+  }
+  if (cabinetBtn) {
+    cabinetBtn.onclick = (e) => {
+      e.preventDefault();
+      location.hash = state.user ? "#/cabinet" : "#/auth";
+    };
+  }
+}
+
 function mobileSheetSettleAfterRender(panel, layout) {
   if (!panel) return;
   const s = getSheetNode(panel);
@@ -1146,7 +1173,6 @@ function renderDemoAreaSelectionPanel() {
 
 function showDemoGroup(properties) {
   state.panelCollapsed = false;
-  state.panelSheetT = null;
   document.getElementById("demoMapLayout")?.classList.remove("collapsed");
   updateDemoOpenPanelButton();
   refreshMapViewport();
@@ -1248,15 +1274,7 @@ function renderPublicDemoPage() {
   document.getElementById("demoMobileFiltersBtn")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.add("open");
   });
-  document.getElementById("demoNavSearchBtn")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    location.hash = "#/";
-    requestAnimationFrame(() => snapSheetToPeek("demoLeftPanel", "demoMapLayout", true));
-  });
-  document.getElementById("demoNavCabinetBtn")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    location.hash = state.user ? "#/cabinet" : "#/auth";
-  });
+  bindMobileBottomNavActions(true);
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
   ensureMapDrawControls();
 
@@ -1494,19 +1512,7 @@ function renderMapPage() {
   document.getElementById("mapMobileFiltersBtn")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.add("open");
   });
-  document.getElementById("mapNavSearchBtn")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    if (location.hash !== "#/map") {
-      location.hash = "#/map";
-      requestAnimationFrame(() => snapSheetToPeek("leftPanel", "mapLayout", false));
-    } else {
-      snapSheetToPeek("leftPanel", "mapLayout", false);
-    }
-  });
-  document.getElementById("mapNavCabinetBtn")?.addEventListener("click", (e) => {
-    e.preventDefault();
-    location.hash = state.user ? "#/cabinet" : "#/auth";
-  });
+  bindMobileBottomNavActions(false);
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
     location.hash = state.user ? "#/cabinet" : "#/auth";
   });
@@ -1940,7 +1946,6 @@ function groupByHouse(list) {
 
 function showGroup(properties) {
   state.panelCollapsed = false;
-  state.panelSheetT = null;
   document.getElementById("mapLayout")?.classList.remove("collapsed");
   refreshMapViewport();
   const panel = document.getElementById("leftPanel");
