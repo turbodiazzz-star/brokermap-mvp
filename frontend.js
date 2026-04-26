@@ -607,13 +607,15 @@ function getSheetGeometry(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return null;
   const vh = window.innerHeight;
   const track = panel.querySelector("[data-sheet-track]");
+  const bottomNav = document.querySelector(".mobile-map-bottom-nav");
+  const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
-  const PEEK = 170;
-  const yMax = Math.max(0, vh - PEEK);
+  const PEEK = 124;
+  const yMax = Math.max(0, vh - navH - PEEK);
   const yMin = Math.min(0, vh - H);
-  const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.35)));
+  const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
   const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
-  return { h: H, yMin, yMax, yPeek: yMax, yMid, yFirst, vh };
+  return { h: H, yMin, yMax, yPeek: yMax, yMid, yFirst, vh, navH };
 }
 
 function sheetRubber(t, g) {
@@ -735,6 +737,16 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
 
       v *= Math.exp(-0.0032 * dt);
       y += v * dt;
+
+      if (y > g.yMax && v >= 0) {
+        y = g.yMax;
+        v = 0;
+        setPanelTranslateY(s, y, false);
+        commitSheetState(y, g);
+        s.classList.remove("left-panel--sheet-live");
+        stopMotion();
+        return;
+      }
 
       if (y < g.yMin || y > g.yMax) {
         const bound = y < g.yMin ? g.yMin : g.yMax;
@@ -4062,6 +4074,10 @@ async function router() {
     if (hash.startsWith("#/demo/property/")) {
       const id = decodeURIComponent(hash.split("/")[3] || "");
       renderDemoPropertyPage(id);
+      return;
+    }
+    if (hash === "#/auth") {
+      renderAuthPage();
       return;
     }
     if (hash === "#/auth-form" || hash === "#/auth-register") {

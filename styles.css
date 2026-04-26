@@ -1195,7 +1195,7 @@ textarea {
   .demo-page .map-layout--app-sheet.collapsed .left-panel {
     display: flex !important;
     visibility: visible;
-    pointer-events: auto;
+    pointer-events: none;
   }
 
   .map-page .map-layout--app-sheet .left-panel-handle-wrap,
