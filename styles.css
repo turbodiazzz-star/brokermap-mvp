@@ -1247,11 +1247,6 @@ textarea {
     pointer-events: auto;
   }
 
-  .map-page .map-layout--app-sheet.collapsed .left-panel__track .card,
-  .demo-page .map-layout--app-sheet.collapsed .left-panel__track .card {
-    display: none !important;
-  }
-
   .map-page .map-layout--app-sheet .close-left-panel,
   .demo-page .map-layout--app-sheet .close-left-panel {
     display: none !important;

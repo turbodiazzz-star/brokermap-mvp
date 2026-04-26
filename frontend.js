@@ -610,11 +610,9 @@ function getSheetGeometry(panel) {
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
   const PEEK = 124;
   const yMaxScreen = Math.max(0, vh - navH - PEEK);
-  const head = track?.querySelector(".left-panel-head");
-  const yPeekHeader = head
-    ? Math.max(0, Math.round(head.offsetTop + head.offsetHeight + 8))
-    : yMaxScreen;
-  const yMax = Math.min(yMaxScreen, yPeekHeader);
+  const firstCard = track?.querySelector(".card");
+  const yPeekContent = firstCard ? Math.max(0, Math.round(firstCard.offsetTop - 28)) : yMaxScreen;
+  const yMax = Math.min(yMaxScreen, yPeekContent);
   const yMin = Math.min(0, vh - H);
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
   const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
@@ -1036,7 +1034,7 @@ function bindMobileBottomNavActions(isDemo) {
     const onCabinet = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      location.hash = state.user ? "#/cabinet" : "#/auth";
+      location.hash = state.token ? "#/cabinet" : "#/auth";
     };
     cabinetBtn.onclick = onCabinet;
     cabinetBtn.onpointerup = onCabinet;
@@ -4119,6 +4117,10 @@ async function router() {
     if (hash.startsWith("#/demo/property/")) {
       const id = decodeURIComponent(hash.split("/")[3] || "");
       renderDemoPropertyPage(id);
+      return;
+    }
+    if (hash === "#/cabinet" || hash === "#/cabinet/add") {
+      location.hash = "#/auth";
       return;
     }
     if (hash === "#/auth") {
