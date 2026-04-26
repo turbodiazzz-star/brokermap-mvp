@@ -610,9 +610,11 @@ function getSheetGeometry(panel) {
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
   const PEEK = 124;
   const yMaxScreen = Math.max(0, vh - navH - PEEK);
-  const firstCard = track?.querySelector(".card");
-  const yPeekContent = firstCard ? Math.max(0, Math.round(firstCard.offsetTop - 10)) : yMaxScreen;
-  const yMax = Math.min(yMaxScreen, yPeekContent);
+  const head = track?.querySelector(".left-panel-head");
+  const yPeekHeader = head
+    ? Math.max(0, Math.round(head.offsetTop + head.offsetHeight + 8))
+    : yMaxScreen;
+  const yMax = Math.min(yMaxScreen, yPeekHeader);
   const yMin = Math.min(0, vh - H);
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
   const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
@@ -1015,8 +1017,9 @@ function bindMobileBottomNavActions(isDemo) {
   const searchBtn = document.getElementById(searchId);
   const cabinetBtn = document.getElementById(cabinetId);
   if (searchBtn) {
-    searchBtn.onclick = (e) => {
+    const onSearch = (e) => {
       e.preventDefault();
+      e.stopPropagation();
       if (!isDemo && location.hash !== "#/map") {
         location.hash = "#/map";
       } else if (isDemo && location.hash !== "#/") {
@@ -1026,12 +1029,17 @@ function bindMobileBottomNavActions(isDemo) {
         snapSheetToPeek(isDemo ? "demoLeftPanel" : "leftPanel", isDemo ? "demoMapLayout" : "mapLayout", isDemo);
       });
     };
+    searchBtn.onclick = onSearch;
+    searchBtn.onpointerup = onSearch;
   }
   if (cabinetBtn) {
-    cabinetBtn.onclick = (e) => {
+    const onCabinet = (e) => {
       e.preventDefault();
+      e.stopPropagation();
       location.hash = state.user ? "#/cabinet" : "#/auth";
     };
+    cabinetBtn.onclick = onCabinet;
+    cabinetBtn.onpointerup = onCabinet;
   }
 }
 

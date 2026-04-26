@@ -1089,11 +1089,12 @@ textarea {
     left: 0;
     right: 0;
     bottom: 0;
-    z-index: 70;
+    z-index: 120;
     background: rgba(255, 255, 255, 0.98);
     border-top: 1px solid var(--border);
     padding: 6px 10px calc(6px + env(safe-area-inset-bottom, 0px));
     gap: 8px;
+    pointer-events: auto;
   }
 
   .mobile-map-bottom-nav__btn {
@@ -1110,7 +1111,8 @@ textarea {
     color: var(--text);
     box-shadow: 0 1px 6px rgba(15, 23, 42, 0.08);
     position: relative;
-    z-index: 71;
+    z-index: 121;
+    touch-action: manipulation;
   }
 
   .mobile-map-bottom-nav__btn.active {
@@ -1243,6 +1245,11 @@ textarea {
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     background: #fff;
     pointer-events: auto;
+  }
+
+  .map-page .map-layout--app-sheet.collapsed .left-panel__track .card,
+  .demo-page .map-layout--app-sheet.collapsed .left-panel__track .card {
+    display: none !important;
   }
 
   .map-page .map-layout--app-sheet .close-left-panel,
