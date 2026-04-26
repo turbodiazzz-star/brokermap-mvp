@@ -543,7 +543,6 @@ function bindDemoCardButtons(root = document) {
 function leftPanelHandleHtml(handleAreaId) {
   return `<div class="left-panel-handle-wrap" id="${handleAreaId}" role="presentation">
     <div class="left-panel-handle" aria-hidden="true"></div>
-    <p class="left-panel-handle-hint">Тяните панель за любую область</p>
   </div>`;
 }
 
@@ -613,7 +612,8 @@ function getSheetGeometry(panel) {
   const yMax = Math.max(0, vh - PEEK);
   const yMin = Math.min(0, vh - H);
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.35)));
-  return { h: H, yMin, yMax, yPeek: yMax, yMid, vh };
+  const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
+  return { h: H, yMin, yMax, yPeek: yMax, yMid, yFirst, vh };
 }
 
 function sheetRubber(t, g) {
@@ -875,11 +875,13 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       const rawT = getPanelTranslateY(s);
       const g = getSheetGeometry(panel);
       if (g) {
-        if (rawT >= g.yPeek - 24 && velocityY > -0.02) {
+        if (rawT >= g.yPeek - 36) {
           const snap = g.yPeek;
           setPanelTranslateY(s, snap, false);
           commitSheetState(snap, g);
           s.classList.remove("left-panel--sheet-live");
+        } else if (state.panelCollapsed && velocityY < -0.06) {
+          animateSpringTo(g.yFirst, velocityY);
         } else if (Math.abs(velocityY) > 0.018) {
           animateInertia(velocityY);
         } else {
@@ -952,6 +954,19 @@ function updateMapOpenPanelButton() {
   } else {
     btn.setAttribute("aria-expanded", "true");
     btn.setAttribute("aria-hidden", "true");
+  }
+}
+
+function bindMapZoomGuards() {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  const els = [document.getElementById("map"), document.getElementById("demoMap")].filter(Boolean);
+  for (const el of els) {
+    if (el.dataset.zoomGuardBound === "1") continue;
+    const prevent = (ev) => ev.preventDefault();
+    el.addEventListener("gesturestart", prevent, { passive: false });
+    el.addEventListener("gesturechange", prevent, { passive: false });
+    el.addEventListener("gestureend", prevent, { passive: false });
+    el.dataset.zoomGuardBound = "1";
   }
 }
 
@@ -1195,10 +1210,12 @@ function renderPublicDemoPage() {
   document.getElementById("demoMobileFiltersBtn")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.add("open");
   });
-  document.getElementById("demoNavSearchBtn")?.addEventListener("click", () => {
+  document.getElementById("demoNavSearchBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
     location.hash = "#/";
   });
-  document.getElementById("demoNavCabinetBtn")?.addEventListener("click", () => {
+  document.getElementById("demoNavCabinetBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
     location.hash = state.user ? "#/cabinet" : "#/auth";
   });
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
@@ -1346,6 +1363,7 @@ function renderPublicDemoPage() {
   updateDemoOpenPanelButton();
   bindMobileBottomSheet({ panelId: "demoLeftPanel", layoutId: "demoMapLayout", isDemo: true });
   mobileSheetSettleAfterRender(demoP, demoLayout);
+  bindMapZoomGuards();
 }
 
 function renderDemoPropertyPage(id) {
@@ -1437,10 +1455,12 @@ function renderMapPage() {
   document.getElementById("mapMobileFiltersBtn")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.add("open");
   });
-  document.getElementById("mapNavSearchBtn")?.addEventListener("click", () => {
+  document.getElementById("mapNavSearchBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
     if (location.hash !== "#/map") location.hash = "#/map";
   });
-  document.getElementById("mapNavCabinetBtn")?.addEventListener("click", () => {
+  document.getElementById("mapNavCabinetBtn")?.addEventListener("click", (e) => {
+    e.preventDefault();
     location.hash = state.user ? "#/cabinet" : "#/auth";
   });
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
@@ -1497,6 +1517,7 @@ function renderMapPage() {
   const mapLayout = document.getElementById("mapLayout");
   bindMobileBottomSheet({ panelId: "leftPanel", layoutId: "mapLayout", isDemo: false });
   mobileSheetSettleAfterRender(lp, mapLayout);
+  bindMapZoomGuards();
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
   ensureMapDrawControls();
   updateMapOpenPanelButton();
