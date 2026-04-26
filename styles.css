@@ -1231,6 +1231,9 @@ textarea {
   .demo-page .map-layout--app-sheet .left-panel__track {
     will-change: transform;
     min-height: 0;
+    width: 100%;
+    max-width: 100vw;
+    box-sizing: border-box;
     overflow: visible;
     border-top: 1px solid var(--border);
     border-radius: 16px 16px 0 0;

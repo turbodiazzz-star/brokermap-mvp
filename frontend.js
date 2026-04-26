@@ -649,6 +649,8 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   let lastMoveTs = 0;
   let velocityY = 0;
   let rafId = 0;
+  let gestureGeometry = null;
+  let lastCollapsedUi = state.panelCollapsed;
 
   const stopMotion = () => {
     if (rafId) {
@@ -668,10 +670,13 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       if (atPeek) lay.classList.add("collapsed");
       else lay.classList.remove("collapsed");
     }
-    if (isDemo) {
-      updateDemoOpenPanelButton();
-    } else {
-      updateMapOpenPanelButton();
+    if (lastCollapsedUi !== atPeek) {
+      lastCollapsedUi = atPeek;
+      if (isDemo) {
+        updateDemoOpenPanelButton();
+      } else {
+        updateMapOpenPanelButton();
+      }
     }
   };
 
@@ -789,6 +794,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     lastMoveY = e.clientY;
     lastMoveTs = performance.now();
     velocityY = 0;
+    gestureGeometry = getSheetGeometry(panel);
     mode = "decide";
     activeId = e.pointerId;
     fromOpenBtn = Boolean(e.target.closest(".open-left-panel-btn--sheet, #openLeftPanelBtn, #openDemoLeftPanelBtn"));
@@ -820,7 +826,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     if (mode !== "sheet") return;
     const s = sheetEl();
     if (!s) return;
-    const g = getSheetGeometry(panel);
+    const g = gestureGeometry || getSheetGeometry(panel);
     if (!g) return;
     const t = sheetRubber(startT + (e.clientY - startY), g);
     setPanelTranslateY(s, t, false);
@@ -830,8 +836,11 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       state.panelCollapsed = false;
       const lay = layout();
       lay?.classList.remove("collapsed");
-      if (isDemo) updateDemoOpenPanelButton();
-      else updateMapOpenPanelButton();
+      if (lastCollapsedUi) {
+        lastCollapsedUi = false;
+        if (isDemo) updateDemoOpenPanelButton();
+        else updateMapOpenPanelButton();
+      }
     }
     const now = performance.now();
     const dt = Math.max(1, now - lastMoveTs);
@@ -850,7 +859,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       L?.classList.contains("collapsed") &&
       Math.abs(e.clientY - startY) < 10
     ) {
-      const g0 = getSheetGeometry(panel);
+      const g0 = gestureGeometry || getSheetGeometry(panel);
       if (g0) {
         state.panelCollapsed = false;
         L.classList.remove("collapsed");
@@ -885,7 +894,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
         return;
       }
       const rawT = getPanelTranslateY(s);
-      const g = getSheetGeometry(panel);
+      const g = gestureGeometry || getSheetGeometry(panel);
       if (g) {
         if (rawT >= g.yPeek - 36) {
           const snap = g.yPeek;
@@ -920,6 +929,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     }
     activeId = null;
     mode = "idle";
+    gestureGeometry = null;
     fromOpenBtn = false;
     if (!rafId) {
       sheetEl()?.classList.remove("left-panel--sheet-live");
@@ -934,6 +944,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       }
     }
     mode = "idle";
+    gestureGeometry = null;
     fromOpenBtn = false;
     activeId = null;
   };
@@ -943,6 +954,21 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   panel.addEventListener("pointerup", onPointerUp);
   panel.addEventListener("pointercancel", onPointerCancel);
   panel.dataset.mobileSheetBound = "1";
+}
+
+function snapSheetToPeek(panelId, layoutId, isDemo) {
+  const panel = document.getElementById(panelId);
+  const layout = document.getElementById(layoutId);
+  if (!panel || !layout) return;
+  const g = getSheetGeometry(panel);
+  const s = getSheetNode(panel);
+  if (!g || !s) return;
+  state.panelCollapsed = true;
+  state.panelSheetT = g.yPeek;
+  layout.classList.add("collapsed");
+  setPanelTranslateY(s, g.yPeek, false);
+  if (isDemo) updateDemoOpenPanelButton();
+  else updateMapOpenPanelButton();
 }
 
 function updateDemoOpenPanelButton() {
@@ -1225,6 +1251,7 @@ function renderPublicDemoPage() {
   document.getElementById("demoNavSearchBtn")?.addEventListener("click", (e) => {
     e.preventDefault();
     location.hash = "#/";
+    requestAnimationFrame(() => snapSheetToPeek("demoLeftPanel", "demoMapLayout", true));
   });
   document.getElementById("demoNavCabinetBtn")?.addEventListener("click", (e) => {
     e.preventDefault();
@@ -1469,7 +1496,12 @@ function renderMapPage() {
   });
   document.getElementById("mapNavSearchBtn")?.addEventListener("click", (e) => {
     e.preventDefault();
-    if (location.hash !== "#/map") location.hash = "#/map";
+    if (location.hash !== "#/map") {
+      location.hash = "#/map";
+      requestAnimationFrame(() => snapSheetToPeek("leftPanel", "mapLayout", false));
+    } else {
+      snapSheetToPeek("leftPanel", "mapLayout", false);
+    }
   });
   document.getElementById("mapNavCabinetBtn")?.addEventListener("click", (e) => {
     e.preventDefault();
