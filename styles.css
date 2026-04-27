@@ -1142,6 +1142,14 @@ textarea {
     background: rgba(23, 96, 255, 0.06);
   }
 
+  .mobile-map-bottom-nav__btn:active,
+  .mobile-map-bottom-nav__btn:focus-visible {
+    border-color: var(--brand);
+    color: var(--brand);
+    font-weight: 600;
+    background: rgba(23, 96, 255, 0.06);
+  }
+
   .demo-page > .demo-top-strip {
     margin-top: 0;
   }
@@ -1360,14 +1368,15 @@ textarea {
   .page {
     margin: 12px auto;
     padding: 0 12px;
-    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(var(--mobile-bottom-nav-height, 72px) + max(16px, env(safe-area-inset-bottom, 0px)));
   }
 
   .cabinet,
-  .auth-wrap {
+  .auth-wrap,
+  .login-page {
     margin: 12px auto;
     padding: 0 12px;
-    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(var(--mobile-bottom-nav-height, 72px) + max(16px, env(safe-area-inset-bottom, 0px)));
   }
 
   .address-row {

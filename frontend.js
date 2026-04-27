@@ -362,18 +362,15 @@ function mobileMapChromeHtml(isDemo) {
       <button type="button" class="btn" id="${isDemo ? "demoMobileFiltersBtn" : "mapMobileFiltersBtn"}">Фильтры</button>
     </div>
     ${isDemo ? `<div class="mobile-map-title">Демо</div>` : ""}
-    <nav class="mobile-map-bottom-nav" aria-label="Навигация">
-      <button type="button" class="mobile-map-bottom-nav__btn active" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}">Поиск</button>
-      <button type="button" class="mobile-map-bottom-nav__btn" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}">Личный кабинет</button>
-    </nav>
+    ${mobileBottomNavHtml("search")}
   `;
 }
 
-function mobileBottomNavHtml(isDemo) {
+function mobileBottomNavHtml(activeTab = "search") {
   return `
     <nav class="mobile-map-bottom-nav" aria-label="Навигация">
-      <button type="button" class="mobile-map-bottom-nav__btn ${isDemo ? "active" : ""}" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}">Поиск</button>
-      <button type="button" class="mobile-map-bottom-nav__btn ${isDemo ? "" : "active"}" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}">Личный кабинет</button>
+      <button type="button" class="mobile-map-bottom-nav__btn ${activeTab === "search" ? "active" : ""}" id="mobileNavSearchBtn">Поиск</button>
+      <button type="button" class="mobile-map-bottom-nav__btn ${activeTab === "cabinet" ? "active" : ""}" id="mobileNavCabinetBtn">Личный кабинет</button>
     </nav>
   `;
 }
@@ -1064,15 +1061,18 @@ function bindMapZoomGuards() {
   }
 }
 
-function bindMobileBottomNavActions(isDemo) {
-  const searchId = isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn";
-  const cabinetId = isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn";
-  const searchBtn = document.getElementById(searchId);
-  const cabinetBtn = document.getElementById(cabinetId);
+function bindMobileBottomNavActions() {
+  const searchBtn = document.getElementById("mobileNavSearchBtn");
+  const cabinetBtn = document.getElementById("mobileNavCabinetBtn");
+  const setActive = (tab) => {
+    searchBtn?.classList.toggle("active", tab === "search");
+    cabinetBtn?.classList.toggle("active", tab === "cabinet");
+  };
   if (searchBtn) {
     const onSearch = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      setActive("search");
       if (
         state.panelCollapsedBeforeCabinet != null ||
         state.panelSheetTBeforeCabinet != null
@@ -1084,10 +1084,8 @@ function bindMobileBottomNavActions(isDemo) {
       }
       if (!state.token) {
         if (location.hash !== "#/") location.hash = "#/";
-      } else if (!isDemo && location.hash !== "#/map") {
+      } else if (location.hash !== "#/map") {
         location.hash = "#/map";
-      } else if (isDemo && location.hash !== "#/") {
-        location.hash = "#/";
       }
     };
     searchBtn.onclick = onSearch;
@@ -1097,6 +1095,7 @@ function bindMobileBottomNavActions(isDemo) {
     const onCabinet = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      setActive("cabinet");
       state.panelCollapsedBeforeCabinet = state.panelCollapsed;
       state.panelSheetTBeforeCabinet = state.panelSheetT;
       location.hash = state.token ? "#/cabinet" : "#/auth";
@@ -1347,7 +1346,7 @@ function renderPublicDemoPage() {
   document.getElementById("demoMobileFiltersBtn")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.add("open");
   });
-  bindMobileBottomNavActions(true);
+  bindMobileBottomNavActions();
   updateMobileNavMetrics();
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
   ensureMapDrawControls();
@@ -1532,6 +1531,7 @@ function renderDemoPropertyPage(id) {
         </aside>
       </div>
     </section>
+    ${mobileBottomNavHtml("search")}
   `;
   document.getElementById("backToDemoBtn")?.addEventListener("click", () => {
     location.hash = "#/";
@@ -1539,6 +1539,8 @@ function renderDemoPropertyPage(id) {
   document.getElementById("demoToAuthBtn")?.addEventListener("click", () => {
     location.hash = "#/auth-register";
   });
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
 }
 
 function renderMapPage() {
@@ -1588,7 +1590,7 @@ function renderMapPage() {
   document.getElementById("mapMobileFiltersBtn")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.add("open");
   });
-  bindMobileBottomNavActions(false);
+  bindMobileBottomNavActions();
   updateMobileNavMetrics();
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
     location.hash = state.user ? "#/cabinet" : "#/auth";
@@ -2334,6 +2336,7 @@ async function renderPropertyPage(id) {
         </aside>
       </div>
     </section>
+    ${mobileBottomNavHtml("search")}
     <div class="gallery-lightbox" id="galleryLightbox">
       <button class="gallery-lightbox-close" id="galleryCloseBtn" aria-label="Закрыть">×</button>
       <button class="gallery-lightbox-nav" id="galleryPrevBtn" aria-label="Предыдущее фото">‹</button>
@@ -2389,6 +2392,8 @@ async function renderPropertyPage(id) {
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
   document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
   document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
 
   let currentGalleryIndex = 0;
   const lightbox = document.getElementById("galleryLightbox");
@@ -2495,7 +2500,7 @@ function renderAuthPage() {
         </div>
       </div>
     </section>
-    ${mobileBottomNavHtml(!state.token)}
+    ${mobileBottomNavHtml(state.token ? "cabinet" : "search")}
   `;
 
   const toDemoEl = document.getElementById("toDemoMapBtn");
@@ -2526,7 +2531,7 @@ function renderAuthPage() {
   document.getElementById("closeReset").addEventListener("click", () => {
     document.getElementById("resetModal").classList.remove("active");
   });
-  bindMobileBottomNavActions(!state.token);
+  bindMobileBottomNavActions();
   updateMobileNavMetrics();
 
   const updateRegisterFormByType = () => {
@@ -2818,8 +2823,11 @@ async function renderCabinetPage(openForm = false) {
         <p class="muted" id="passwordStatus"></p>
       </div>
     </div>
+    ${mobileBottomNavHtml("cabinet")}
   `;
   bindBrandHomeButton();
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
   const closePropertyFormModal = () => {
     document.getElementById("propertyFormModal")?.classList.remove("open");
   };
@@ -3407,8 +3415,11 @@ async function renderAgencyPage() {
         <p>${escapeHtml(err.message || "Ошибка загрузки панели агентства")}</p>
         <p><button class="btn" type="button" id="agencyErrToMap">На карту</button></p>
       </section>
+      ${mobileBottomNavHtml("cabinet")}
     `;
     document.getElementById("agencyErrToMap").addEventListener("click", () => (location.hash = "#/"));
+    bindMobileBottomNavActions();
+    updateMobileNavMetrics();
     return;
   }
 
@@ -3544,9 +3555,12 @@ async function renderAgencyPage() {
         </div>
       </div>
     </section>
+    ${mobileBottomNavHtml("cabinet")}
   `;
 
   bindBrandHomeButton();
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
   document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
   document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
   document.getElementById("toMapBtn")?.addEventListener("click", () => (location.hash = "#/"));
@@ -3654,10 +3668,13 @@ async function renderAdminPage() {
         <p>${escapeHtml(err.message || "Ошибка")}</p>
         <p><button class="btn" type="button" id="adminErrToMap">На карту</button></p>
       </section>
+      ${mobileBottomNavHtml("cabinet")}
     `;
     document.getElementById("adminErrToMap").addEventListener("click", () => {
       location.hash = "#/";
     });
+    bindMobileBottomNavActions();
+    updateMobileNavMetrics();
     return;
   }
 
@@ -3841,6 +3858,7 @@ async function renderAdminPage() {
         </div>
       </div>
     </section>
+    ${mobileBottomNavHtml("cabinet")}
   `;
 
   bindBrandHomeButton();
@@ -3856,6 +3874,8 @@ async function renderAdminPage() {
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
     location.hash = "#/cabinet";
   });
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
 
   const usersTabBtn = document.getElementById("adminUsersTabBtn");
   const propertiesTabBtn = document.getElementById("adminPropertiesTabBtn");
