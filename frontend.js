@@ -2641,7 +2641,7 @@ function renderAuthPage() {
             <span>Я согласен получать рекламные сообщения</span>
           </label>
           <p>
-            <button class="btn primary full" id="register">Создать аккаунт</button>
+            <button class="btn primary full" id="register" type="button">Создать аккаунт</button>
           </p>
           <p class="muted" id="registerStatus"></p>
         </div>
@@ -2661,6 +2661,9 @@ function renderAuthPage() {
     ${mobileBottomNavHtml(state.token ? "cabinet" : "search")}
   `;
 
+  const setAuthModalOpen = (open) => {
+    document.body.classList.toggle("auth-modal-open", Boolean(open));
+  };
   const toDemoEl = document.getElementById("toDemoMapBtn");
   if (toDemoEl) {
     toDemoEl.textContent = state.token ? "На карту" : "К демо без входа";
@@ -2679,15 +2682,29 @@ function renderAuthPage() {
   }
   document.getElementById("openRegister").addEventListener("click", () => {
     document.getElementById("registerModal").classList.add("active");
+    setAuthModalOpen(true);
   });
   document.getElementById("closeRegisterXBtn")?.addEventListener("click", () => {
     document.getElementById("registerModal").classList.remove("active");
+    setAuthModalOpen(false);
   });
   document.getElementById("openReset").addEventListener("click", () => {
     document.getElementById("resetModal").classList.add("active");
+    setAuthModalOpen(true);
   });
   document.getElementById("closeReset").addEventListener("click", () => {
     document.getElementById("resetModal").classList.remove("active");
+    setAuthModalOpen(false);
+  });
+  document.getElementById("registerModal")?.addEventListener("click", (event) => {
+    if (event.target?.id !== "registerModal") return;
+    document.getElementById("registerModal")?.classList.remove("active");
+    setAuthModalOpen(false);
+  });
+  document.getElementById("resetModal")?.addEventListener("click", (event) => {
+    if (event.target?.id !== "resetModal") return;
+    document.getElementById("resetModal")?.classList.remove("active");
+    setAuthModalOpen(false);
   });
   bindMobileBottomNavActions();
   updateMobileNavMetrics();
@@ -2810,6 +2827,7 @@ function renderAuthPage() {
       registerStatus.classList.remove("status-error", "status-success");
     }
     if (authStatus) authStatus.textContent = "";
+    showRegisterStatus("Отправка...", "success");
     try {
       const isValid =
         validateEmailField(document.getElementById("email")) &&
@@ -2863,6 +2881,10 @@ function renderAuthPage() {
       showRegisterStatus(error?.message || "Ошибка регистрации", "error");
     }
   });
+  document.getElementById("register").onpointerup = (event) => {
+    event.preventDefault();
+    document.getElementById("register")?.click();
+  };
 
   document.getElementById("login").addEventListener("click", async () => {
     try {

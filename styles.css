@@ -1137,6 +1137,10 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  body.auth-modal-open .mobile-map-bottom-nav {
+    display: none !important;
+  }
+
   .auth-modal.active {
     align-items: flex-start;
     justify-content: center;
