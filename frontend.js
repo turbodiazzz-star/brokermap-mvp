@@ -606,8 +606,7 @@ function demoCardMarkup(item) {
         <div class="muted">${item.area} м² · ${item.bedrooms} спальни</div>
         <div class="muted">Общая комиссия: <strong>${item.commissionTotal}%</strong></div>
         <div class="muted">Комиссия партнера: <strong>${item.commissionPartner}%</strong></div>
-        <div class="demo-blur-line">Телефон: ${item.contacts.phone}</div>
-        <div class="demo-blur-line">Telegram: ${item.contacts.telegram}</div>
+        <p><button class="btn open-demo-contacts">Открыть контакты</button></p>
         <p><button class="btn primary open-demo-object" data-id="${item.id}">Открыть объект</button></p>
       </div>
     </article>
@@ -618,6 +617,11 @@ function bindDemoCardButtons(root = document) {
   root.querySelectorAll(".open-demo-object").forEach((btn) => {
     btn.addEventListener("click", () => {
       location.hash = `#/demo/property/${encodeURIComponent(btn.dataset.id)}`;
+    });
+  });
+  root.querySelectorAll(".open-demo-contacts").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      location.hash = "#/auth-register";
     });
   });
 }
@@ -1190,10 +1194,7 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
     let t;
     if (state.panelCollapsed) t = g.yPeek;
     else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
-    else {
-      const cur = getPanelTranslateY(s);
-      t = Number.isFinite(cur) ? clampSheetT(cur, g) : g.yMid;
-    }
+    else t = g.yFirst;
     setPanelTranslateY(s, t, animate, animate ? 320 : undefined);
   });
 }
@@ -1593,8 +1594,7 @@ function renderDemoPropertyPage(id) {
           <p><strong>Спален:</strong> ${property.bedrooms}</p>
           <p><strong>Общая комиссия:</strong> ${property.commissionTotal}%</p>
           <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
-          <p class="demo-blur-line"><strong>Телефон:</strong> ${property.contacts?.phone || "+7 (9••) •••-••-••"}</p>
-          <p class="demo-blur-line"><strong>Telegram:</strong> ${property.contacts?.telegram || "@••••••••"}</p>
+          <p><button class="btn" id="demoOpenContactsBtn">Открыть контакты</button></p>
           <p><button class="btn primary" id="demoToAuthBtn">Попробовать платформу</button></p>
         </aside>
       </div>
@@ -1605,6 +1605,9 @@ function renderDemoPropertyPage(id) {
     location.hash = "#/";
   });
   document.getElementById("demoToAuthBtn")?.addEventListener("click", () => {
+    location.hash = "#/auth-register";
+  });
+  document.getElementById("demoOpenContactsBtn")?.addEventListener("click", () => {
     location.hash = "#/auth-register";
   });
   bindMobileBottomNavActions();

@@ -9,8 +9,15 @@ const crypto = require("crypto");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const nodemailer = require("nodemailer");
 const PDFDocument = require("pdfkit");
+let nodemailer = null;
+try {
+  // Optional dependency on runtime (prevents hard crash if not installed yet).
+  // eslint-disable-next-line global-require
+  nodemailer = require("nodemailer");
+} catch {
+  nodemailer = null;
+}
 const {
   initDb,
   findUserByEmail,
@@ -61,7 +68,7 @@ const PHOTOS_DIR = path.join(UPLOADS_DIR, "photos");
 const PDFS_DIR = path.join(UPLOADS_DIR, "pdfs");
 const app = express();
 
-const mailTransport = SMTP_HOST
+const mailTransport = SMTP_HOST && nodemailer
   ? nodemailer.createTransport({
       host: SMTP_HOST,
       port: SMTP_PORT,
