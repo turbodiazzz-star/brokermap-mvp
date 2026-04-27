@@ -2498,7 +2498,9 @@ function renderAuthPage() {
       <div class="login-wrapper">
         <div class="login-box">
           <h3>Вход</h3>
+          <label class="field-label" for="loginEmail">Логин (email)</label>
           <input id="loginEmail" placeholder="Email" type="email" autocomplete="username email" />
+          <label class="field-label" for="loginPassword">Пароль</label>
           <input id="loginPassword" type="password" placeholder="Пароль" autocomplete="current-password" />
           <button class="btn primary full" id="login">Войти</button>
           <button class="btn full" type="button" id="toDemoMapBtn">К демо без входа</button>
@@ -2604,8 +2606,107 @@ function renderAuthPage() {
   document.getElementById("accountType").addEventListener("change", updateRegisterFormByType);
   updateRegisterFormByType();
 
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+  const fieldErrorId = (inputId) => `${inputId}Error`;
+  const clearFieldError = (inputEl) => {
+    if (!inputEl) return;
+    inputEl.classList.remove("input-invalid");
+    const err = document.getElementById(fieldErrorId(inputEl.id));
+    if (err) err.remove();
+  };
+  const setFieldError = (inputEl, message) => {
+    if (!inputEl) return;
+    inputEl.classList.add("input-invalid");
+    const errorElementId = fieldErrorId(inputEl.id);
+    let err = document.getElementById(errorElementId);
+    if (!err) {
+      err = document.createElement("p");
+      err.id = errorElementId;
+      err.className = "field-error-text";
+      const anchor = inputEl.closest(".phone-group") || inputEl;
+      anchor.insertAdjacentElement("afterend", err);
+    }
+    err.textContent = message;
+  };
+  const validateEmailField = (inputEl, requiredMessage = "Введите email") => {
+    const value = String(inputEl?.value || "").trim();
+    if (!value) {
+      setFieldError(inputEl, requiredMessage);
+      return false;
+    }
+    if (!emailRe.test(value)) {
+      setFieldError(inputEl, "Некорректный формат email");
+      return false;
+    }
+    clearFieldError(inputEl);
+    return true;
+  };
+  const validateRegisterPhone = () => {
+    const phoneEl = document.getElementById("phone");
+    const digits = toDigits(phoneEl?.value || "");
+    if (digits.length !== 10) {
+      setFieldError(phoneEl, "Телефон: 10 цифр после +7");
+      return false;
+    }
+    clearFieldError(phoneEl);
+    return true;
+  };
+  const validateInnField = () => {
+    const innEl = document.getElementById("inn");
+    const digits = toDigits(innEl?.value || "");
+    if (!(digits.length === 10 || digits.length === 12)) {
+      setFieldError(innEl, "ИНН должен содержать 10 или 12 цифр");
+      return false;
+    }
+    clearFieldError(innEl);
+    return true;
+  };
+  const validatePasswordField = (inputId, minLength = 6) => {
+    const passEl = document.getElementById(inputId);
+    const value = String(passEl?.value || "");
+    if (value.length < minLength) {
+      setFieldError(passEl, `Минимум ${minLength} символов`);
+      return false;
+    }
+    clearFieldError(passEl);
+    return true;
+  };
+  const validateNonEmpty = (inputId, message = "Поле обязательно") => {
+    const inputEl = document.getElementById(inputId);
+    if (!String(inputEl?.value || "").trim()) {
+      setFieldError(inputEl, message);
+      return false;
+    }
+    clearFieldError(inputEl);
+    return true;
+  };
+
+  document.getElementById("email")?.addEventListener("input", () => validateEmailField(document.getElementById("email")));
+  document.getElementById("loginEmail")?.addEventListener("input", () => validateEmailField(document.getElementById("loginEmail")));
+  document.getElementById("resetEmail")?.addEventListener("input", () => validateEmailField(document.getElementById("resetEmail")));
+  document.getElementById("loginPassword")?.addEventListener("input", () =>
+    validateNonEmpty("loginPassword", "Введите пароль")
+  );
+  document.getElementById("phone")?.addEventListener("input", validateRegisterPhone);
+  document.getElementById("inn")?.addEventListener("input", validateInnField);
+  document.getElementById("password")?.addEventListener("input", () => validatePasswordField("password", 6));
+  document.getElementById("firstName")?.addEventListener("input", () => validateNonEmpty("firstName", "Введите имя"));
+  document.getElementById("lastName")?.addEventListener("input", () => validateNonEmpty("lastName", "Введите фамилию"));
+  document.getElementById("agency")?.addEventListener("input", () => validateNonEmpty("agency", "Укажите агентство или ИП"));
+
   document.getElementById("register").addEventListener("click", async () => {
     try {
+      const isValid =
+        validateEmailField(document.getElementById("email")) &&
+        validateRegisterPhone() &&
+        validateInnField() &&
+        validatePasswordField("password", 6) &&
+        validateNonEmpty("firstName", "Введите имя") &&
+        validateNonEmpty("lastName", "Введите фамилию") &&
+        validateNonEmpty("agency", "Укажите агентство или ИП");
+      if (!isValid) {
+        throw new Error("Проверьте поля формы: есть некорректные данные");
+      }
       const payload = collectAuth();
       if (
         !payload.email ||
@@ -2643,6 +2744,11 @@ function renderAuthPage() {
 
   document.getElementById("login").addEventListener("click", async () => {
     try {
+      const emailOk = validateEmailField(document.getElementById("loginEmail"), "Введите email для входа");
+      const passOk = validateNonEmpty("loginPassword", "Введите пароль");
+      if (!emailOk || !passOk) {
+        throw new Error("Проверьте email и пароль");
+      }
       const data = await api("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({
@@ -2658,6 +2764,10 @@ function renderAuthPage() {
   });
 
   document.getElementById("forgot").addEventListener("click", async () => {
+    if (!validateEmailField(document.getElementById("resetEmail"), "Введите email для восстановления")) {
+      document.getElementById("authStatus").textContent = "Введите корректный email для восстановления";
+      return;
+    }
     const data = await api("/api/auth/forgot-password", {
       method: "POST",
       body: JSON.stringify({ email: document.getElementById("resetEmail").value })
