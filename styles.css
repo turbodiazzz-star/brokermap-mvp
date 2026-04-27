@@ -408,11 +408,11 @@ body.view-map #app {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 440px 1fr;
+  grid-template-columns: 380px 1fr;
 }
 
 .map-layout--app-sheet {
-  grid-template-columns: clamp(340px, 30vw, 460px) 1fr;
+  grid-template-columns: clamp(290px, 24vw, 380px) 1fr;
 }
 
 .map-layout.collapsed {
