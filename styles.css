@@ -850,6 +850,22 @@ body.view-map #app {
   margin-top: 0;
 }
 
+.auth-notice {
+  display: none;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.auth-notice.visible {
+  display: block;
+}
+
 .login-box input,
 .auth-modal-content input {
   margin-top: 10px;

@@ -2589,6 +2589,7 @@ function renderAuthPage() {
       <div class="login-wrapper">
         <div class="login-box">
           <h3>Вход</h3>
+          <p class="auth-notice" id="authNotice"></p>
           <label class="field-label" for="loginEmail">Логин (email)</label>
           <input id="loginEmail" placeholder="Email" type="email" autocomplete="username email" />
           <label class="field-label" for="loginPassword">Пароль</label>
@@ -2813,6 +2814,7 @@ function renderAuthPage() {
   document.getElementById("register").addEventListener("click", async () => {
     const registerStatus = document.getElementById("registerStatus");
     const authStatus = document.getElementById("authStatus");
+    const authNotice = document.getElementById("authNotice");
     const showRegisterStatus = (message, tone = "error") => {
       if (registerStatus) {
         registerStatus.textContent = message || "";
@@ -2822,11 +2824,20 @@ function renderAuthPage() {
       }
       if (authStatus) authStatus.textContent = message || "";
     };
+    const showAuthNotice = (message) => {
+      if (!authNotice) return;
+      authNotice.textContent = message || "";
+      authNotice.classList.toggle("visible", Boolean(message));
+      if (message) {
+        authNotice.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    };
     if (registerStatus) {
       registerStatus.textContent = "";
       registerStatus.classList.remove("status-error", "status-success");
     }
     if (authStatus) authStatus.textContent = "";
+    showAuthNotice("");
     showRegisterStatus("Отправка...", "success");
     try {
       const isValid =
@@ -2869,9 +2880,11 @@ function renderAuthPage() {
         body: JSON.stringify(payload)
       });
       if (data.requiresEmailVerification) {
-        showRegisterStatus(
-          data.message || "Письмо отправлено. Подтвердите email по ссылке из письма.",
-          "success"
+        document.getElementById("registerModal")?.classList.remove("active");
+        setAuthModalOpen(false);
+        showAuthNotice(
+          data.message ||
+            "Для подтверждения почты откройте письмо, перейдите по ссылке и затем войдите в аккаунт."
         );
         return;
       }
