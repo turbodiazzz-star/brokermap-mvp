@@ -154,6 +154,14 @@ function photoOnErrorAttr() {
   return `this.onerror=null;this.src='${PLACEHOLDER_IMAGE_URL}';`;
 }
 
+function getPropertyPreviewPhoto(property) {
+  if (!property || typeof property !== "object") return "";
+  if (Array.isArray(property.photos) && property.photos[0]) return property.photos[0];
+  if (typeof property.photo === "string" && property.photo) return property.photo;
+  if (typeof property.photoUrl === "string" && property.photoUrl) return property.photoUrl;
+  return "";
+}
+
 async function api(url, options = {}) {
   const headers = options.headers || {};
   if (!(options.body instanceof FormData)) {
@@ -3724,11 +3732,7 @@ async function renderAdminPage() {
       <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
       <td data-label="Адрес">
         <div class="admin-prop-cell">
-          ${
-            p.photos?.[0]
-              ? `<img class="admin-prop-thumb" src="${photoUrlWithFallback(p.photos[0])}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />`
-              : ""
-          }
+          <img class="admin-prop-thumb" src="${photoUrlWithFallback(getPropertyPreviewPhoto(p))}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />
           <span>${escapeHtml(p.address || "—")}</span>
         </div>
       </td>
@@ -4204,11 +4208,7 @@ async function renderAdminPage() {
           <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
           <td data-label="Адрес">
             <div class="admin-prop-cell">
-              ${
-                p.photos?.[0]
-                  ? `<img class="admin-prop-thumb" src="${photoUrlWithFallback(p.photos[0])}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />`
-                  : ""
-              }
+              <img class="admin-prop-thumb" src="${photoUrlWithFallback(getPropertyPreviewPhoto(p))}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />
               <span>${escapeHtml(p.address || "—")}</span>
             </div>
           </td>
