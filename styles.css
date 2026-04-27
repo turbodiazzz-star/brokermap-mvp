@@ -793,8 +793,10 @@ body.view-map #app {
   min-height: 100vh;
   background: #f3f3f3;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   padding: 20px;
   padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
@@ -803,6 +805,24 @@ body.view-map #app {
 .login-wrapper {
   width: 100%;
   max-width: 420px;
+}
+
+.contact-us-card {
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 8px 20px rgba(16, 24, 40, 0.08);
+}
+
+.contact-us-card h4 {
+  margin: 0 0 6px;
+}
+
+.contact-us-card p {
+  margin: 0 0 8px;
 }
 
 .login-box {

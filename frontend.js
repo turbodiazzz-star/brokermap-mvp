@@ -208,6 +208,8 @@ const agencyButtonHtml = () =>
     ? `<button type="button" class="top-action" id="agencyBtn">Агентство</button>`
     : "";
 
+const SUPPORT_EMAIL = "support@brokermap.ru";
+
 function moreFiltersModalHtml() {
   return `
     <div class="modal" id="filtersModal">
@@ -2597,6 +2599,11 @@ function renderAuthPage() {
           <button class="btn full" id="openReset">Забыли пароль?</button>
           <p class="muted" id="authStatus"></p>
         </div>
+      </div>
+      <div class="contact-us-card">
+        <h4>Связаться с нами</h4>
+        <p class="muted">По предложениям и вопросам пишите на почту:</p>
+        <p><a class="btn" href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
       </div>
 
       <div class="auth-modal" id="registerModal">
