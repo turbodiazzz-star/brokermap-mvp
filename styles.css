@@ -1040,6 +1040,12 @@ textarea {
   overflow: visible;
 }
 
+.filters-modal-card {
+  width: min(620px, 92vw);
+  max-height: min(82vh, 760px);
+  overflow-y: auto;
+}
+
 #propertyFormWrap {
   max-height: calc(88vh - 84px);
   overflow-y: auto;
@@ -1559,6 +1565,19 @@ textarea {
 
   #galleryNextBtn {
     right: 8px;
+  }
+
+  #filtersModal {
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: max(64px, calc(env(safe-area-inset-top, 0px) + 54px));
+    padding-bottom: 10px;
+  }
+
+  .filters-modal-card {
+    margin: 0 10px;
+    max-height: calc(100dvh - max(92px, calc(env(safe-area-inset-top, 0px) + 80px)) - 10px);
+    overflow-y: auto;
   }
 }
 

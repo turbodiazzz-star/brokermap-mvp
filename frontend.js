@@ -211,8 +211,11 @@ const agencyButtonHtml = () =>
 function moreFiltersModalHtml() {
   return `
     <div class="modal" id="filtersModal">
-      <div class="modal-card">
-        <h3>Дополнительные фильтры</h3>
+      <div class="modal-card filters-modal-card">
+        <div class="panel-head">
+          <h3>Дополнительные фильтры</h3>
+          <button class="close-panel-action" id="closeFiltersXBtn" type="button" aria-label="Закрыть">×</button>
+        </div>
         <div class="form-grid">
           <div class="field-block">
             <label class="field-label" for="modalMinPrice">Цена от</label>
@@ -273,7 +276,6 @@ function moreFiltersModalHtml() {
         <p>
           <button class="btn primary" id="applyMoreFilters" type="button">Применить</button>
           <button class="btn" id="resetMoreFilters" type="button">Сбросить доп. фильтры</button>
-          <button class="btn" id="closeModal" type="button">Закрыть</button>
         </p>
       </div>
     </div>
@@ -1432,8 +1434,13 @@ function renderPublicDemoPage() {
   document.getElementById("moreFilters")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.add("open");
   });
-  document.getElementById("closeModal")?.addEventListener("click", () => {
+  document.getElementById("closeFiltersXBtn")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.remove("open");
+  });
+  document.getElementById("filtersModal")?.addEventListener("click", (e) => {
+    if (e.target?.id === "filtersModal") {
+      document.getElementById("filtersModal")?.classList.remove("open");
+    }
   });
   const demoAbout = document.getElementById("demoAboutModal");
   const openAbout = () => demoAbout?.classList.add("open");
@@ -1682,8 +1689,13 @@ function renderMapPage() {
   document.getElementById("moreFilters").addEventListener("click", () => {
     document.getElementById("filtersModal").classList.add("open");
   });
-  document.getElementById("closeModal").addEventListener("click", () => {
+  document.getElementById("closeFiltersXBtn").addEventListener("click", () => {
     document.getElementById("filtersModal").classList.remove("open");
+  });
+  document.getElementById("filtersModal")?.addEventListener("click", (e) => {
+    if (e.target?.id === "filtersModal") {
+      document.getElementById("filtersModal")?.classList.remove("open");
+    }
   });
   document.getElementById("applyMoreFilters").addEventListener("click", () => {
     state.filters.minPrice = toRawNumberString(document.getElementById("modalMinPrice")?.value || "");
