@@ -659,7 +659,11 @@ function bindSheetReflowOnImages(panel, layoutId) {
 
 function sheetRubber(t, g) {
   if (!g) return t;
-  if (t < g.yMin) return g.yMin;
+  if (t < g.yMin) {
+    const overshoot = g.yMin - t;
+    const softened = Math.min(10, overshoot * 0.18);
+    return g.yMin - softened;
+  }
   if (t > g.yMax) return g.yMax;
   return t;
 }
@@ -805,8 +809,12 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       }
 
       if (y < g.yMin) {
-        y = g.yMin;
-        if (v < 0) v = 0;
+        const overshoot = g.yMin - y;
+        v += (overshoot * 0.01 - v * 0.05) * dt;
+        if (y < g.yMin - 12) {
+          y = g.yMin - 12;
+          if (v < 0) v *= 0.3;
+        }
       } else if (y > g.yMax) {
         const overshoot = y - g.yMax;
         v += (-overshoot * 0.0062 - v * 0.022) * dt;
