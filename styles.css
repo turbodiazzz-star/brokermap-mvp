@@ -1504,6 +1504,14 @@ textarea {
   margin: 14px 0 6px;
 }
 
+.admin-search-row {
+  margin-bottom: 10px;
+}
+
+.admin-table-wrap--spaced {
+  margin-top: 10px;
+}
+
 .admin-tab-btn {
   background: #fff;
   border-color: var(--border);
@@ -1599,6 +1607,12 @@ textarea {
   word-break: break-all;
 }
 
+.admin-row-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .danger-btn {
   background: #b91c1c;
   border-color: #b91c1c;
@@ -1608,6 +1622,68 @@ textarea {
 .danger-btn:hover {
   background: #991b1b;
   border-color: #991b1b;
+}
+
+@media (max-width: 900px) {
+  .admin-page {
+    margin: 10px auto;
+    padding: 0 10px 18px;
+  }
+
+  .admin-tabs {
+    flex-wrap: wrap;
+  }
+
+  .admin-tab-btn {
+    flex: 1 1 0;
+    min-height: 42px;
+  }
+
+  .admin-search-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .admin-search-row .btn,
+  .admin-search-row input {
+    width: 100%;
+  }
+
+  .admin-table {
+    font-size: 13px;
+  }
+
+  .admin-table th,
+  .admin-table td {
+    padding: 8px 9px;
+  }
+
+  .admin-row-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .admin-row-actions .btn {
+    width: 100%;
+    min-height: 38px;
+  }
+
+  .admin-modal-card {
+    width: 100%;
+    max-width: 100%;
+    min-height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .admin-mini-list-item {
+    font-size: 12px;
+    line-height: 1.45;
+    display: grid;
+    gap: 8px;
+  }
 }
 
 @media (min-width: 768px) {

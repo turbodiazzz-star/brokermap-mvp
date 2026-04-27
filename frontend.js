@@ -3669,8 +3669,10 @@ async function renderAdminPage() {
       <td>${a.brokerCount}</td>
       <td>${a.brokerLimit}</td>
       <td>
-        <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
-        <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
+        <div class="admin-row-actions">
+          <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
+          <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
+        </div>
       </td>
     </tr>`
     )
@@ -3686,12 +3688,14 @@ async function renderAdminPage() {
       <td>${u.role === "admin" ? "admin" : "брокер"}</td>
       <td class="muted">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
       <td>
-        <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
-        ${
-          u.role === "admin"
-            ? `<span class="muted">—</span>`
-            : `<button class="btn danger-btn admin-del-user" data-id="${escapeHtml(u.id)}" data-email="${escapeHtml(u.email)}" type="button">Удалить</button>`
-        }
+        <div class="admin-row-actions">
+          <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
+          ${
+            u.role === "admin"
+              ? `<span class="muted">—</span>`
+              : `<button class="btn danger-btn admin-del-user" data-id="${escapeHtml(u.id)}" data-email="${escapeHtml(u.email)}" type="button">Удалить</button>`
+          }
+        </div>
       </td>
     </tr>`
     )
@@ -3706,8 +3710,10 @@ async function renderAdminPage() {
       <td>${escapeHtml(p.ownerEmail)}</td>
       <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
       <td>
-        <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
-        <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+        <div class="admin-row-actions">
+          <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
+          <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+        </div>
       </td>
     </tr>`
     )
@@ -3737,11 +3743,11 @@ async function renderAdminPage() {
       <h2>Агентства</h2>
       <div class="panel">
         <h3>Список агентств</h3>
-        <div class="address-row">
+        <div class="address-row admin-search-row">
           <input id="adminAgencySearchInput" placeholder="Поиск агентства: email, имя, название" />
           <button class="btn" type="button" id="adminAgencySearchBtn">Найти</button>
         </div>
-        <div class="admin-table-wrap" style="margin-top:10px;">
+        <div class="admin-table-wrap admin-table-wrap--spaced">
           <table class="admin-table">
             <thead>
               <tr>
@@ -3759,7 +3765,7 @@ async function renderAdminPage() {
         </div>
       </div>
       <h2>Частные брокеры</h2>
-      <div class="address-row" style="margin-bottom:10px;">
+      <div class="address-row admin-search-row">
         <input id="adminPrivateBrokerSearchInput" placeholder="Поиск частного брокера: email, имя, телефон, ИП/самозанятый" />
         <button class="btn" type="button" id="adminPrivateBrokerSearchBtn">Найти</button>
       </div>
@@ -3785,7 +3791,7 @@ async function renderAdminPage() {
 
       <div class="admin-tab-panel" id="adminPropertiesPanel">
       <h2>Объекты</h2>
-      <div class="address-row" style="margin-bottom:10px;">
+      <div class="address-row admin-search-row">
         <input id="adminPropertySearchInput" placeholder="Поиск объекта: ID, адрес, email владельца" />
         <button class="btn" type="button" id="adminPropertySearchBtn">Найти</button>
       </div>
@@ -3888,8 +3894,10 @@ async function renderAdminPage() {
           <td>${a.brokerCount}</td>
           <td>${a.brokerLimit}</td>
           <td>
-            <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
-            <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
+            <div class="admin-row-actions">
+              <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
+              <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
+            </div>
           </td>
         </tr>`
           )
@@ -4124,14 +4132,16 @@ async function renderAdminPage() {
           <td>${u.role === "admin" ? "admin" : "брокер"}</td>
           <td class="muted">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
           <td>
-            <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
-            ${
-              u.role === "admin"
-                ? `<span class="muted">—</span>`
-                : `<button class="btn danger-btn admin-del-user" data-id="${escapeHtml(u.id)}" data-email="${escapeHtml(
-                    u.email
-                  )}" type="button">Удалить</button>`
-            }
+            <div class="admin-row-actions">
+              <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
+              ${
+                u.role === "admin"
+                  ? `<span class="muted">—</span>`
+                  : `<button class="btn danger-btn admin-del-user" data-id="${escapeHtml(u.id)}" data-email="${escapeHtml(
+                      u.email
+                    )}" type="button">Удалить</button>`
+              }
+            </div>
           </td>
         </tr>`
             )
@@ -4168,8 +4178,10 @@ async function renderAdminPage() {
           <td>${escapeHtml(p.ownerEmail)}</td>
           <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
           <td>
-            <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
-            <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+            <div class="admin-row-actions">
+              <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
+              <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+            </div>
           </td>
         </tr>`
           )
