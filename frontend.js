@@ -617,7 +617,7 @@ function getSheetGeometry(panel) {
   const bottomNav = document.querySelector(".mobile-map-bottom-nav");
   const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
-  const PEEK = 172;
+  const PEEK = 206;
   const yMaxScreen = Math.max(0, vh - navH - PEEK);
   const yMax = yMaxScreen;
   const yMinNatural = Math.min(0, vh - H);
@@ -1031,9 +1031,6 @@ function bindMobileBottomNavActions(isDemo) {
       } else if (isDemo && location.hash !== "#/") {
         location.hash = "#/";
       }
-      requestAnimationFrame(() => {
-        snapSheetToPeek(isDemo ? "demoLeftPanel" : "leftPanel", isDemo ? "demoMapLayout" : "mapLayout", isDemo);
-      });
     };
     searchBtn.onclick = onSearch;
     searchBtn.onpointerup = onSearch;
