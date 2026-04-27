@@ -651,7 +651,11 @@ function bindSheetReflowOnImages(panel, layoutId) {
 
 function sheetRubber(t, g) {
   if (!g) return t;
-  if (t < g.yMin) return g.yMin + (t - g.yMin) * 0.32;
+  if (t < g.yMin) {
+    const overshoot = g.yMin - t;
+    const softened = Math.min(56, overshoot * 0.22);
+    return g.yMin - softened;
+  }
   if (t > g.yMax) return g.yMax;
   return t;
 }
@@ -659,6 +663,18 @@ function sheetRubber(t, g) {
 function clampSheetT(t, g) {
   if (!g) return 0;
   return Math.min(g.yMax, Math.max(g.yMin, t));
+}
+
+function rememberSheetPosition(panel) {
+  if (!panel) return;
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  if (state.panelCollapsed) return;
+  const s = getSheetNode(panel);
+  if (!s) return;
+  const y = getPanelTranslateY(s);
+  if (Number.isFinite(y)) {
+    state.panelSheetT = y;
+  }
 }
 
 /**
@@ -787,7 +803,15 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       if (y < g.yMin || y > g.yMax) {
         const bound = y < g.yMin ? g.yMin : g.yMax;
         const overshoot = y - bound;
-        v += (-overshoot * 0.0062 - v * 0.022) * dt;
+        if (y < g.yMin) {
+          v += (-overshoot * 0.004 - v * 0.038) * dt;
+          if (y < g.yMin - 72) {
+            y = g.yMin - 72;
+            if (v < 0) v *= 0.35;
+          }
+        } else {
+          v += (-overshoot * 0.0062 - v * 0.022) * dt;
+        }
       }
 
       setPanelTranslateY(s, y, false);
@@ -1081,7 +1105,7 @@ function bindMobileBottomNavActions(isDemo) {
   }
 }
 
-function mobileSheetSettleAfterRender(panel, layout) {
+function mobileSheetSettleAfterRender(panel, layout, animate = false) {
   if (!panel) return;
   const s = getSheetNode(panel);
   if (!s) return;
@@ -1101,7 +1125,7 @@ function mobileSheetSettleAfterRender(panel, layout) {
       const cur = getPanelTranslateY(s);
       t = Number.isFinite(cur) ? clampSheetT(cur, g) : g.yMid;
     }
-    setPanelTranslateY(s, t, true, 320);
+    setPanelTranslateY(s, t, animate, animate ? 320 : undefined);
   });
 }
 
@@ -1139,7 +1163,7 @@ function openMapLeftPanel() {
   } else {
     renderViewportPanel();
   }
-  mobileSheetSettleAfterRender(p, layout);
+  mobileSheetSettleAfterRender(p, layout, true);
   updateMapOpenPanelButton();
   ensureMapDrawControls();
   refreshMapViewport();
@@ -1186,6 +1210,7 @@ function demoCollapseLeftPanel() {
 function renderDemoPanel(list, title) {
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
+  rememberSheetPosition(panel);
   const bodyHtml = list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`;
   panel.innerHTML = leftPanelMobileBlock(
     "demoLeftPanelHandleArea",
@@ -1197,7 +1222,7 @@ function renderDemoPanel(list, title) {
   });
   bindDemoCardButtons(panel);
   bindSheetReflowOnImages(panel, "demoMapLayout");
-  mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"));
+  mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"), false);
 }
 
 function getDemoViewportPropertyList() {
@@ -1450,6 +1475,8 @@ function renderPublicDemoPage() {
     } else {
       renderDemoViewportPanel();
     }
+    const pAfter = document.getElementById("demoLeftPanel");
+    mobileSheetSettleAfterRender(pAfter, layout, true);
     updateDemoOpenPanelButton();
     ensureMapDrawControls();
     refreshMapViewport();
@@ -1681,6 +1708,7 @@ function getAreaFilteredProperties() {
 function renderAreaSelectionPanel(list) {
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
+  rememberSheetPosition(panel);
   const bodyHtml = list.length ? list.map(cardMarkup).join("") : `<p class="muted">Внутри области объекты не найдены.</p>`;
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
@@ -1696,7 +1724,7 @@ function renderAreaSelectionPanel(list) {
     });
   });
   bindSheetReflowOnImages(panel, "mapLayout");
-  mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"));
+  mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
 }
 
 function isPointInsideBounds(lat, lon, bounds) {
@@ -1719,6 +1747,7 @@ function getViewportProperties() {
 function renderViewportPanel() {
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
+  rememberSheetPosition(panel);
   const list = getViewportProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
   const bodyHtml = list.length ? list.map(cardMarkup).join("") : `<p class="muted">В текущей области объекты не найдены.</p>`;
   panel.innerHTML = leftPanelMobileBlock(
@@ -1735,7 +1764,7 @@ function renderViewportPanel() {
     });
   });
   bindSheetReflowOnImages(panel, "mapLayout");
-  mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"));
+  mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
 }
 
 function syncDrawButtons() {
@@ -1999,6 +2028,7 @@ function showGroup(properties) {
   refreshMapViewport();
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
+  rememberSheetPosition(panel);
   properties.sort((a, b) => b.commissionPartner - a.commissionPartner);
   const bodyHtml = properties.map(cardMarkup).join("");
   panel.innerHTML = leftPanelMobileBlock(
@@ -2010,7 +2040,7 @@ function showGroup(properties) {
     mapCollapseLeftPanel();
   });
   updateMapOpenPanelButton();
-  mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"));
+  mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
   ensureMapDrawControls();
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -2050,12 +2080,14 @@ function initMap() {
         clearTimeout(state.viewportUpdateTimer);
       }
       state.viewportUpdateTimer = setTimeout(() => {
+        const p = document.getElementById("leftPanel");
+        if (getSheetNode(p)?.classList.contains("left-panel--sheet-live")) return;
         if (state.areaPolygonCoords?.length) {
           renderAreaSelectionPanel(getAreaFilteredProperties());
         } else {
           renderViewportPanel();
         }
-      }, 120);
+      }, 220);
     });
 
     let clusterer = null;
@@ -2162,12 +2194,14 @@ function initDemoMap() {
         clearTimeout(state.viewportUpdateTimer);
       }
       state.viewportUpdateTimer = setTimeout(() => {
+        const p = document.getElementById("demoLeftPanel");
+        if (getSheetNode(p)?.classList.contains("left-panel--sheet-live")) return;
         if (state.areaPolygonCoords?.length) {
           renderDemoAreaSelectionPanel();
         } else {
           renderDemoViewportPanel();
         }
-      }, 120);
+      }, 220);
     });
 
     let clusterer = null;
