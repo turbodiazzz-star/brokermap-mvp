@@ -334,8 +334,9 @@ function topbar(options = {}) {
       </div>
     </header>`;
   }
+  const hideFilters = Boolean(options.hideFilters);
   return `
-    <header class="topbar">
+    <header class="topbar ${hideFilters ? "topbar--no-filters" : ""}">
       <button type="button" class="brand brand-home-btn" id="brandHomeBtn">BrokerMap</button>
       <div class="filters">
         <input
@@ -2861,7 +2862,7 @@ async function renderCabinetPage(openForm = false) {
   }
   const [items, stats] = await Promise.all([api("/api/my/properties"), api("/api/my/stats")]);
   app.innerHTML = `
-    ${topbar()}
+    ${topbar({ hideFilters: window.matchMedia("(max-width: 900px)").matches })}
     <section class="cabinet">
       <div class="panel">
         <div class="panel-head">
