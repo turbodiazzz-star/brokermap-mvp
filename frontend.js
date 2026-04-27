@@ -396,6 +396,19 @@ function mobileBottomNavHtml(activeTab = "search") {
   `;
 }
 
+function getActiveMobileNavTab() {
+  const hash = location.hash || "#/";
+  if (
+    hash.startsWith("#/cabinet") ||
+    hash.startsWith("#/auth") ||
+    hash.startsWith("#/admin") ||
+    hash.startsWith("#/agency")
+  ) {
+    return "cabinet";
+  }
+  return "search";
+}
+
 function mapDrawToolsHtml() {
   return `<div class="map-draw-tools">
     <button class="map-draw-btn" type="button" id="mapDrawAreaBtn" title="Выделить область на карте" aria-label="Выделить область на карте"><span class="map-draw-btn__icon" aria-hidden="true">✍</span></button>
@@ -1123,6 +1136,7 @@ function bindMobileBottomNavActions() {
     searchBtn?.classList.toggle("active", tab === "search");
     cabinetBtn?.classList.toggle("active", tab === "cabinet");
   };
+  setActive(getActiveMobileNavTab());
   if (searchBtn) {
     const onSearch = (e) => {
       e.preventDefault();
