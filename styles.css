@@ -1613,6 +1613,22 @@ textarea {
   gap: 8px;
 }
 
+.admin-prop-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.admin-prop-thumb {
+  width: 56px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #f4f6fb;
+  flex-shrink: 0;
+}
+
 .danger-btn {
   background: #b91c1c;
   border-color: #b91c1c;
@@ -1719,6 +1735,11 @@ textarea {
     line-height: 1.45;
     display: grid;
     gap: 8px;
+  }
+
+  .admin-prop-thumb {
+    width: 88px;
+    height: 62px;
   }
 }
 

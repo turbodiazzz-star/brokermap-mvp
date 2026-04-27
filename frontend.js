@@ -3705,7 +3705,16 @@ async function renderAdminPage() {
     .map(
       (p) => `<tr>
       <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
-      <td data-label="Адрес">${escapeHtml(p.address || "—")}</td>
+      <td data-label="Адрес">
+        <div class="admin-prop-cell">
+          ${
+            p.photos?.[0]
+              ? `<img class="admin-prop-thumb" src="${photoUrlWithFallback(p.photos[0])}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />`
+              : ""
+          }
+          <span>${escapeHtml(p.address || "—")}</span>
+        </div>
+      </td>
       <td data-label="Цена">${money(p.price)} ₽</td>
       <td data-label="Владелец">${escapeHtml(p.ownerEmail)}</td>
       <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
@@ -4173,7 +4182,16 @@ async function renderAdminPage() {
           .map(
             (p) => `<tr>
           <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
-          <td data-label="Адрес">${escapeHtml(p.address || "—")}</td>
+          <td data-label="Адрес">
+            <div class="admin-prop-cell">
+              ${
+                p.photos?.[0]
+                  ? `<img class="admin-prop-thumb" src="${photoUrlWithFallback(p.photos[0])}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />`
+                  : ""
+              }
+              <span>${escapeHtml(p.address || "—")}</span>
+            </div>
+          </td>
           <td data-label="Цена">${money(p.price)} ₽</td>
           <td data-label="Владелец">${escapeHtml(p.ownerEmail)}</td>
           <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
