@@ -617,10 +617,11 @@ function getSheetGeometry(panel) {
   const bottomNav = document.querySelector(".mobile-map-bottom-nav");
   const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
-  const PEEK = 124;
+  const PEEK = 172;
   const yMaxScreen = Math.max(0, vh - navH - PEEK);
   const yMax = yMaxScreen;
-  const yMin = Math.min(0, vh - H);
+  const yMinNatural = Math.min(0, vh - H);
+  const yMin = Math.min(yMinNatural, -Math.round(vh * 0.78));
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
   const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
   return { h: H, yMin, yMax, yPeek: yMax, yMid, yFirst, vh, navH };
