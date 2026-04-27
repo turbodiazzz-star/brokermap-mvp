@@ -619,10 +619,10 @@ function getSheetGeometry(panel) {
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
   const PEEK = 206;
   const yMaxScreen = Math.max(0, vh - navH - PEEK);
-  const yMaxByContent = Math.max(0, H - 56);
-  const yMax = Math.min(yMaxScreen, yMaxByContent);
-  const yMinNatural = Math.min(0, vh - H);
-  const yMin = Math.min(yMinNatural, -Math.round(vh * 0.78));
+  const head = track?.querySelector(".left-panel-head");
+  const yMaxByHead = head ? Math.max(0, Math.round(head.offsetTop + head.offsetHeight + 10)) : yMaxScreen;
+  const yMax = Math.min(yMaxScreen, yMaxByHead);
+  const yMin = Math.min(0, vh - H);
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
   const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
   return { h: H, yMin, yMax, yPeek: yMax, yMid, yFirst, vh, navH };
