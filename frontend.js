@@ -1149,6 +1149,19 @@ function bindMobileBottomNavActions() {
       e.preventDefault();
       e.stopPropagation();
       setActive("search");
+      const fromCabinetArea =
+        location.hash.startsWith("#/cabinet") ||
+        location.hash.startsWith("#/auth") ||
+        location.hash.startsWith("#/admin") ||
+        location.hash.startsWith("#/agency");
+      if (fromCabinetArea) {
+        // Return to map/search with default half-open sheet position.
+        state.panelCollapsed = false;
+        state.panelSheetT = null;
+        state.panelSheetInitialized = false;
+        state.panelCollapsedBeforeCabinet = null;
+        state.panelSheetTBeforeCabinet = null;
+      }
       if (
         state.panelCollapsedBeforeCabinet != null ||
         state.panelSheetTBeforeCabinet != null
