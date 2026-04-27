@@ -2363,15 +2363,22 @@ async function renderPropertyPage(id) {
     event.preventDefault();
     const link = document.getElementById("downloadPdfBtn");
     if (!link) return;
+    // iOS Safari blocks popup if window.open happens after await.
+    const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
     const originalText = link.textContent;
     link.textContent = "Обновление PDF...";
     link.style.pointerEvents = "none";
     try {
       const data = await api(`/api/my/properties/${id}/generate-pdf`, { method: "POST" });
       const freshUrl = `${data.pdfUrl}?v=${encodeURIComponent(id || "")}-${Date.now()}`;
-      window.open(freshUrl, "_blank", "noopener,noreferrer");
+      if (popup && !popup.closed) {
+        popup.location.replace(freshUrl);
+      } else {
+        window.location.href = freshUrl;
+      }
       await renderPropertyPage(id);
     } catch (_error) {
+      if (popup && !popup.closed) popup.close();
       link.textContent = originalText || "Скачать презентацию PDF";
       link.style.pointerEvents = "";
     }
