@@ -619,7 +619,8 @@ function getSheetGeometry(panel) {
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
   const PEEK = 206;
   const yMaxScreen = Math.max(0, vh - navH - PEEK);
-  const yMax = yMaxScreen;
+  const yMaxByContent = Math.max(0, H - 56);
+  const yMax = Math.min(yMaxScreen, yMaxByContent);
   const yMinNatural = Math.min(0, vh - H);
   const yMin = Math.min(yMinNatural, -Math.round(vh * 0.78));
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
@@ -1026,7 +1027,9 @@ function bindMobileBottomNavActions(isDemo) {
     const onSearch = (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (!isDemo && location.hash !== "#/map") {
+      if (!state.token) {
+        if (location.hash !== "#/") location.hash = "#/";
+      } else if (!isDemo && location.hash !== "#/map") {
         location.hash = "#/map";
       } else if (isDemo && location.hash !== "#/") {
         location.hash = "#/";
@@ -1213,7 +1216,6 @@ function renderPublicDemoPage() {
     state.demoAllProperties = createDemoProperties(100);
   }
   state.properties = filterPropertiesByState(state.demoAllProperties);
-  state.panelCollapsed = false;
 
   app.innerHTML = `
     <section class="demo-page">
@@ -2422,7 +2424,7 @@ function renderAuthPage() {
         </div>
       </div>
     </section>
-    ${mobileBottomNavHtml(false)}
+    ${mobileBottomNavHtml(!state.token)}
   `;
 
   const toDemoEl = document.getElementById("toDemoMapBtn");
@@ -2444,7 +2446,7 @@ function renderAuthPage() {
   document.getElementById("closeReset").addEventListener("click", () => {
     document.getElementById("resetModal").classList.remove("active");
   });
-  bindMobileBottomNavActions(false);
+  bindMobileBottomNavActions(!state.token);
 
   const updateRegisterFormByType = () => {
     const type = document.getElementById("accountType").value;
