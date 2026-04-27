@@ -378,6 +378,13 @@ function mobileBottomNavHtml(isDemo) {
   `;
 }
 
+function updateMobileNavMetrics() {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  const nav = document.querySelector(".mobile-map-bottom-nav");
+  if (!nav) return;
+  document.documentElement.style.setProperty("--mobile-bottom-nav-height", `${Math.round(nav.offsetHeight)}px`);
+}
+
 function bindBrandHomeButton() {
   document.getElementById("brandHomeBtn")?.addEventListener("click", () => {
     location.hash = "#/";
@@ -1347,6 +1354,7 @@ function renderPublicDemoPage() {
     document.getElementById("filtersModal")?.classList.add("open");
   });
   bindMobileBottomNavActions(true);
+  updateMobileNavMetrics();
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
   ensureMapDrawControls();
 
@@ -1587,6 +1595,7 @@ function renderMapPage() {
     document.getElementById("filtersModal")?.classList.add("open");
   });
   bindMobileBottomNavActions(false);
+  updateMobileNavMetrics();
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
     location.hash = state.user ? "#/cabinet" : "#/auth";
   });
@@ -2517,6 +2526,7 @@ function renderAuthPage() {
     document.getElementById("resetModal").classList.remove("active");
   });
   bindMobileBottomNavActions(!state.token);
+  updateMobileNavMetrics();
 
   const updateRegisterFormByType = () => {
     const type = document.getElementById("accountType").value;
