@@ -2787,6 +2787,12 @@ function renderAuthPage() {
         method: "POST",
         body: JSON.stringify(payload)
       });
+      if (data.requiresEmailVerification) {
+        document.getElementById("registerModal").classList.remove("active");
+        document.getElementById("authStatus").textContent =
+          data.message || "Проверьте почту и подтвердите email перед входом.";
+        return;
+      }
       setAuth(data);
       location.hash = "#/";
     } catch (error) {

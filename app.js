@@ -9,6 +9,7 @@ const crypto = require("crypto");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const nodemailer = require("nodemailer");
 const PDFDocument = require("pdfkit");
 const {
   initDb,
@@ -36,12 +37,20 @@ const {
   listAgenciesForAdmin,
   updateAgencyBrokerLimit,
   updateUserPasswordHash,
+  markUserEmailVerified,
   listPrivateBrokersForAdmin,
   listPropertiesForAgencyOwner
 } = require("./lib/db");
 
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || "dev-only-secret-change-me";
+const APP_BASE_URL = String(process.env.APP_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
+const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_USER || "no-reply@brokermap.local";
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = String(process.env.SMTP_SECURE || "false").toLowerCase() === "true";
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = process.env.SMTP_PASS || "";
 const adminEmailList = (process.env.ADMIN_EMAILS || "")
   .split(",")
   .map((e) => e.trim().toLowerCase())
@@ -51,6 +60,38 @@ const UPLOADS_DIR = path.join(__dirname, "uploads");
 const PHOTOS_DIR = path.join(UPLOADS_DIR, "photos");
 const PDFS_DIR = path.join(UPLOADS_DIR, "pdfs");
 const app = express();
+
+const mailTransport = SMTP_HOST
+  ? nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_SECURE,
+      auth: SMTP_USER ? { user: SMTP_USER, pass: SMTP_PASS } : undefined
+    })
+  : null;
+
+function htmlEscape(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function sendEmail({ to, subject, html, text }) {
+  if (!mailTransport) {
+    console.warn(`[mail] SMTP not configured. Email to ${to}: ${subject}`);
+    return { queued: false };
+  }
+  await mailTransport.sendMail({
+    from: EMAIL_FROM,
+    to,
+    subject,
+    text,
+    html
+  });
+  return { queued: true };
+}
 
 function unlinkUploadMaybe(url) {
   if (!url || typeof url !== "string" || !url.startsWith("/uploads/")) {
@@ -311,7 +352,8 @@ function publicUser(user) {
     isAdmin: user.role === "admin",
     accountType: user.accountType || "broker",
     isAgencyOwner: user.accountType === "agency_owner",
-    brokerLimit: Number(user.brokerLimit || 0)
+    brokerLimit: Number(user.brokerLimit || 0),
+    emailVerified: Boolean(user.emailVerified)
   };
 }
 
@@ -338,6 +380,14 @@ function signUserToken(user) {
     JWT_SECRET,
     { expiresIn: "7d" }
   );
+}
+
+function signActionToken(payload, expiresIn) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+}
+
+function hashPasswordSignature(passwordHash) {
+  return crypto.createHash("sha256").update(String(passwordHash || "")).digest("hex").slice(0, 16);
 }
 
 function auth(req, res, next) {
@@ -499,11 +549,12 @@ app.post("/api/auth/register", async (req, res) => {
   }
   const passwordHash = await bcrypt.hash(password, 10);
   const id = `u-${Date.now()}`;
-  const role = isAdminEmail(email) ? "admin" : "user";
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const role = isAdminEmail(normalizedEmail) ? "admin" : "user";
   const user = {
     id,
     name: name || `${firstName} ${lastName}`.trim(),
-    email,
+    email: normalizedEmail,
     passwordHash,
     firstName,
     lastName,
@@ -519,12 +570,25 @@ app.post("/api/auth/register", async (req, res) => {
     accountType: normalizedType,
     agencyOwnerId: null,
     brokerLimit: normalizedType === "agency_owner" ? 100 : 0,
+    emailVerified: false,
     createdAt: new Date().toISOString()
   };
   createUserRecord(user);
-  const token = signUserToken(user);
-  setAuthCookie(res, token);
-  return res.json({ token, user: publicUser({ ...user, role }) });
+  const verifyToken = signActionToken(
+    { action: "verify_email", userId: user.id, email: user.email },
+    "24h"
+  );
+  const verifyLink = `${APP_BASE_URL}/api/auth/verify-email?token=${encodeURIComponent(verifyToken)}`;
+  await sendEmail({
+    to: user.email,
+    subject: "Подтвердите email в BrokerMap",
+    text: `Подтвердите email: ${verifyLink}`,
+    html: `<p>Подтвердите email для входа в BrokerMap:</p><p><a href="${htmlEscape(verifyLink)}">Подтвердить email</a></p>`
+  });
+  return res.json({
+    requiresEmailVerification: true,
+    message: "Мы отправили письмо для подтверждения email. Откройте ссылку из письма."
+  });
 });
 
 app.post("/api/auth/login", async (req, res) => {
@@ -536,6 +600,11 @@ app.post("/api/auth/login", async (req, res) => {
   const ok = await bcrypt.compare(password || "", user.passwordHash);
   if (!ok) {
     return res.status(401).json({ message: "Неверный email или пароль" });
+  }
+  if (!user.emailVerified) {
+    return res.status(403).json({
+      message: "Email не подтвержден. Подтвердите почту по ссылке из письма."
+    });
   }
   const token = signUserToken(user);
   setAuthCookie(res, token);
@@ -562,10 +631,114 @@ app.post("/api/auth/refresh-cookie", (req, res) => {
   return res.json({ ok: true });
 });
 
-app.post("/api/auth/forgot-password", (req, res) => {
+app.get("/api/auth/verify-email", (req, res) => {
+  const token = String(req.query.token || "");
+  if (!token) {
+    return res.status(400).send("<h2>Некорректная ссылка подтверждения</h2>");
+  }
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.action !== "verify_email" || !payload.userId || !payload.email) {
+      return res.status(400).send("<h2>Некорректный токен подтверждения</h2>");
+    }
+    const user = findUserById(payload.userId);
+    if (!user || String(user.email).toLowerCase() !== String(payload.email).toLowerCase()) {
+      return res.status(400).send("<h2>Пользователь не найден</h2>");
+    }
+    markUserEmailVerified(user.id);
+    return res.send(
+      `<h2>Email подтвержден</h2><p>Теперь можно войти в аккаунт.</p><p><a href="${htmlEscape(
+        `${APP_BASE_URL}/#/auth`
+      )}">Перейти ко входу</a></p>`
+    );
+  } catch {
+    return res.status(400).send("<h2>Ссылка подтверждения недействительна или истекла</h2>");
+  }
+});
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const user = findUserByEmail(email);
+  if (user) {
+    const resetToken = signActionToken(
+      {
+        action: "reset_password",
+        userId: user.id,
+        email: user.email,
+        pwdSig: hashPasswordSignature(user.passwordHash)
+      },
+      "1h"
+    );
+    const resetLink = `${APP_BASE_URL}/api/auth/reset-password?token=${encodeURIComponent(resetToken)}`;
+    await sendEmail({
+      to: user.email,
+      subject: "Сброс пароля в BrokerMap",
+      text: `Для сброса пароля перейдите по ссылке: ${resetLink}`,
+      html: `<p>Для сброса пароля перейдите по ссылке:</p><p><a href="${htmlEscape(resetLink)}">Сбросить пароль</a></p>`
+    });
+  }
   return res.json({
-    message: `Запрос на восстановление для ${req.body.email || "email"} принят. Для MVP используйте регистрацию заново.`
+    message: "Если такой email зарегистрирован, мы отправили письмо со ссылкой для сброса пароля."
   });
+});
+
+app.get("/api/auth/reset-password", (req, res) => {
+  const token = String(req.query.token || "");
+  if (!token) {
+    return res.status(400).send("<h2>Некорректная ссылка сброса</h2>");
+  }
+  return res.send(`<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Сброс пароля</title>
+<style>body{font-family:Inter,Arial,sans-serif;background:#f4f6fb;margin:0;padding:20px} .card{max-width:440px;margin:40px auto;background:#fff;border:1px solid #e5e9f2;border-radius:14px;padding:16px} input,button{width:100%;height:42px;border-radius:10px;border:1px solid #d8deeb;padding:0 12px;margin:8px 0} button{background:#1760ff;border-color:#1760ff;color:#fff;font-weight:600;cursor:pointer}</style>
+</head><body><div class="card"><h2>Сброс пароля</h2><form method="post" action="/api/auth/reset-password">
+<input type="hidden" name="token" value="${htmlEscape(token)}">
+<label>Новый пароль</label><input name="newPassword" type="password" minlength="6" required>
+<label>Повтор нового пароля</label><input name="confirmPassword" type="password" minlength="6" required>
+<button type="submit">Сохранить новый пароль</button></form></div></body></html>`);
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  const token = String(req.body.token || "");
+  const newPassword = String(req.body.newPassword || "");
+  const confirmPassword = String(req.body.confirmPassword || "");
+  const wantsHtml = String(req.headers.accept || "").includes("text/html");
+  if (!token || !newPassword || !confirmPassword) {
+    const message = "Заполните все поля";
+    return wantsHtml ? res.status(400).send(`<h2>${htmlEscape(message)}</h2>`) : res.status(400).json({ message });
+  }
+  if (newPassword.length < 6) {
+    const message = "Новый пароль должен быть не менее 6 символов";
+    return wantsHtml ? res.status(400).send(`<h2>${htmlEscape(message)}</h2>`) : res.status(400).json({ message });
+  }
+  if (newPassword !== confirmPassword) {
+    const message = "Пароли не совпадают";
+    return wantsHtml ? res.status(400).send(`<h2>${htmlEscape(message)}</h2>`) : res.status(400).json({ message });
+  }
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.action !== "reset_password" || !payload.userId || !payload.email || !payload.pwdSig) {
+      throw new Error("bad token");
+    }
+    const user = findUserById(payload.userId);
+    if (!user || String(user.email).toLowerCase() !== String(payload.email).toLowerCase()) {
+      throw new Error("user mismatch");
+    }
+    if (payload.pwdSig !== hashPasswordSignature(user.passwordHash)) {
+      throw new Error("stale token");
+    }
+    const newHash = await bcrypt.hash(newPassword, 10);
+    updateUserPasswordHash(user.id, newHash);
+    if (wantsHtml) {
+      return res.send(
+        `<h2>Пароль обновлен</h2><p><a href="${htmlEscape(`${APP_BASE_URL}/#/auth`)}">Перейти ко входу</a></p>`
+      );
+    }
+    return res.json({ ok: true, message: "Пароль обновлен" });
+  } catch {
+    const message = "Ссылка для сброса пароля недействительна или истекла";
+    return wantsHtml ? res.status(400).send(`<h2>${htmlEscape(message)}</h2>`) : res.status(400).json({ message });
+  }
 });
 
 app.get("/api/auth/me", auth, (req, res) => {
