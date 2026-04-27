@@ -361,6 +361,7 @@ function mobileMapChromeHtml(isDemo) {
     <div class="mobile-map-top">
       <button type="button" class="btn" id="${isDemo ? "demoMobileFiltersBtn" : "mapMobileFiltersBtn"}">Фильтры</button>
     </div>
+    ${isDemo ? `<div class="mobile-map-title">Демо</div>` : ""}
     <nav class="mobile-map-bottom-nav" aria-label="Навигация">
       <button type="button" class="mobile-map-bottom-nav__btn active" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}">Поиск</button>
       <button type="button" class="mobile-map-bottom-nav__btn" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}">Личный кабинет</button>
@@ -623,7 +624,7 @@ function getSheetGeometry(panel) {
   const head = track?.querySelector(".left-panel-head");
   const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
   const headH = head ? Math.round(head.offsetHeight) : 52;
-  const peekVisible = Math.max(96, Math.min(220, handleH + headH + 10));
+  const peekVisible = Math.max(78, Math.min(180, handleH + headH - 6));
   const yMaxByScreen = Math.max(0, vh - navH - peekVisible);
   const yMaxByContent = Math.max(0, H - peekVisible);
   const yMax = Math.min(yMaxByScreen, yMaxByContent);
@@ -1084,6 +1085,7 @@ function mobileSheetSettleAfterRender(panel, layout) {
   if (!panel) return;
   const s = getSheetNode(panel);
   if (!s) return;
+  if (!s.querySelector(".left-panel-head")) return;
   if (s.classList.contains("left-panel--sheet-live")) return;
   if (!window.matchMedia("(max-width: 900px)").matches) {
     setPanelTranslateY(s, 0, false);
@@ -2466,6 +2468,15 @@ function renderAuthPage() {
   if (toDemoEl) {
     toDemoEl.textContent = state.token ? "На карту" : "К демо без входа";
     toDemoEl.addEventListener("click", () => {
+      if (
+        state.panelCollapsedBeforeCabinet != null ||
+        state.panelSheetTBeforeCabinet != null
+      ) {
+        state.panelCollapsed = Boolean(state.panelCollapsedBeforeCabinet);
+        state.panelSheetT = state.panelSheetTBeforeCabinet;
+        state.panelCollapsedBeforeCabinet = null;
+        state.panelSheetTBeforeCabinet = null;
+      }
       location.hash = "#/";
     });
   }
