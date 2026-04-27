@@ -268,7 +268,7 @@ body.view-map #app {
 }
 
 .map-layout--app-sheet .left-panel {
-  width: clamp(290px, 24vw, 380px);
+  width: 100%;
 }
 
 .demo-blur-line {
@@ -409,6 +409,10 @@ body.view-map #app {
   min-height: 0;
   display: grid;
   grid-template-columns: 380px 1fr;
+}
+
+.map-layout--app-sheet {
+  grid-template-columns: clamp(290px, 24vw, 380px) 1fr;
 }
 
 .map-layout.collapsed {
