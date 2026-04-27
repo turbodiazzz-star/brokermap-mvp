@@ -2046,7 +2046,6 @@ function initMap() {
         zoom: map.getZoom()
       };
       if (state.areaDrawMode) return;
-      if (state.panelCollapsed) return;
       if (state.viewportUpdateTimer) {
         clearTimeout(state.viewportUpdateTimer);
       }
@@ -2105,14 +2104,10 @@ function initMap() {
       );
       map.geoObjects.add(polygon);
       state.areaPolygonObject = polygon;
-      if (!state.panelCollapsed) {
-        renderAreaSelectionPanel(getAreaFilteredProperties());
-      }
+      renderAreaSelectionPanel(getAreaFilteredProperties());
     } else {
       state.areaPolygonObject = null;
-      if (!state.panelCollapsed) {
-        renderViewportPanel();
-      }
+      renderViewportPanel();
     }
     {
       const lp = document.getElementById("leftPanel");
@@ -2163,7 +2158,6 @@ function initDemoMap() {
         zoom: map.getZoom()
       };
       if (state.areaDrawMode) return;
-      if (state.panelCollapsed) return;
       if (state.viewportUpdateTimer) {
         clearTimeout(state.viewportUpdateTimer);
       }
@@ -2222,14 +2216,10 @@ function initDemoMap() {
       );
       map.geoObjects.add(polygon);
       state.areaPolygonObject = polygon;
-      if (!state.panelCollapsed) {
-        renderDemoAreaSelectionPanel();
-      }
+      renderDemoAreaSelectionPanel();
     } else {
       state.areaPolygonObject = null;
-      if (!state.panelCollapsed) {
-        renderDemoViewportPanel();
-      }
+      renderDemoViewportPanel();
     }
     {
       const lp = document.getElementById("demoLeftPanel");
