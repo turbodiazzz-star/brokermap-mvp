@@ -1249,7 +1249,7 @@ textarea {
   .map-page .map-layout--app-sheet .left-panel__track,
   .demo-page .map-layout--app-sheet .left-panel__track {
     will-change: transform;
-    min-height: calc(100dvh - var(--mobile-bottom-nav-height) - env(safe-area-inset-top, 0px));
+    min-height: 0;
     width: 100%;
     max-width: 100vw;
     box-sizing: border-box;

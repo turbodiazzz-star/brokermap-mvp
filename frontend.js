@@ -632,10 +632,11 @@ function getSheetGeometry(panel) {
   const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
   const headH = head ? Math.round(head.offsetHeight) : 52;
   const peekVisible = Math.max(78, Math.min(180, handleH + headH - 6));
-  const yMaxByScreen = Math.max(0, vh - navH - peekVisible);
-  const yMaxByContent = Math.max(0, H - peekVisible);
+  const yBottomPinned = vh - navH - H;
+  const yMaxByScreen = Math.max(yBottomPinned, vh - navH - peekVisible);
+  const yMaxByContent = Math.max(yBottomPinned, H - peekVisible);
   const yMax = Math.min(yMaxByScreen, yMaxByContent);
-  const yMin = Math.min(0, vh - navH - H);
+  const yMin = yBottomPinned;
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
   const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
   return { h: H, yMin, yMax, yPeek: yMax, yMid, yFirst, vh, navH, peekVisible };
@@ -658,11 +659,7 @@ function bindSheetReflowOnImages(panel, layoutId) {
 
 function sheetRubber(t, g) {
   if (!g) return t;
-  if (t < g.yMin) {
-    const overshoot = g.yMin - t;
-    const softened = Math.min(56, overshoot * 0.22);
-    return g.yMin - softened;
-  }
+  if (t < g.yMin) return g.yMin;
   if (t > g.yMax) return g.yMax;
   return t;
 }
@@ -807,18 +804,12 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
         return;
       }
 
-      if (y < g.yMin || y > g.yMax) {
-        const bound = y < g.yMin ? g.yMin : g.yMax;
-        const overshoot = y - bound;
-        if (y < g.yMin) {
-          v += (-overshoot * 0.004 - v * 0.038) * dt;
-          if (y < g.yMin - 72) {
-            y = g.yMin - 72;
-            if (v < 0) v *= 0.35;
-          }
-        } else {
-          v += (-overshoot * 0.0062 - v * 0.022) * dt;
-        }
+      if (y < g.yMin) {
+        y = g.yMin;
+        if (v < 0) v = 0;
+      } else if (y > g.yMax) {
+        const overshoot = y - g.yMax;
+        v += (-overshoot * 0.0062 - v * 0.022) * dt;
       }
 
       setPanelTranslateY(s, y, false);
