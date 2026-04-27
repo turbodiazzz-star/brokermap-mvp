@@ -366,6 +366,15 @@ function mobileMapChromeHtml(isDemo) {
   `;
 }
 
+function mobileBottomNavHtml(isDemo) {
+  return `
+    <nav class="mobile-map-bottom-nav" aria-label="Навигация">
+      <button type="button" class="mobile-map-bottom-nav__btn ${isDemo ? "active" : ""}" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}">Поиск</button>
+      <button type="button" class="mobile-map-bottom-nav__btn ${isDemo ? "" : "active"}" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}">Личный кабинет</button>
+    </nav>
+  `;
+}
+
 function bindBrandHomeButton() {
   document.getElementById("brandHomeBtn")?.addEventListener("click", () => {
     location.hash = "#/";
@@ -610,9 +619,7 @@ function getSheetGeometry(panel) {
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
   const PEEK = 124;
   const yMaxScreen = Math.max(0, vh - navH - PEEK);
-  const firstCard = track?.querySelector(".card");
-  const yPeekContent = firstCard ? Math.max(0, Math.round(firstCard.offsetTop - 28)) : yMaxScreen;
-  const yMax = Math.min(yMaxScreen, yPeekContent);
+  const yMax = yMaxScreen;
   const yMin = Math.min(0, vh - H);
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
   const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
@@ -2417,6 +2424,7 @@ function renderAuthPage() {
         </div>
       </div>
     </section>
+    ${mobileBottomNavHtml(false)}
   `;
 
   const toDemoEl = document.getElementById("toDemoMapBtn");
@@ -2438,6 +2446,7 @@ function renderAuthPage() {
   document.getElementById("closeReset").addEventListener("click", () => {
     document.getElementById("resetModal").classList.remove("active");
   });
+  bindMobileBottomNavActions(false);
 
   const updateRegisterFormByType = () => {
     const type = document.getElementById("accountType").value;
