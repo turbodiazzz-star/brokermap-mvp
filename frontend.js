@@ -3664,11 +3664,11 @@ async function renderAdminPage() {
   const agencyRows = agencies
     .map(
       (a) => `<tr>
-      <td>${escapeHtml(a.agency || "—")}</td>
-      <td>${escapeHtml(a.email || "—")}</td>
-      <td>${a.brokerCount}</td>
-      <td>${a.brokerLimit}</td>
-      <td>
+      <td data-label="Агентство">${escapeHtml(a.agency || "—")}</td>
+      <td data-label="Email">${escapeHtml(a.email || "—")}</td>
+      <td data-label="Брокеров">${a.brokerCount}</td>
+      <td data-label="Лимит">${a.brokerLimit}</td>
+      <td data-label="Действия">
         <div class="admin-row-actions">
           <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
           <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
@@ -3681,13 +3681,13 @@ async function renderAdminPage() {
   const usersRows = privateBrokers
     .map(
       (u) => `<tr>
-      <td>${escapeHtml(u.email)}</td>
-      <td>${escapeHtml(u.name || "—")}</td>
-      <td>${escapeHtml(u.agency || "—")}</td>
-      <td>${escapeHtml(u.phone || "—")}</td>
-      <td>${u.role === "admin" ? "admin" : "брокер"}</td>
-      <td class="muted">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
-      <td>
+      <td data-label="Email">${escapeHtml(u.email)}</td>
+      <td data-label="Имя">${escapeHtml(u.name || "—")}</td>
+      <td data-label="Организация">${escapeHtml(u.agency || "—")}</td>
+      <td data-label="Телефон">${escapeHtml(u.phone || "—")}</td>
+      <td data-label="Роль">${u.role === "admin" ? "admin" : "брокер"}</td>
+      <td class="muted" data-label="Регистрация">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
+      <td data-label="Действия">
         <div class="admin-row-actions">
           <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
           ${
@@ -3704,12 +3704,12 @@ async function renderAdminPage() {
   const propRows = properties
     .map(
       (p) => `<tr>
-      <td><code>${escapeHtml(p.id)}</code></td>
-      <td>${escapeHtml(p.address || "—")}</td>
-      <td>${money(p.price)} ₽</td>
-      <td>${escapeHtml(p.ownerEmail)}</td>
-      <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
-      <td>
+      <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
+      <td data-label="Адрес">${escapeHtml(p.address || "—")}</td>
+      <td data-label="Цена">${money(p.price)} ₽</td>
+      <td data-label="Владелец">${escapeHtml(p.ownerEmail)}</td>
+      <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
+      <td data-label="Действия">
         <div class="admin-row-actions">
           <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
           <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
@@ -3889,11 +3889,11 @@ async function renderAdminPage() {
       ? list
           .map(
             (a) => `<tr>
-          <td>${escapeHtml(a.agency || "—")}</td>
-          <td>${escapeHtml(a.email || "—")}</td>
-          <td>${a.brokerCount}</td>
-          <td>${a.brokerLimit}</td>
-          <td>
+          <td data-label="Агентство">${escapeHtml(a.agency || "—")}</td>
+          <td data-label="Email">${escapeHtml(a.email || "—")}</td>
+          <td data-label="Брокеров">${a.brokerCount}</td>
+          <td data-label="Лимит">${a.brokerLimit}</td>
+          <td data-label="Действия">
             <div class="admin-row-actions">
               <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
               <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
@@ -4125,13 +4125,13 @@ async function renderAdminPage() {
         ? list
             .map(
               (u) => `<tr>
-          <td>${escapeHtml(u.email)}</td>
-          <td>${escapeHtml(u.name || "—")}</td>
-          <td>${escapeHtml(u.agency || "—")}</td>
-          <td>${escapeHtml(u.phone || "—")}</td>
-          <td>${u.role === "admin" ? "admin" : "брокер"}</td>
-          <td class="muted">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
-          <td>
+          <td data-label="Email">${escapeHtml(u.email)}</td>
+          <td data-label="Имя">${escapeHtml(u.name || "—")}</td>
+          <td data-label="Организация">${escapeHtml(u.agency || "—")}</td>
+          <td data-label="Телефон">${escapeHtml(u.phone || "—")}</td>
+          <td data-label="Роль">${u.role === "admin" ? "admin" : "брокер"}</td>
+          <td class="muted" data-label="Регистрация">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
+          <td data-label="Действия">
             <div class="admin-row-actions">
               <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
               ${
@@ -4172,12 +4172,12 @@ async function renderAdminPage() {
       ? list
           .map(
             (p) => `<tr>
-          <td><code>${escapeHtml(p.id)}</code></td>
-          <td>${escapeHtml(p.address || "—")}</td>
-          <td>${money(p.price)} ₽</td>
-          <td>${escapeHtml(p.ownerEmail)}</td>
-          <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
-          <td>
+          <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
+          <td data-label="Адрес">${escapeHtml(p.address || "—")}</td>
+          <td data-label="Цена">${money(p.price)} ₽</td>
+          <td data-label="Владелец">${escapeHtml(p.ownerEmail)}</td>
+          <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
+          <td data-label="Действия">
             <div class="admin-row-actions">
               <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
               <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
