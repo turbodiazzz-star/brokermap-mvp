@@ -162,6 +162,18 @@ function getPropertyPreviewPhoto(property) {
   return "";
 }
 
+async function fetchPdfBlobWithAuth(url) {
+  const headers = {};
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+    headers
+  });
+  if (!res.ok) throw new Error("Не удалось загрузить PDF");
+  return res.blob();
+}
+
 async function api(url, options = {}) {
   const headers = options.headers || {};
   if (!(options.body instanceof FormData)) {
@@ -2330,7 +2342,10 @@ async function renderPropertyPage(id) {
           <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
           ${
             property.pdfUrl
-              ? `<p><a href="${property.pdfUrl}?v=${encodeURIComponent(property.id || "")}-${Date.now()}" target="_blank" class="btn" id="downloadPdfBtn">Скачать презентацию PDF</a></p>`
+              ? `<p>
+                  <a href="${property.pdfUrl}?v=${encodeURIComponent(property.id || "")}-${Date.now()}" class="btn" id="downloadPdfBtn" download>Скачать презентацию PDF</a>
+                  <button class="btn" id="sharePdfBtn" type="button">Отправить клиенту</button>
+                </p>`
               : `<p><button class="btn" id="generatePdfBtn">Сгенерировать презентацию PDF</button></p>`
           }
           <hr />
@@ -2374,24 +2389,58 @@ async function renderPropertyPage(id) {
     event.preventDefault();
     const link = document.getElementById("downloadPdfBtn");
     if (!link) return;
-    // iOS Safari blocks popup if window.open happens after await.
-    const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
     const originalText = link.textContent;
     link.textContent = "Обновление PDF...";
     link.style.pointerEvents = "none";
     try {
       const data = await api(`/api/my/properties/${id}/generate-pdf`, { method: "POST" });
       const freshUrl = `${data.pdfUrl}?v=${encodeURIComponent(id || "")}-${Date.now()}`;
-      if (popup && !popup.closed) {
-        popup.location.replace(freshUrl);
-      } else {
+      const isMobile = window.matchMedia("(max-width: 900px)").matches;
+      if (isMobile) {
+        // Open in current tab on mobile to avoid blank popup pages.
         window.location.href = freshUrl;
+      } else {
+        window.open(freshUrl, "_blank", "noopener,noreferrer");
       }
       await renderPropertyPage(id);
     } catch (_error) {
-      if (popup && !popup.closed) popup.close();
       link.textContent = originalText || "Скачать презентацию PDF";
       link.style.pointerEvents = "";
+    }
+  });
+  document.getElementById("sharePdfBtn")?.addEventListener("click", async () => {
+    const shareBtn = document.getElementById("sharePdfBtn");
+    if (!shareBtn) return;
+    const originalText = shareBtn.textContent;
+    shareBtn.disabled = true;
+    shareBtn.textContent = "Подготовка PDF...";
+    try {
+      const data = await api(`/api/my/properties/${id}/generate-pdf`, { method: "POST" });
+      const freshUrl = `${data.pdfUrl}?v=${encodeURIComponent(id || "")}-${Date.now()}`;
+      const absoluteUrl = new URL(freshUrl, window.location.origin).toString();
+      if (navigator.share) {
+        const blob = await fetchPdfBlobWithAuth(absoluteUrl);
+        const file = new File([blob], `presentation-${id}.pdf`, { type: "application/pdf" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: "Презентация объекта",
+            text: "Отправляю PDF презентацию объекта",
+            files: [file]
+          });
+        } else {
+          await navigator.share({
+            title: "Презентация объекта",
+            text: "Ссылка на PDF презентацию объекта",
+            url: absoluteUrl
+          });
+        }
+      } else {
+        window.location.href = absoluteUrl;
+      }
+      await renderPropertyPage(id);
+    } catch (_error) {
+      shareBtn.disabled = false;
+      shareBtn.textContent = originalText || "Отправить клиенту";
     }
   });
   document.getElementById("addObjectBtn")?.addEventListener("click", () => {
