@@ -1195,9 +1195,9 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
     if (!g) return;
     let t;
     if (!state.panelSheetInitialized) {
-      // First mobile render should start from half-open position.
-      const half = Math.round((g.yMin + g.yMax) / 2);
-      t = clampSheetT(half, g);
+      // First mobile render: top edge of sheet at middle of screen.
+      const topAtMiddle = Math.round(g.vh * 0.5);
+      t = clampSheetT(topAtMiddle, g);
       state.panelSheetT = t;
       state.panelCollapsed = false;
       state.panelSheetInitialized = true;
