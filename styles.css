@@ -505,20 +505,32 @@ body.view-map #app {
   display: flex !important;
   flex-direction: column;
   gap: 8px;
+  align-items: flex-end;
 }
 
 .map-draw-btn {
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
   border: 1px solid #cdd8f3;
   background: linear-gradient(180deg, #ffffff 0%, #f3f7ff 100%);
   color: #1a4ed8;
   cursor: pointer;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
   box-shadow: 0 8px 20px rgba(19, 32, 62, 0.18);
   transition: transform 0.16s ease, box-shadow 0.2s ease, background 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.map-draw-btn__icon {
+  display: inline-block;
+  line-height: 1;
+  transform: translateY(-0.5px);
 }
 
 .map-draw-btn.active {
@@ -533,7 +545,9 @@ body.view-map #app {
 }
 
 .map-draw-hint {
-  position: relative;
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 0;
   width: min(250px, calc(100vw - 84px));
   border-radius: 12px;
   border: 1px solid #dbe4fb;
@@ -1509,7 +1523,9 @@ textarea {
   }
 
   .map-draw-hint {
-    width: min(230px, calc(100vw - 90px));
+    right: calc(100% + 8px);
+    top: 0;
+    width: min(230px, calc(100vw - 96px));
     font-size: 11px;
     padding: 8px 24px 8px 8px;
   }

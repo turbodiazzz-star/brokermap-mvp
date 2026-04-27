@@ -397,7 +397,7 @@ function mobileBottomNavHtml(activeTab = "search") {
 
 function mapDrawToolsHtml() {
   return `<div class="map-draw-tools">
-    <button class="map-draw-btn" type="button" id="mapDrawAreaBtn" title="Выделить область на карте" aria-label="Выделить область на карте">✍</button>
+    <button class="map-draw-btn" type="button" id="mapDrawAreaBtn" title="Выделить область на карте" aria-label="Выделить область на карте"><span class="map-draw-btn__icon" aria-hidden="true">✍</span></button>
     <div class="map-draw-hint" id="mapDrawHint">
       <button type="button" class="map-draw-hint__close" id="mapDrawHintCloseBtn" aria-label="Скрыть подсказку">×</button>
       Выделите кистью район на карте, чтобы показать объекты только в этой зоне.
@@ -433,7 +433,7 @@ function ensureMapDrawControls() {
     drawBtn.id = "mapDrawAreaBtn";
     drawBtn.className = "map-draw-btn";
     drawBtn.title = "Рисовать область";
-    drawBtn.textContent = "✍";
+    drawBtn.innerHTML = `<span class="map-draw-btn__icon" aria-hidden="true">✍</span>`;
     tools.appendChild(drawBtn);
     drawBtn.addEventListener("click", startAreaDrawing);
   }
