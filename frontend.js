@@ -2795,7 +2795,21 @@ function renderAuthPage() {
 
   document.getElementById("register").addEventListener("click", async () => {
     const registerStatus = document.getElementById("registerStatus");
-    if (registerStatus) registerStatus.textContent = "";
+    const authStatus = document.getElementById("authStatus");
+    const showRegisterStatus = (message, tone = "error") => {
+      if (registerStatus) {
+        registerStatus.textContent = message || "";
+        registerStatus.classList.remove("status-error", "status-success");
+        registerStatus.classList.add(tone === "success" ? "status-success" : "status-error");
+        registerStatus.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+      if (authStatus) authStatus.textContent = message || "";
+    };
+    if (registerStatus) {
+      registerStatus.textContent = "";
+      registerStatus.classList.remove("status-error", "status-success");
+    }
+    if (authStatus) authStatus.textContent = "";
     try {
       const isValid =
         validateEmailField(document.getElementById("email")) &&
@@ -2837,20 +2851,16 @@ function renderAuthPage() {
         body: JSON.stringify(payload)
       });
       if (data.requiresEmailVerification) {
-        if (registerStatus) {
-          registerStatus.textContent =
-            data.message || "Письмо отправлено. Подтвердите email по ссылке из письма.";
-        }
+        showRegisterStatus(
+          data.message || "Письмо отправлено. Подтвердите email по ссылке из письма.",
+          "success"
+        );
         return;
       }
       setAuth(data);
       location.hash = "#/";
     } catch (error) {
-      if (registerStatus) {
-        registerStatus.textContent = error.message || "Ошибка регистрации";
-      } else {
-        document.getElementById("authStatus").textContent = error.message;
-      }
+      showRegisterStatus(error?.message || "Ошибка регистрации", "error");
     }
   });
 

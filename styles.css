@@ -825,6 +825,19 @@ body.view-map #app {
   margin: 0 0 8px;
 }
 
+#registerStatus {
+  min-height: 18px;
+  font-weight: 600;
+}
+
+#registerStatus.status-success {
+  color: #0f766e;
+}
+
+#registerStatus.status-error {
+  color: #dc2626;
+}
+
 .login-box {
   background: #fff;
   border-radius: 16px;
