@@ -395,6 +395,16 @@ function mobileBottomNavHtml(activeTab = "search") {
   `;
 }
 
+function mapDrawToolsHtml() {
+  return `<div class="map-draw-tools">
+    <button class="map-draw-btn" type="button" id="mapDrawAreaBtn" title="Выделить область на карте" aria-label="Выделить область на карте">✍</button>
+    <div class="map-draw-hint" id="mapDrawHint">
+      <button type="button" class="map-draw-hint__close" id="mapDrawHintCloseBtn" aria-label="Скрыть подсказку">×</button>
+      Выделите кистью район на карте, чтобы показать объекты только в этой зоне.
+    </div>
+  </div>`;
+}
+
 function updateMobileNavMetrics() {
   if (!window.matchMedia("(max-width: 900px)").matches) return;
   const nav = document.querySelector(".mobile-map-bottom-nav");
@@ -427,9 +437,33 @@ function ensureMapDrawControls() {
     tools.appendChild(drawBtn);
     drawBtn.addEventListener("click", startAreaDrawing);
   }
+  let hint = tools.querySelector(".map-draw-hint");
+  if (!hint) {
+    hint = document.createElement("div");
+    hint.className = "map-draw-hint";
+    hint.id = "mapDrawHint";
+    hint.innerHTML = `
+      <button type="button" class="map-draw-hint__close" id="mapDrawHintCloseBtn" aria-label="Скрыть подсказку">×</button>
+      Выделите кистью район на карте, чтобы показать объекты только в этой зоне.
+    `;
+    tools.appendChild(hint);
+  }
   tools.style.display = "flex";
   drawBtn.style.display = "inline-flex";
+  bindMapDrawHint();
   syncDrawButtons();
+}
+
+function bindMapDrawHint() {
+  const hint = document.getElementById("mapDrawHint");
+  const closeBtn = document.getElementById("mapDrawHintCloseBtn");
+  if (!hint || !closeBtn) return;
+  const hidden = localStorage.getItem("mapDrawHintDismissed") === "1";
+  hint.classList.toggle("hidden", hidden);
+  closeBtn.onclick = () => {
+    hint.classList.add("hidden");
+    localStorage.setItem("mapDrawHintDismissed", "1");
+  };
 }
 
 function cardMarkup(property) {
@@ -1324,9 +1358,7 @@ function renderPublicDemoPage() {
             <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
             <span class="open-left-panel-label">Список</span>
           </button>
-          <div class="map-draw-tools">
-            <button class="map-draw-btn" type="button" id="mapDrawAreaBtn" title="Рисовать область">✍</button>
-          </div>
+          ${mapDrawToolsHtml()}
           <div class="map-sheet-left-scrim" id="demoLeftPanelScrim" aria-hidden="true"></div>
         </div>
       </main>
@@ -1369,6 +1401,7 @@ function renderPublicDemoPage() {
   bindMobileBottomNavActions();
   updateMobileNavMetrics();
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
+  bindMapDrawHint();
   ensureMapDrawControls();
 
   document.getElementById("moreFilters")?.addEventListener("click", () => {
@@ -1596,9 +1629,7 @@ function renderMapPage() {
           <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
           <span class="open-left-panel-label">Список</span>
         </button>
-        <div class="map-draw-tools">
-          <button class="map-draw-btn" id="mapDrawAreaBtn" title="Рисовать область">✍</button>
-        </div>
+        ${mapDrawToolsHtml()}
         <div class="map-sheet-left-scrim" id="mapLeftPanelScrim" aria-hidden="true"></div>
       </div>
     </main>
@@ -1668,6 +1699,7 @@ function renderMapPage() {
   mobileSheetSettleAfterRender(lp, mapLayout);
   bindMapZoomGuards();
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
+  bindMapDrawHint();
   ensureMapDrawControls();
   updateMapOpenPanelButton();
 
@@ -1798,6 +1830,11 @@ function syncDrawButtons() {
   if (!drawBtn) return;
   drawBtn.classList.toggle("active", state.areaDrawMode);
   drawBtn.title = state.areaDrawMode ? "Режим рисования включен" : "Рисовать область";
+  if (state.areaDrawMode) {
+    const hint = document.getElementById("mapDrawHint");
+    if (hint) hint.classList.add("hidden");
+    localStorage.setItem("mapDrawHintDismissed", "1");
+  }
   if (drawCanvas) {
     drawCanvas.classList.toggle("active", state.areaDrawMode);
   }
