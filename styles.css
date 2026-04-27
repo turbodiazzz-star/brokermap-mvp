@@ -501,7 +501,7 @@ body.view-map #app {
   right: max(14px, env(safe-area-inset-right, 0px));
   top: max(14px, env(safe-area-inset-top, 0px));
   transform: none;
-  z-index: 40;
+  z-index: 20;
   display: flex !important;
   flex-direction: column;
   gap: 8px;
