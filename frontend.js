@@ -2967,6 +2967,11 @@ async function renderCabinetPage(openForm = false) {
             : "<p class='muted'>Пока нет объектов.</p>"
         }
       </div>
+      <div class="panel contact-us-card">
+        <h4>Связаться с нами</h4>
+        <p class="muted">По вопросам и предложениям:</p>
+        <p><a class="btn" href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
+      </div>
       <div class="modal" id="propertyFormModal">
         <div class="modal-card property-form-modal-card">
           <div class="panel-head">
