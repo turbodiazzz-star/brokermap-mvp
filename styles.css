@@ -855,6 +855,11 @@ body.view-map #app {
   overflow-y: auto;
 }
 
+.auth-modal-content--register {
+  border: 1px solid #dbe4fb;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.24);
+}
+
 .phone-group {
   display: flex;
   margin-top: 10px;
@@ -1099,6 +1104,26 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  .auth-modal.active {
+    align-items: flex-start;
+    justify-content: center;
+    padding-top: max(64px, calc(env(safe-area-inset-top, 0px) + 54px));
+    padding-bottom: 10px;
+  }
+
+  .auth-modal-content {
+    width: calc(100% - 20px);
+    max-width: none;
+    margin: 0 10px;
+    border-radius: 14px;
+    max-height: calc(100dvh - max(92px, calc(env(safe-area-inset-top, 0px) + 80px)) - 10px);
+    overflow-y: auto;
+  }
+
+  .auth-modal-content--register {
+    border: 1px solid #dbe4fb;
+  }
+
   .topbar.topbar--no-filters .filters {
     display: none !important;
   }
@@ -1851,7 +1876,7 @@ textarea {
   }
 }
 
-@media (min-width: 768px) {
+@media (min-width: 901px) {
   .auth-modal.active {
     align-items: center;
   }

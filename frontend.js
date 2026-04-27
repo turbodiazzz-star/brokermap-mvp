@@ -2587,8 +2587,11 @@ function renderAuthPage() {
       </div>
 
       <div class="auth-modal" id="registerModal">
-        <div class="auth-modal-content">
-          <h3>Регистрация</h3>
+        <div class="auth-modal-content auth-modal-content--register">
+          <div class="panel-head">
+            <h3>Регистрация</h3>
+            <button class="close-panel-action" id="closeRegisterXBtn" type="button" aria-label="Закрыть">×</button>
+          </div>
           <label class="field-label" for="accountType">Тип аккаунта</label>
           <select id="accountType">
             <option value="broker">Частный брокер</option>
@@ -2619,7 +2622,6 @@ function renderAuthPage() {
           </label>
           <p>
             <button class="btn primary full" id="register">Создать аккаунт</button>
-            <button class="btn full" id="closeRegister">Закрыть</button>
           </p>
         </div>
       </div>
@@ -2657,7 +2659,7 @@ function renderAuthPage() {
   document.getElementById("openRegister").addEventListener("click", () => {
     document.getElementById("registerModal").classList.add("active");
   });
-  document.getElementById("closeRegister").addEventListener("click", () => {
+  document.getElementById("closeRegisterXBtn")?.addEventListener("click", () => {
     document.getElementById("registerModal").classList.remove("active");
   });
   document.getElementById("openReset").addEventListener("click", () => {
