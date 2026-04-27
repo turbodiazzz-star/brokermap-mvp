@@ -8,6 +8,7 @@ const state = {
   panelCollapsed: false,
   /** моб.: последний translateY трека (может быть < 0 при длинной ленте); null — взять по умолч. */
   panelSheetT: null,
+  panelSheetInitialized: false,
   panelCollapsedBeforeCabinet: null,
   panelSheetTBeforeCabinet: null,
   areaPolygonCoords: null,
@@ -1183,6 +1184,7 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
   const s = getSheetNode(panel);
   if (!s) return;
   if (!s.querySelector(".left-panel-head")) return;
+  if (!s.querySelector(".card")) return;
   if (s.classList.contains("left-panel--sheet-live")) return;
   if (!window.matchMedia("(max-width: 900px)").matches) {
     setPanelTranslateY(s, 0, false);
@@ -1192,7 +1194,14 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
     const g = getSheetGeometry(panel);
     if (!g) return;
     let t;
-    if (state.panelCollapsed) t = g.yPeek;
+    if (!state.panelSheetInitialized) {
+      // First mobile render should start from half-open position.
+      const half = Math.round((g.yMin + g.yMax) / 2);
+      t = clampSheetT(half, g);
+      state.panelSheetT = t;
+      state.panelCollapsed = false;
+      state.panelSheetInitialized = true;
+    } else if (state.panelCollapsed) t = g.yPeek;
     else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
     else t = g.yFirst;
     setPanelTranslateY(s, t, animate, animate ? 320 : undefined);
