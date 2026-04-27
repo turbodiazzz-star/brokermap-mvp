@@ -2643,6 +2643,7 @@ function renderAuthPage() {
           <p>
             <button class="btn primary full" id="register">Создать аккаунт</button>
           </p>
+          <p class="muted" id="registerStatus"></p>
         </div>
       </div>
 
@@ -2793,6 +2794,8 @@ function renderAuthPage() {
   document.getElementById("agency")?.addEventListener("input", () => validateNonEmpty("agency", "Укажите агентство или ИП"));
 
   document.getElementById("register").addEventListener("click", async () => {
+    const registerStatus = document.getElementById("registerStatus");
+    if (registerStatus) registerStatus.textContent = "";
     try {
       const isValid =
         validateEmailField(document.getElementById("email")) &&
@@ -2834,15 +2837,20 @@ function renderAuthPage() {
         body: JSON.stringify(payload)
       });
       if (data.requiresEmailVerification) {
-        document.getElementById("registerModal").classList.remove("active");
-        document.getElementById("authStatus").textContent =
-          data.message || "Проверьте почту и подтвердите email перед входом.";
+        if (registerStatus) {
+          registerStatus.textContent =
+            data.message || "Письмо отправлено. Подтвердите email по ссылке из письма.";
+        }
         return;
       }
       setAuth(data);
       location.hash = "#/";
     } catch (error) {
-      document.getElementById("authStatus").textContent = error.message;
+      if (registerStatus) {
+        registerStatus.textContent = error.message || "Ошибка регистрации";
+      } else {
+        document.getElementById("authStatus").textContent = error.message;
+      }
     }
   });
 

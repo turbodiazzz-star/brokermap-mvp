@@ -87,8 +87,7 @@ function htmlEscape(value) {
 
 async function sendEmail({ to, subject, html, text }) {
   if (!mailTransport) {
-    console.warn(`[mail] SMTP not configured. Email to ${to}: ${subject}`);
-    return { queued: false };
+    throw new Error("SMTP_NOT_CONFIGURED");
   }
   await mailTransport.sendMail({
     from: EMAIL_FROM,
@@ -586,12 +585,21 @@ app.post("/api/auth/register", async (req, res) => {
     "24h"
   );
   const verifyLink = `${APP_BASE_URL}/api/auth/verify-email?token=${encodeURIComponent(verifyToken)}`;
-  await sendEmail({
-    to: user.email,
-    subject: "Подтвердите email в BrokerMap",
-    text: `Подтвердите email: ${verifyLink}`,
-    html: `<p>Подтвердите email для входа в BrokerMap:</p><p><a href="${htmlEscape(verifyLink)}">Подтвердить email</a></p>`
-  });
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: "Подтвердите email в BrokerMap",
+      text: `Подтвердите email: ${verifyLink}`,
+      html: `<p>Подтвердите email для входа в BrokerMap:</p><p><a href="${htmlEscape(verifyLink)}">Подтвердить email</a></p>`
+    });
+  } catch (error) {
+    // Do not leave "half-created" users when email delivery is unavailable.
+    deleteUserById(user.id);
+    console.error("[mail] register verification send failed:", error?.message || error);
+    return res.status(502).json({
+      message: "Не удалось отправить письмо подтверждения. Проверьте настройки почты и попробуйте снова."
+    });
+  }
   return res.json({
     requiresEmailVerification: true,
     message: "Мы отправили письмо для подтверждения email. Откройте ссылку из письма."
@@ -677,12 +685,19 @@ app.post("/api/auth/forgot-password", async (req, res) => {
       "1h"
     );
     const resetLink = `${APP_BASE_URL}/api/auth/reset-password?token=${encodeURIComponent(resetToken)}`;
-    await sendEmail({
-      to: user.email,
-      subject: "Сброс пароля в BrokerMap",
-      text: `Для сброса пароля перейдите по ссылке: ${resetLink}`,
-      html: `<p>Для сброса пароля перейдите по ссылке:</p><p><a href="${htmlEscape(resetLink)}">Сбросить пароль</a></p>`
-    });
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: "Сброс пароля в BrokerMap",
+        text: `Для сброса пароля перейдите по ссылке: ${resetLink}`,
+        html: `<p>Для сброса пароля перейдите по ссылке:</p><p><a href="${htmlEscape(resetLink)}">Сбросить пароль</a></p>`
+      });
+    } catch (error) {
+      console.error("[mail] forgot-password send failed:", error?.message || error);
+      return res.status(502).json({
+        message: "Письмо не отправлено. Проверьте настройки почты и попробуйте снова."
+      });
+    }
   }
   return res.json({
     message: "Если такой email зарегистрирован, мы отправили письмо со ссылкой для сброса пароля."
