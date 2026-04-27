@@ -501,7 +501,7 @@ body.view-map #app {
   right: max(14px, env(safe-area-inset-right, 0px));
   top: max(14px, env(safe-area-inset-top, 0px));
   transform: none;
-  z-index: 5000;
+  z-index: 40;
   display: flex !important;
   flex-direction: column;
   gap: 8px;
@@ -1020,7 +1020,7 @@ textarea {
   display: none;
   align-items: center;
   justify-content: center;
-  z-index: 50;
+  z-index: 300;
 }
 
 .modal.open {
@@ -1044,6 +1044,8 @@ textarea {
   width: min(620px, 92vw);
   max-height: min(82vh, 760px);
   overflow-y: auto;
+  border: 1px solid #dbe4fb;
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.24);
 }
 
 #propertyFormWrap {
@@ -1578,6 +1580,8 @@ textarea {
     margin: 0 10px;
     max-height: calc(100dvh - max(92px, calc(env(safe-area-inset-top, 0px) + 80px)) - 10px);
     overflow-y: auto;
+    border: 1px solid #dbe4fb;
+    border-radius: 14px;
   }
 }
 
