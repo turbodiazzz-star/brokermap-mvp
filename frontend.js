@@ -619,13 +619,33 @@ function getSheetGeometry(panel) {
   const bottomNav = document.querySelector(".mobile-map-bottom-nav");
   const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
-  const PEEK = 112;
-  const yMaxScreen = Math.max(0, vh - navH - PEEK);
-  const yMax = yMaxScreen;
-  const yMin = Math.min(0, vh - H);
+  const handleWrap = track?.querySelector(".left-panel-handle-wrap");
+  const head = track?.querySelector(".left-panel-head");
+  const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
+  const headH = head ? Math.round(head.offsetHeight) : 52;
+  const peekVisible = Math.max(96, Math.min(220, handleH + headH + 10));
+  const yMaxByScreen = Math.max(0, vh - navH - peekVisible);
+  const yMaxByContent = Math.max(0, H - peekVisible);
+  const yMax = Math.min(yMaxByScreen, yMaxByContent);
+  const yMin = Math.min(0, vh - navH - H);
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
   const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
-  return { h: H, yMin, yMax, yPeek: yMax, yMid, yFirst, vh, navH };
+  return { h: H, yMin, yMax, yPeek: yMax, yMid, yFirst, vh, navH, peekVisible };
+}
+
+function bindSheetReflowOnImages(panel, layoutId) {
+  if (!panel) return;
+  const layout = document.getElementById(layoutId);
+  panel.querySelectorAll("img").forEach((img) => {
+    if (img.complete) return;
+    img.addEventListener(
+      "load",
+      () => {
+        mobileSheetSettleAfterRender(panel, layout);
+      },
+      { once: true }
+    );
+  });
 }
 
 function sheetRubber(t, g) {
@@ -1174,6 +1194,7 @@ function renderDemoPanel(list, title) {
     demoCollapseLeftPanel();
   });
   bindDemoCardButtons(panel);
+  bindSheetReflowOnImages(panel, "demoMapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"));
 }
 
@@ -1672,6 +1693,7 @@ function renderAreaSelectionPanel(list) {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  bindSheetReflowOnImages(panel, "mapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"));
 }
 
@@ -1710,6 +1732,7 @@ function renderViewportPanel() {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  bindSheetReflowOnImages(panel, "mapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"));
 }
 
@@ -1992,6 +2015,7 @@ function showGroup(properties) {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  bindSheetReflowOnImages(panel, "mapLayout");
 }
 
 function initMap() {
