@@ -8,6 +8,8 @@ const state = {
   panelCollapsed: false,
   /** моб.: последний translateY трека (может быть < 0 при длинной ленте); null — взять по умолч. */
   panelSheetT: null,
+  panelCollapsedBeforeCabinet: null,
+  panelSheetTBeforeCabinet: null,
   areaPolygonCoords: null,
   areaPolygonObject: null,
   areaDrawMode: false,
@@ -617,11 +619,9 @@ function getSheetGeometry(panel) {
   const bottomNav = document.querySelector(".mobile-map-bottom-nav");
   const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
   const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
-  const PEEK = 206;
+  const PEEK = 112;
   const yMaxScreen = Math.max(0, vh - navH - PEEK);
-  const head = track?.querySelector(".left-panel-head");
-  const yMaxByHead = head ? Math.max(0, Math.round(head.offsetTop + head.offsetHeight + 10)) : yMaxScreen;
-  const yMax = Math.min(yMaxScreen, yMaxByHead);
+  const yMax = yMaxScreen;
   const yMin = Math.min(0, vh - H);
   const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
   const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
@@ -1027,6 +1027,15 @@ function bindMobileBottomNavActions(isDemo) {
     const onSearch = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      if (
+        state.panelCollapsedBeforeCabinet != null ||
+        state.panelSheetTBeforeCabinet != null
+      ) {
+        state.panelCollapsed = Boolean(state.panelCollapsedBeforeCabinet);
+        state.panelSheetT = state.panelSheetTBeforeCabinet;
+        state.panelCollapsedBeforeCabinet = null;
+        state.panelSheetTBeforeCabinet = null;
+      }
       if (!state.token) {
         if (location.hash !== "#/") location.hash = "#/";
       } else if (!isDemo && location.hash !== "#/map") {
@@ -1042,6 +1051,8 @@ function bindMobileBottomNavActions(isDemo) {
     const onCabinet = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      state.panelCollapsedBeforeCabinet = state.panelCollapsed;
+      state.panelSheetTBeforeCabinet = state.panelSheetT;
       location.hash = state.token ? "#/cabinet" : "#/auth";
     };
     cabinetBtn.onclick = onCabinet;
