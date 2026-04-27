@@ -443,6 +443,25 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Dev/prod safety: always deliver fresh frontend assets.
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  const p = req.path || "";
+  if (
+    p === "/" ||
+    p === "/index.html" ||
+    p.endsWith(".js") ||
+    p.endsWith(".css") ||
+    p.endsWith(".html")
+  ) {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+  }
+  next();
+});
 app.use(express.static(__dirname));
 
 const storage = multer.diskStorage({
