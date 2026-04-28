@@ -2653,9 +2653,10 @@ function renderAuthPage() {
           <h3>Восстановление пароля</h3>
           <input id="resetEmail" placeholder="Введите email" type="email" />
           <p>
-            <button class="btn primary full" id="forgot">Отправить ссылку</button>
-            <button class="btn full" id="closeReset">Закрыть</button>
+            <button class="btn primary full" id="forgot" type="button">Отправить ссылку</button>
+            <button class="btn full" id="closeReset" type="button">Закрыть</button>
           </p>
+          <p class="muted" id="resetStatus"></p>
         </div>
       </div>
     </section>
@@ -2920,18 +2921,43 @@ function renderAuthPage() {
     }
   });
 
-  document.getElementById("forgot").addEventListener("click", async () => {
+  const onForgotPassword = async () => {
+    const resetStatus = document.getElementById("resetStatus");
+    const authStatus = document.getElementById("authStatus");
+    const setResetStatus = (message, tone = "error") => {
+      if (resetStatus) {
+        resetStatus.textContent = message || "";
+        resetStatus.classList.remove("status-error", "status-success");
+        resetStatus.classList.add(tone === "success" ? "status-success" : "status-error");
+      }
+      if (authStatus) authStatus.textContent = message || "";
+    };
     if (!validateEmailField(document.getElementById("resetEmail"), "Введите email для восстановления")) {
-      document.getElementById("authStatus").textContent = "Введите корректный email для восстановления";
+      setResetStatus("Введите корректный email для восстановления", "error");
       return;
     }
-    const data = await api("/api/auth/forgot-password", {
-      method: "POST",
-      body: JSON.stringify({ email: document.getElementById("resetEmail").value })
-    });
-    document.getElementById("authStatus").textContent = data.message;
-    document.getElementById("resetModal").classList.remove("active");
-  });
+    const forgotBtn = document.getElementById("forgot");
+    if (forgotBtn) forgotBtn.disabled = true;
+    setResetStatus("Отправка...", "success");
+    try {
+      const data = await api("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email: document.getElementById("resetEmail").value })
+      });
+      setResetStatus(data.message || "Ссылка отправлена", "success");
+      document.getElementById("resetModal")?.classList.remove("active");
+      setAuthModalOpen(false);
+    } catch (error) {
+      setResetStatus(error?.message || "Не удалось отправить письмо", "error");
+    } finally {
+      if (forgotBtn) forgotBtn.disabled = false;
+    }
+  };
+  document.getElementById("forgot").onclick = onForgotPassword;
+  document.getElementById("forgot").onpointerup = (event) => {
+    event.preventDefault();
+    onForgotPassword();
+  };
 }
 
 function collectAuth() {
