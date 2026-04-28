@@ -2626,10 +2626,9 @@ function renderAuthPage() {
             <input id="phone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
           </div>
           <input id="password" placeholder="Пароль (мин 6)" type="password" autocomplete="new-password" />
-          <label class="field-label" for="agency" id="agencyFieldLabel">Самозанятый/ИП (обязательно)</label>
-          <input id="agency" placeholder="Агентство / ИП (обязательно для агентства)" />
+          <label class="field-label" for="agency" id="agencyFieldLabel">ФИО ИП/самозанятого (обязательно)</label>
+          <input id="agency" placeholder="Название агентства или ФИО ИП/самозанятого" />
           <p class="note">* ИП / юрлица должны иметь соответствующие ОКВЭД для операций с недвижимостью</p>
-          <input id="inn" placeholder="ИНН (10 или 12 цифр)" inputmode="numeric" />
           <label class="checkbox-line">
             <input type="checkbox" id="agree" />
             <span>
@@ -2716,9 +2715,14 @@ function renderAuthPage() {
     const agencyInput = document.getElementById("agency");
     const label = document.getElementById("agencyFieldLabel");
     agencyInput.placeholder =
-      type === "agency_owner" ? "Название агентства (обязательно)" : "Самозанятый/ИП (обязательно)";
+      type === "agency_owner"
+        ? "Название агентства (обязательно)"
+        : "ФИО ИП/самозанятого (обязательно)";
     if (label) {
-      label.textContent = type === "agency_owner" ? "Название агентства (обязательно)" : "Самозанятый/ИП (обязательно)";
+      label.textContent =
+        type === "agency_owner"
+          ? "Название агентства (обязательно)"
+          : "ФИО ИП/самозанятого (обязательно)";
     }
   };
   document.getElementById("accountType").addEventListener("change", updateRegisterFormByType);
@@ -2769,16 +2773,6 @@ function renderAuthPage() {
     clearFieldError(phoneEl);
     return true;
   };
-  const validateInnField = () => {
-    const innEl = document.getElementById("inn");
-    const digits = toDigits(innEl?.value || "");
-    if (!(digits.length === 10 || digits.length === 12)) {
-      setFieldError(innEl, "ИНН должен содержать 10 или 12 цифр");
-      return false;
-    }
-    clearFieldError(innEl);
-    return true;
-  };
   const validatePasswordField = (inputId, minLength = 6) => {
     const passEl = document.getElementById(inputId);
     const value = String(passEl?.value || "");
@@ -2806,11 +2800,12 @@ function renderAuthPage() {
     validateNonEmpty("loginPassword", "Введите пароль")
   );
   document.getElementById("phone")?.addEventListener("input", validateRegisterPhone);
-  document.getElementById("inn")?.addEventListener("input", validateInnField);
   document.getElementById("password")?.addEventListener("input", () => validatePasswordField("password", 6));
   document.getElementById("firstName")?.addEventListener("input", () => validateNonEmpty("firstName", "Введите имя"));
   document.getElementById("lastName")?.addEventListener("input", () => validateNonEmpty("lastName", "Введите фамилию"));
-  document.getElementById("agency")?.addEventListener("input", () => validateNonEmpty("agency", "Укажите агентство или ИП"));
+  document.getElementById("agency")?.addEventListener("input", () =>
+    validateNonEmpty("agency", "Укажите агентство или ФИО ИП/самозанятого")
+  );
 
   document.getElementById("register").addEventListener("click", async () => {
     const registerStatus = document.getElementById("registerStatus");
@@ -2844,11 +2839,10 @@ function renderAuthPage() {
       const isValid =
         validateEmailField(document.getElementById("email")) &&
         validateRegisterPhone() &&
-        validateInnField() &&
         validatePasswordField("password", 6) &&
         validateNonEmpty("firstName", "Введите имя") &&
         validateNonEmpty("lastName", "Введите фамилию") &&
-        validateNonEmpty("agency", "Укажите агентство или ИП");
+        validateNonEmpty("agency", "Укажите агентство или ФИО ИП/самозанятого");
       if (!isValid) {
         throw new Error("Проверьте поля формы: есть некорректные данные");
       }
@@ -2859,16 +2853,12 @@ function renderAuthPage() {
         !payload.firstName ||
         !payload.lastName ||
         !payload.agency ||
-        !payload.inn ||
         !payload.phone
       ) {
         throw new Error("Заполните все обязательные поля");
       }
       if (!/^\+7\d{10}$/.test(payload.phone)) {
         throw new Error("Телефон должен быть в формате +7 и 10 цифр");
-      }
-      if (!/^\d{10}$|^\d{12}$/.test(payload.inn)) {
-        throw new Error("ИНН должен содержать 10 или 12 цифр");
       }
       if (payload.password.length < 6) {
         throw new Error("Пароль должен быть не менее 6 символов");
@@ -2885,7 +2875,7 @@ function renderAuthPage() {
         setAuthModalOpen(false);
         showAuthNotice(
           data.message ||
-            "Для подтверждения почты откройте письмо, перейдите по ссылке и затем войдите в аккаунт."
+            "Для подтверждения почты откройте письмо, перейдите по ссылке и затем войдите в аккаунт. Если письма нет, проверьте папку Спам."
         );
         return;
       }
@@ -2944,7 +2934,10 @@ function renderAuthPage() {
         method: "POST",
         body: JSON.stringify({ email: document.getElementById("resetEmail").value })
       });
-      setResetStatus(data.message || "Ссылка отправлена", "success");
+      setResetStatus(
+        data.message || "Ссылка отправлена. Если письма нет, проверьте папку Спам.",
+        "success"
+      );
       document.getElementById("resetModal")?.classList.remove("active");
       setAuthModalOpen(false);
     } catch (error) {
@@ -2962,7 +2955,6 @@ function renderAuthPage() {
 
 function collectAuth() {
   const phoneDigits = toDigits(document.getElementById("phone").value);
-  const innDigits = toDigits(document.getElementById("inn").value);
   return {
     accountType: document.getElementById("accountType").value === "agency_owner" ? "agency_owner" : "broker",
     firstName: document.getElementById("firstName").value.trim(),
@@ -2972,7 +2964,7 @@ function collectAuth() {
     password: document.getElementById("password").value,
     phone: `+7${phoneDigits}`,
     agency: document.getElementById("agency").value.trim(),
-    inn: innDigits,
+    inn: "",
     marketingConsent: document.getElementById("marketing").checked,
     agree: document.getElementById("agree").checked
   };

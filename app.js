@@ -538,14 +538,11 @@ const upload = multer({ storage });
 app.post("/api/auth/register", async (req, res) => {
   const { firstName, lastName, name, email, password, phone, agency, inn, marketingConsent, agree, accountType } = req.body;
   const normalizedType = accountType === "agency_owner" ? "agency_owner" : "broker";
-  if (!email || !password || !firstName || !lastName || !inn || !phone || !agency) {
+  if (!email || !password || !firstName || !lastName || !phone || !agency) {
     return res.status(400).json({ message: "Заполните все обязательные поля регистрации" });
   }
   if (!/^\+7\d{10}$/.test(String(phone))) {
     return res.status(400).json({ message: "Телефон должен быть в формате +7 и 10 цифр" });
-  }
-  if (!/^\d{10}$|^\d{12}$/.test(String(inn))) {
-    return res.status(400).json({ message: "ИНН должен быть 10 или 12 цифр" });
   }
   if (!agree) {
     return res.status(400).json({ message: "Нужно согласие на обработку данных" });
@@ -565,7 +562,7 @@ app.post("/api/auth/register", async (req, res) => {
     firstName,
     lastName,
     agency,
-    inn,
+    inn: String(inn || "").trim(),
     phone,
     marketingConsent: Boolean(marketingConsent),
     telegram: "",
@@ -602,7 +599,7 @@ app.post("/api/auth/register", async (req, res) => {
   }
   return res.json({
     requiresEmailVerification: true,
-    message: "Мы отправили письмо для подтверждения email. Откройте ссылку из письма."
+    message: "Мы отправили письмо для подтверждения email. Откройте ссылку из письма. Если письма нет, проверьте папку Спам."
   });
 });
 
@@ -700,7 +697,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
     }
   }
   return res.json({
-    message: "Если такой email зарегистрирован, мы отправили письмо со ссылкой для сброса пароля."
+    message: "Если такой email зарегистрирован, мы отправили письмо со ссылкой для сброса пароля. Если письма нет, проверьте папку Спам."
   });
 });
 
