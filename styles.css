@@ -460,7 +460,7 @@ body.view-map #app {
   text-align: center;
 }
 
-/* Список карточек в нижнем листе карты — нативный вертикальный скролл; лист тянется только за ручку/шапку. */
+/* Десктоп: список скроллится. На моб. app-sheet переопределяется — шторка без внутреннего скролла, движется целиком. */
 .left-panel-scroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -1620,18 +1620,16 @@ textarea {
     display: flex;
     flex-direction: column;
     flex: 0 0 auto;
-    /* Рулон снизу: высота растёт с контентом до потолка, дальше скролл внутри .left-panel-scroll */
+    /* Вся белая штора = полная высота контента; «пролистывание» объектов = движение translateY всего блока */
     height: auto;
-    max-height: calc(
-      100dvh - var(--mobile-bottom-nav-height, 72px) - max(0px, env(safe-area-inset-bottom, 0px))
-    );
+    max-height: none;
     min-height: 72px;
     will-change: transform;
     width: 100%;
     max-width: 100vw;
     box-sizing: border-box;
-    overflow: hidden;
-    touch-action: manipulation;
+    overflow: visible;
+    touch-action: none;
     border-top: 1px solid var(--border);
     border-radius: 16px 16px 0 0;
     /* Вторым слоем — фон под «носителем», чтобы между шторкой и нижней навигацией не зияла карта. */
@@ -1646,14 +1644,19 @@ textarea {
 
   .map-page .map-layout--app-sheet .left-panel-scroll,
   .demo-page .map-layout--app-sheet .left-panel-scroll {
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     min-height: 0;
-    max-height: calc(
-      100dvh - var(--mobile-bottom-nav-height, 72px) - max(0px, env(safe-area-inset-bottom, 0px)) - var(
-          --mobile-sheet-scroll-chrome,
-          136px
-        )
-    );
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: visible;
+    overscroll-behavior: none;
+    touch-action: auto;
+    -webkit-overflow-scrolling: auto;
+  }
+
+  .map-page .map-layout--app-sheet .left-panel__track button,
+  .demo-page .map-layout--app-sheet .left-panel__track button {
+    touch-action: manipulation;
   }
 
   .map-page .map-layout--app-sheet .left-panel__track::after,

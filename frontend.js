@@ -1078,18 +1078,18 @@ function getSheetGeometry(panel) {
   const bottomNav = document.querySelector(".mobile-map-bottom-nav");
   const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
   let H =
-    track && (track.offsetHeight || track.getBoundingClientRect().height)
-      ? Math.round(track.offsetHeight || track.getBoundingClientRect().height)
+    track && Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height)
+      ? Math.round(Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height))
       : 0;
-  if (!Number.isFinite(H) || H < 96) {
-    H = Math.max(260, Math.min(Math.round(vh - navH - 6), Math.round(vh * 0.54)));
+  if (!Number.isFinite(H) || H < 88) {
+    H = Math.round(vh * 0.52);
   }
-  H = Math.max(104, Math.min(Math.round(vh - navH - 4), H));
+  H = Math.max(92, H);
   const handleWrap = track?.querySelector(".left-panel-handle-wrap");
   const head = track?.querySelector(".left-panel-head");
   const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
   const headH = head ? Math.round(head.offsetHeight) : 52;
-  const peekVisible = Math.max(78, Math.min(180, handleH + headH - 6));
+  const peekVisible = Math.max(124, Math.min(276, Math.round(handleH + headH + 28)));
   const yBottomPinned = vh - navH - H;
   const yMaxByScreen = Math.max(yBottomPinned, vh - navH - peekVisible);
   const yMaxByContent = Math.max(yBottomPinned, H - peekVisible);
@@ -1181,8 +1181,8 @@ function sheetSnapAnimate(s, targetY, g, commit) {
 }
 
 /**
- * Моб. нижний лист: список внутри — нативный скролл; шторка двигается только за область захвата
- * (ручка и шапка) или после нажатия кнопки открытия списка. Это исключает «уезд» контента относительно панели.
+ * Моб. нижний лист: шторка и карточки — один блок без внутреннего скролла списка.
+ * Двигается только transform всего трека; жест с любой точки трека (кроме ссылок/полей).
  */
 function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   const panel = document.getElementById(panelId);
@@ -1195,12 +1195,12 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   let startSheetT = 0;
   let mode = "idle";
   let activeId = null;
-  let fromOpenBtn = false;
   let lastMoveY = 0;
   let lastMoveTs = 0;
   let velocityY = 0;
   let gestureGeometry = null;
   let lastCollapsedUi = state.panelCollapsed;
+  let dragMaxAbsDy = 0;
 
   const commitSheetState = (y, g) => {
     const atPeek = Math.abs(y - g.yPeek) < 10;
@@ -1225,11 +1225,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const track = panel.querySelector("[data-sheet-track]");
     if (!track || !track.contains(e.target)) return;
     if (e.target.closest("button.close-left-panel")) return;
-    if (e.target.closest("button, a[href], input, textarea, select")) return;
-
-    fromOpenBtn = Boolean(e.target.closest(".open-left-panel-btn--sheet, #openLeftPanelBtn, #openDemoLeftPanelBtn"));
-    const onChrome = Boolean(e.target.closest(".left-panel-handle-wrap, .left-panel-head"));
-    if (!onChrome && !fromOpenBtn) return;
+    if (e.target.closest("a[href], input, textarea, select, label")) return;
 
     const s = sheetNode();
     if (!s) return;
@@ -1243,6 +1239,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     lastMoveY = e.clientY;
     lastMoveTs = performance.now();
     velocityY = 0;
+    dragMaxAbsDy = 0;
     mode = "decide";
     activeId = e.pointerId;
   };
@@ -1271,6 +1268,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const g = gestureGeometry || getSheetGeometry(panel);
     if (!s || !g) return;
 
+    dragMaxAbsDy = Math.max(dragMaxAbsDy, Math.abs(e.clientY - startY));
     e.preventDefault();
     const tRaw = startSheetT + (e.clientY - startY);
     const tRub = sheetDragRubberTranslate(tRaw, g);
@@ -1334,6 +1332,11 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   };
 
   const finishPointer = (pointerId) => {
+    if (dragMaxAbsDy > 14) {
+      panel.dataset.sheetJustDragged = "1";
+      window.setTimeout(() => panel.removeAttribute("data-sheet-just-dragged"), 380);
+    }
+    dragMaxAbsDy = 0;
     if (pointerId === activeId && activeId != null) {
       try {
         panel.releasePointerCapture(pointerId);
@@ -1344,9 +1347,20 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     activeId = null;
     mode = "idle";
     gestureGeometry = null;
-    fromOpenBtn = false;
     sheetNode()?.classList.remove("left-panel--sheet-live");
   };
+
+  panel.addEventListener(
+    "click",
+    (ev) => {
+      if (panel.dataset.sheetJustDragged !== "1") return;
+      if (ev.target.closest(".open-object, .open-demo-object")) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    },
+    true
+  );
 
   const onPointerCancel = (e) => {
     const pid = activeId;
