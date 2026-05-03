@@ -1036,6 +1036,39 @@ function setPanelTranslateY(el, y, withTransition, durationMs) {
   el.style.transform = `translate3d(0, ${y}px, 0)`;
 }
 
+/** Видимая высота (iOS Safari URL bar / клавиатура) — стабильнее, чем innerHeight. */
+function mobileViewportInnerHeight() {
+  const vv = window.visualViewport;
+  if (vv && vv.height > 32) return Math.round(vv.height);
+  return Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
+}
+
+function ensureMobileSheetVisualViewportReflow() {
+  if (typeof window === "undefined" || window.__bmVVSheetBound === "1") return;
+  const vv = window.visualViewport;
+  if (!vv) return;
+  window.__bmVVSheetBound = "1";
+  let resizeTimer = null;
+  vv.addEventListener(
+    "resize",
+    () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        if (!window.matchMedia("(max-width: 900px)").matches) return;
+        const settle = (panel, layout) => {
+          if (!panel || !layout || !layout.classList.contains("map-layout--app-sheet")) return;
+          const node = getSheetNode(panel);
+          if (!node?.querySelector(".left-panel-head") || node.classList.contains("left-panel--sheet-live")) return;
+          mobileSheetSettleAfterRender(panel, layout);
+        };
+        settle(document.getElementById("leftPanel"), document.getElementById("mapLayout"));
+        settle(document.getElementById("demoLeftPanel"), document.getElementById("demoMapLayout"));
+      }, 100);
+    },
+    { passive: true }
+  );
+}
+
 function refreshMobileSheetLayoutVars(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return;
   const root = document.documentElement;
@@ -1073,10 +1106,12 @@ function refreshMobileSheetLayoutVars(panel) {
 function getSheetGeometry(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return null;
   refreshMobileSheetLayoutVars(panel);
-  const vh = window.innerHeight;
+  const vh = mobileViewportInnerHeight();
   const track = panel.querySelector("[data-sheet-track]");
   const bottomNav = document.querySelector(".mobile-map-bottom-nav");
-  const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
+  const navH = bottomNav
+    ? Math.max(56, Math.round(bottomNav.getBoundingClientRect().height || bottomNav.offsetHeight || 56))
+    : 56;
   let H =
     track && Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height)
       ? Math.round(Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height))
@@ -1093,9 +1128,11 @@ function getSheetGeometry(panel) {
   const yBottomPinned = vh - navH - H;
   const yMaxByScreen = Math.max(yBottomPinned, vh - navH - peekVisible);
   const yMaxByContent = Math.max(yBottomPinned, H - peekVisible);
-  const yMax = Math.min(yMaxByScreen, yMaxByContent);
+  let yMax = Math.min(yMaxByScreen, yMaxByContent);
   const yLiftExtra = Math.min(140, Math.max(72, Math.round(vh * 0.085)));
   const yMin = yBottomPinned - yLiftExtra;
+  if (!Number.isFinite(yMax)) yMax = yMaxByScreen;
+  if (yMax < yMin) yMax = yMin;
   const yPeek = yMax;
   const usable = Math.max(160, vh - navH - 10);
   const halfStep = Math.round(usable * 0.47);
@@ -1211,6 +1248,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   let gestureGeometry = null;
   let lastCollapsedUi = state.panelCollapsed;
   let dragMaxAbsDy = 0;
+  let capturingTrack = null;
 
   const commitSheetState = (y, g) => {
     const atPeek = Math.abs(y - g.yPeek) < 10;
@@ -1239,6 +1277,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
 
     const s = sheetNode();
     if (!s) return;
+    capturingTrack = track;
 
     s.classList.remove("left-panel--sheet-anim");
     gestureGeometry = getSheetGeometry(panel);
@@ -1266,9 +1305,9 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       mode = "drag";
       e.preventDefault();
       try {
-        panel.setPointerCapture(e.pointerId);
+        capturingTrack?.setPointerCapture(e.pointerId);
       } catch (_) {
-        /* */
+        /* Safari: capture на треке, у aside pointer-events:none */
       }
       sheetNode()?.classList.add("left-panel--sheet-live");
     }
@@ -1349,11 +1388,12 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     dragMaxAbsDy = 0;
     if (pointerId === activeId && activeId != null) {
       try {
-        panel.releasePointerCapture(pointerId);
+        capturingTrack?.releasePointerCapture(pointerId);
       } catch (_) {
         /* */
       }
     }
+    capturingTrack = null;
     activeId = null;
     mode = "idle";
     gestureGeometry = null;
@@ -1392,6 +1432,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   panel.addEventListener("pointerup", onPointerUp);
   panel.addEventListener("pointercancel", onPointerCancel);
   panel.dataset.mobileSheetBound = "1";
+  ensureMobileSheetVisualViewportReflow();
 }
 
 function snapSheetToPeek(panelId, layoutId, isDemo) {

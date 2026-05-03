@@ -1507,10 +1507,32 @@ textarea {
     margin-top: 0;
   }
 
-  /* Круглую кнопку на моб. убираем: открытие — нижний лист */
-  .map-page .map-wrap .open-left-panel-btn--sheet,
-  .demo-page .map-wrap .open-left-panel-btn--sheet {
+  /* Свёрнутый режим — плавающая «Список» над таббаром; при открытой шторке скрыта */
+  .map-page .map-layout--app-sheet:not(.collapsed) .map-wrap .open-left-panel-btn--sheet,
+  .demo-page .map-layout--app-sheet:not(.collapsed) .map-wrap .open-left-panel-btn--sheet {
     display: none !important;
+    pointer-events: none !important;
+  }
+
+  .map-page .map-layout--app-sheet.collapsed .map-wrap .open-left-panel-btn--sheet,
+  .demo-page .map-layout--app-sheet.collapsed .map-wrap .open-left-panel-btn--sheet {
+    display: inline-flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + var(--mobile-bottom-nav-height, 56px) + 12px);
+    width: auto;
+    min-width: 118px;
+    height: 44px;
+    padding: 0 14px;
+    border-radius: 12px;
+    z-index: 125;
+    pointer-events: auto !important;
+    box-sizing: border-box;
   }
 
   .open-left-panel-btn--sheet .open-left-panel-ico--desk {
@@ -1650,7 +1672,7 @@ textarea {
     overflow-x: hidden;
     overflow-y: visible;
     overscroll-behavior: none;
-    touch-action: auto;
+    touch-action: none;
     -webkit-overflow-scrolling: auto;
   }
 
