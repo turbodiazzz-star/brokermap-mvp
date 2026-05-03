@@ -309,8 +309,36 @@ const PLACEHOLDER_IMAGE_URL = `data:image/svg+xml,${encodeURIComponent(
   </svg>`
 )}`;
 
-function photoUrlWithFallback(url) {
-  return escapeHtml(url || PLACEHOLDER_IMAGE_URL);
+/** Сжатие превью для карточек (меньше трафика на мобильных). */
+function optimizePhotoSrc(url, mode = "card") {
+  const u = String(url || "").trim();
+  if (!u || u.startsWith("data:") || u === PLACEHOLDER_IMAGE_URL) return u || PLACEHOLDER_IMAGE_URL;
+  try {
+    const parsed = new URL(u, typeof location !== "undefined" ? location.origin : undefined);
+    if (/images\.unsplash\.com$/i.test(parsed.hostname)) {
+      const w = mode === "gallery" ? "1200" : "720";
+      parsed.search = "";
+      parsed.searchParams.set("w", w);
+      parsed.searchParams.set("q", "80");
+      parsed.searchParams.set("auto", "format");
+      parsed.searchParams.set("fit", "max");
+      return parsed.toString();
+    }
+  } catch (_e) {
+    /* ignore */
+  }
+  return u;
+}
+
+function photoUrlWithFallback(url, opts = {}) {
+  const mode = opts.gallery ? "gallery" : "card";
+  const raw = url || PLACEHOLDER_IMAGE_URL;
+  return escapeHtml(optimizePhotoSrc(raw === PLACEHOLDER_IMAGE_URL ? raw : raw, mode));
+}
+
+function imgLazyAttrs(extra = {}) {
+  const loading = extra.priority === "high" ? 'loading="eager"' : 'loading="lazy"';
+  return `${loading} decoding="async"`;
 }
 
 function photoOnErrorAttr() {
@@ -754,7 +782,7 @@ function cardMarkup(property) {
   return `
     <article class="card card--feed ${premium ? "premium" : ""}">
       <div class="card-media">
-        <img class="card-media__img" src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
+        <img class="card-media__img" ${imgLazyAttrs()} src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
         ${propertyFeedPhotoDots(property)}
       </div>
       <div class="card-badges">
@@ -890,7 +918,7 @@ function demoCardMarkup(item) {
   return `
     <article class="card card--feed ${premium ? "premium" : ""}">
       <div class="card-media">
-        <img class="card-media__img" src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
+        <img class="card-media__img" ${imgLazyAttrs()} src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
         ${propertyFeedPhotoDots(item)}
       </div>
       <div class="card-badges">
@@ -936,7 +964,8 @@ function leftPanelTrackWrap(innerHtml) {
 }
 
 function leftPanelMobileBlock(handleAreaId, headHtml, bodyHtml) {
-  return leftPanelTrackWrap(leftPanelHandleHtml(handleAreaId) + headHtml + bodyHtml);
+  const body = bodyHtml ? `<div class="left-panel-scroll" data-sheet-scroll>${bodyHtml}</div>` : "";
+  return leftPanelTrackWrap(leftPanelHandleHtml(handleAreaId) + headHtml + body);
 }
 
 /** Узел с transform: внутр. трек (контент), не внешний clip — тогда «окно» стоит, едет лента */
@@ -1221,6 +1250,13 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     mode = "decide";
     activeId = e.pointerId;
     fromOpenBtn = Boolean(e.target.closest(".open-left-panel-btn--sheet, #openLeftPanelBtn, #openDemoLeftPanelBtn"));
+    const onSheetChrome =
+      fromOpenBtn || Boolean(e.target.closest(".left-panel-handle-wrap, .left-panel-head"));
+    if (!onSheetChrome) {
+      activeId = null;
+      mode = "idle";
+      return;
+    }
   };
 
   const onPointerMove = (e) => {
@@ -1647,9 +1683,12 @@ function showDemoGroup(properties) {
   state.panelCollapsed = false;
   document.getElementById("demoMapLayout")?.classList.remove("collapsed");
   updateDemoOpenPanelButton();
-  refreshMapViewport();
   const sorted = properties.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
+  const [focusLat, focusLon] = groupCentroid(sorted);
   renderDemoPanel(sorted, "Объектов в точке");
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => focusMapOnPlacemark(focusLat, focusLon, "demoLeftPanel"));
+  });
 }
 
 function applyDemoFilters() {
@@ -1925,7 +1964,13 @@ function renderDemoPropertyPage(id) {
           <h2>${property.title}</h2>
           <div class="gallery">
             ${galleryPhotos
-              .map((photo) => `<img src="${photoUrlWithFallback(photo)}" onerror="${photoOnErrorAttr()}" alt="Фото демо-объекта" />`)
+              .map(
+                (photo, gi) =>
+                  `<img class="gallery__img" ${imgLazyAttrs({ priority: gi === 0 ? "high" : undefined })} src="${photoUrlWithFallback(
+                    photo,
+                    { gallery: true }
+                  )}" onerror="${photoOnErrorAttr()}" alt="Фото демо-объекта" />`
+              )
               .join("")}
           </div>
           <p>${property.description || ""}</p>
@@ -2477,27 +2522,117 @@ function normalizeAddressKey(address) {
     .trim();
 }
 
-function groupByHouse(list) {
-  const groupedMap = {};
-  for (const item of list) {
-    const addressKey = normalizeAddressKey(item.address);
-    const fallbackKey = `${Number(item.lat || 0).toFixed(5)}:${Number(item.lon || 0).toFixed(5)}`;
-    const key = addressKey || fallbackKey;
-    if (!groupedMap[key]) groupedMap[key] = [];
-    groupedMap[key].push(item);
+/** Макс. расстояние между точками (м), чтобы считать объекты одним зданием — одна метка, цифра только при 2+. */
+const SAME_BUILDING_MAX_METERS = 38;
+
+function groupByProximity(list) {
+  const valid = list.filter((p) => Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon)));
+  if (!valid.length) return [];
+  const n = valid.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  function find(i) {
+    return parent[i] === i ? i : (parent[i] = find(parent[i]));
   }
-  return Object.values(groupedMap);
+  function union(a, b) {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  }
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (haversineMeters(valid[i].lat, valid[i].lon, valid[j].lat, valid[j].lon) <= SAME_BUILDING_MAX_METERS) {
+        union(i, j);
+      }
+    }
+  }
+  const clusters = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    if (!clusters.has(r)) clusters.set(r, []);
+    clusters.get(r).push(valid[i]);
+  }
+  return Array.from(clusters.values());
+}
+
+function groupByHouse(list) {
+  return groupByProximity(list);
+}
+
+function groupCentroid(group) {
+  if (!group.length) return [0, 0];
+  let slat = 0;
+  let slon = 0;
+  for (const p of group) {
+    slat += Number(p.lat);
+    slon += Number(p.lon);
+  }
+  return [slat / group.length, slon / group.length];
+}
+
+/**
+ * После выбора метки: без fitToViewport; на моб. — нижний лист в margin, объект в верхней зоне карты между топбаром и лентой.
+ */
+function focusMapOnPlacemark(lat, lon, panelId = "leftPanel") {
+  const map = state.mapInstance;
+  if (!map || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+  const isMobile = window.matchMedia("(max-width: 900px)").matches;
+  const targetZoom = Math.max(map.getZoom(), 17);
+
+  if (!isMobile) {
+    map.setCenter([lat, lon], targetZoom, { duration: 320, checkZoomRange: true });
+    return;
+  }
+
+  const mapEl =
+    typeof map.container?.getElement === "function" ? map.container.getElement() : document.getElementById("map") || document.getElementById("demoMap");
+  if (!mapEl) return;
+  const mr = mapEl.getBoundingClientRect();
+
+  let marginTop = Math.max(56, Math.round(mr.height * 0.08));
+  let marginBottom = Math.round(mr.height * 0.42);
+  const topbar =
+    panelId === "demoLeftPanel"
+      ? document.querySelector(".demo-page .demo-top-strip") || document.querySelector(".demo-page .topbar")
+      : document.querySelector(".map-page .topbar");
+  if (topbar) {
+    marginTop = Math.max(48, Math.round(topbar.getBoundingClientRect().bottom - mr.top + 8));
+  }
+  const panel = document.getElementById(panelId);
+  if (panel) {
+    const track = panel.querySelector("[data-sheet-track]");
+    if (track) {
+      const tr = track.getBoundingClientRect();
+      marginBottom = Math.min(Math.round(mr.height - marginTop - 32), Math.max(marginBottom, Math.round(mr.bottom - tr.top + 24)));
+    }
+  }
+
+  marginTop = Math.max(40, Math.min(marginTop, Math.round(mr.height * 0.42)));
+  marginBottom = Math.max(80, Math.min(marginBottom, Math.round(mr.height - marginTop - 48)));
+
+  const spanLat = 0.00085;
+  const spanLon = 0.0011;
+  const bounds = [
+    [lat - spanLat / 2, lon - spanLon / 2],
+    [lat + spanLat / 2, lon + spanLon / 2]
+  ];
+  map.setBounds(bounds, {
+    checkZoomRange: true,
+    duration: 360,
+    zoomMargin: [marginTop, 20, marginBottom, 20],
+    preciseZoom: true
+  });
 }
 
 function showGroup(properties) {
   state.panelCollapsed = false;
   document.getElementById("mapLayout")?.classList.remove("collapsed");
-  refreshMapViewport();
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
   rememberSheetPosition(panel);
   properties.sort((a, b) => b.commissionPartner - a.commissionPartner);
   const bodyHtml = properties.map(cardMarkup).join("");
+  const [focusLat, focusLon] = groupCentroid(properties);
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>Объектов в точке: ${properties.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -2515,6 +2650,9 @@ function showGroup(properties) {
     });
   });
   bindSheetReflowOnImages(panel, "mapLayout");
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => focusMapOnPlacemark(focusLat, focusLon, "leftPanel"));
+  });
 }
 
 function initMap() {
@@ -2557,39 +2695,34 @@ function initMap() {
       }, 220);
     });
 
-    let clusterer = null;
-    try {
-      clusterer = new ymaps.Clusterer({
-        groupByCoordinates: false,
-        gridSize: 72,
-        hasBalloon: false
-      });
-    } catch (_) {
-      /* */
-    }
     grouped.forEach((group) => {
-      const top = group.sort((a, b) => b.commissionPartner - a.commissionPartner)[0];
+      const sorted = group.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
+      const top = sorted[0];
+      const [plat, plon] = groupCentroid(group);
+      const multi = group.length >= 2;
+      const premium = top.commissionPartner >= 4;
       const placemark = new ymaps.Placemark(
-        [top.lat, top.lon],
+        [plat, plon],
+        multi
+          ? {
+              balloonContent: `${group.length} объект(а)`,
+              hintContent: `${group.length} объекта по адресу / в одном здании`,
+              iconContent: String(group.length)
+            }
+          : { hintContent: String(top.address || top.title || "").slice(0, 120) },
         {
-          balloonContent: `${group.length} объект(а)`,
-          hintContent: `${group.length} объект(а) по адресу`,
-          iconContent: String(group.length)
-        },
-        {
-          preset: top.commissionPartner >= 4 ? "islands#orangeCircleIcon" : "islands#blueCircleIcon"
+          preset: multi
+            ? premium
+              ? "islands#orangeCircleIcon"
+              : "islands#blueCircleIcon"
+            : premium
+              ? "islands#orangeIcon"
+              : "islands#blueIcon"
         }
       );
       placemark.events.add("click", () => showGroup(group));
-      if (clusterer) {
-        clusterer.add(placemark);
-      } else {
-        map.geoObjects.add(placemark);
-      }
+      map.geoObjects.add(placemark);
     });
-    if (clusterer) {
-      map.geoObjects.add(clusterer);
-    }
 
     if (state.areaPolygonCoords?.length) {
       const polygon = new ymaps.Polygon(
@@ -2671,39 +2804,34 @@ function initDemoMap() {
       }, 220);
     });
 
-    let clusterer = null;
-    try {
-      clusterer = new ymaps.Clusterer({
-        groupByCoordinates: false,
-        gridSize: 72,
-        hasBalloon: false
-      });
-    } catch (_) {
-      /* без кластера, если API недоступен */
-    }
     grouped.forEach((group) => {
-      const top = group.sort((a, b) => b.commissionPartner - a.commissionPartner)[0];
+      const sorted = group.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
+      const top = sorted[0];
+      const [plat, plon] = groupCentroid(group);
+      const multi = group.length >= 2;
+      const premium = top.commissionPartner >= 4;
       const placemark = new ymaps.Placemark(
-        [top.lat, top.lon],
+        [plat, plon],
+        multi
+          ? {
+              balloonContent: `${group.length} объект(а)`,
+              hintContent: `${group.length} объекта по адресу / в одном здании`,
+              iconContent: String(group.length)
+            }
+          : { hintContent: String(top.address || top.title || "").slice(0, 120) },
         {
-          balloonContent: `${group.length} объект(а)`,
-          hintContent: `${group.length} объект(а) по адресу`,
-          iconContent: String(group.length)
-        },
-        {
-          preset: top.commissionPartner >= 4 ? "islands#orangeCircleIcon" : "islands#blueCircleIcon"
+          preset: multi
+            ? premium
+              ? "islands#orangeCircleIcon"
+              : "islands#blueCircleIcon"
+            : premium
+              ? "islands#orangeIcon"
+              : "islands#blueIcon"
         }
       );
       placemark.events.add("click", () => showDemoGroup(group));
-      if (clusterer) {
-        clusterer.add(placemark);
-      } else {
-        map.geoObjects.add(placemark);
-      }
+      map.geoObjects.add(placemark);
     });
-    if (clusterer) {
-      map.geoObjects.add(clusterer);
-    }
 
     if (state.areaPolygonCoords?.length) {
       const polygon = new ymaps.Polygon(
@@ -2765,7 +2893,7 @@ async function renderPropertyPage(id) {
             ${galleryPhotos
               .map(
                 (photo, index) =>
-                  `<img src="${photoUrlWithFallback(photo)}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" data-gallery-index="${index}" />`
+                  `<img class="gallery__img" ${imgLazyAttrs({ priority: index === 0 ? "high" : undefined })} src="${photoUrlWithFallback(photo, { gallery: true })}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" data-gallery-index="${index}" />`
               )
               .join("")}
           </div>
@@ -2814,7 +2942,7 @@ async function renderPropertyPage(id) {
     <div class="gallery-lightbox" id="galleryLightbox">
       <button class="gallery-lightbox-close" id="galleryCloseBtn" aria-label="Закрыть">×</button>
       <button class="gallery-lightbox-nav" id="galleryPrevBtn" aria-label="Предыдущее фото">‹</button>
-      <img id="galleryLightboxImage" class="gallery-lightbox-image" src="${photoUrlWithFallback(galleryPhotos[0])}" alt="Фото объекта" />
+      <img id="galleryLightboxImage" class="gallery-lightbox-image" ${imgLazyAttrs({ priority: "high" })} src="${photoUrlWithFallback(galleryPhotos[0], { gallery: true })}" alt="Фото объекта" />
       <button class="gallery-lightbox-nav" id="galleryNextBtn" aria-label="Следующее фото">›</button>
       <div class="gallery-lightbox-counter" id="galleryCounter">1 / ${galleryPhotos.length}</div>
     </div>
@@ -2915,8 +3043,7 @@ async function renderPropertyPage(id) {
   const lightboxImage = document.getElementById("galleryLightboxImage");
   const galleryCounter = document.getElementById("galleryCounter");
   const updateLightbox = () => {
-    const url = photoUrlWithFallback(galleryPhotos[currentGalleryIndex]);
-    lightboxImage.src = url;
+    lightboxImage.src = optimizePhotoSrc(galleryPhotos[currentGalleryIndex] || PLACEHOLDER_IMAGE_URL, "gallery");
     galleryCounter.textContent = `${currentGalleryIndex + 1} / ${galleryPhotos.length}`;
   };
   const openLightbox = (index) => {
@@ -3840,7 +3967,7 @@ async function renderCabinetPage(openForm = false) {
                 .map(
                   (p) => `
           <article class="card">
-            <img src="${photoUrlWithFallback(p.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="">
+            <img ${imgLazyAttrs()} src="${photoUrlWithFallback(p.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="">
             <div class="card-body">
               <div class="price">${money(p.price)} ₽</div>
               <div>${p.address}</div>
