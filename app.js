@@ -476,7 +476,10 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/uploads/photos/:file", requireAuthForFile, (req, res) => {
+// Превью в карточках грузятся через <img src="..."> — без заголовка Authorization.
+// JWT у части клиентов только в памяти или сессии отсутствует → 401 для гостей = «нет фото у всех в ленте».
+// Обложки объектов считаются публичными (имена файлов неугадываемые); PDF остаются за авторизацией.
+app.get("/uploads/photos/:file", (req, res) => {
   const name = path.basename(req.params.file);
   if (!name || name !== req.params.file) {
     return res.status(400).end();
@@ -488,6 +491,7 @@ app.get("/uploads/photos/:file", requireAuthForFile, (req, res) => {
   if (!fs.existsSync(filePath)) {
     return res.status(404).end();
   }
+  res.setHeader("Cache-Control", "public, max-age=86400");
   return res.sendFile(filePath);
 });
 
