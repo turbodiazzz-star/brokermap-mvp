@@ -3502,18 +3502,20 @@ async function renderCabinetProfilePage() {
       : toDigits(String(me.phone || ""));
   const accountLabel = me.isAgencyOwner ? "Владелец агентства" : "Брокер";
   app.innerHTML = `
-    ${topbar({ hideFilters: window.matchMedia("(max-width: 900px)").matches })}
+    ${topbar({ slim: true })}
     <section class="cabinet cabinet--profile">
       <div class="panel">
         <p><button type="button" class="btn" id="profileBackCabinet">← В кабинет</button></p>
         <h2>Редактировать профиль</h2>
         <p class="muted">Тип аккаунта: <strong>${escapeHtml(accountLabel)}</strong></p>
-        <form id="cabinetProfileForm">
+        <p class="profile-email-display muted"><strong>Email:</strong> ${escapeHtml(me.email || "—")}</p>
+        <p class="muted" style="margin-top: 4px;">
+          Смена пароля только по ссылке из письма: на экране
+          <a href="#/auth">входа</a>
+          нажмите «Забыли пароль?» — письмо придёт на этот адрес.
+        </p>
+        <form id="cabinetProfileForm" autocomplete="off">
           <div class="form-grid">
-            <div class="field-block field-span-2">
-              <label class="field-label" for="profileEmail">Email</label>
-              <input id="profileEmail" type="email" value="${escapeHtml(me.email || "")}" disabled />
-            </div>
             <div class="field-block">
               <label class="field-label" for="profileFirstName">Имя</label>
               <input id="profileFirstName" required value="${escapeHtml(me.firstName || "")}" autocomplete="given-name" />
@@ -3564,24 +3566,6 @@ async function renderCabinetProfilePage() {
           <p class="muted" id="profileFormStatus"></p>
         </form>
         <hr />
-        <h3>Смена пароля</h3>
-        <div class="form-grid">
-          <div class="field-block field-span-2">
-            <label class="field-label" for="profileOldPassword">Текущий пароль</label>
-            <input id="profileOldPassword" type="password" autocomplete="current-password" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="profileNewPassword">Новый пароль</label>
-            <input id="profileNewPassword" type="password" autocomplete="new-password" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="profileNewPassword2">Повтор нового пароля</label>
-            <input id="profileNewPassword2" type="password" autocomplete="new-password" />
-          </div>
-        </div>
-        <p><button type="button" class="btn primary" id="profileChangePasswordBtn">Сменить пароль</button></p>
-        <p class="muted" id="profilePasswordStatus"></p>
-        <hr />
         <p><button type="button" class="btn" id="profileLogoutBtn">Выйти из аккаунта</button></p>
         <p style="margin-top: 28px;"><button type="button" class="btn danger-btn" id="profileDeleteBtn">Удалить профиль</button></p>
         <p class="muted" id="profileDeleteHint">Удаление необратимо. Объекты брокера агентства перейдут к агентству; у владельца агентства без брокеров объекты будут удалены вместе с профилем.</p>
@@ -3628,37 +3612,6 @@ async function renderCabinetProfilePage() {
       if (status) status.textContent = err.message || "Ошибка сохранения";
     }
   });
-  document.getElementById("profileChangePasswordBtn")?.addEventListener("click", async () => {
-    const status = document.getElementById("profilePasswordStatus");
-    if (status) status.textContent = "";
-    const oldPassword = document.getElementById("profileOldPassword")?.value || "";
-    const newPassword = document.getElementById("profileNewPassword")?.value || "";
-    const confirmPassword = document.getElementById("profileNewPassword2")?.value || "";
-    if (!oldPassword || !newPassword || !confirmPassword) {
-      if (status) status.textContent = "Заполните все поля смены пароля";
-      return;
-    }
-    if (newPassword.length < 6) {
-      if (status) status.textContent = "Новый пароль не менее 6 символов";
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      if (status) status.textContent = "Пароли не совпадают";
-      return;
-    }
-    try {
-      await api("/api/auth/change-password", {
-        method: "POST",
-        body: JSON.stringify({ oldPassword, newPassword, confirmPassword })
-      });
-      if (status) status.textContent = "Пароль изменён";
-      document.getElementById("profileOldPassword").value = "";
-      document.getElementById("profileNewPassword").value = "";
-      document.getElementById("profileNewPassword2").value = "";
-    } catch (err) {
-      if (status) status.textContent = err.message || "Ошибка";
-    }
-  });
   document.getElementById("profileLogoutBtn")?.addEventListener("click", async () => {
     await logout();
     location.hash = "#/auth";
@@ -3689,7 +3642,7 @@ async function renderCabinetPage(openForm = false) {
   }
   const [items, stats] = await Promise.all([api("/api/my/properties"), api("/api/my/stats")]);
   app.innerHTML = `
-    ${topbar({ hideFilters: window.matchMedia("(max-width: 900px)").matches })}
+    ${topbar({ slim: true })}
     <section class="cabinet">
       <div class="panel">
         <div class="panel-head">

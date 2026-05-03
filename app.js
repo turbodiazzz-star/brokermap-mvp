@@ -863,30 +863,12 @@ app.get("/api/auth/me", auth, (req, res) => {
   return res.json(publicUser(user));
 });
 
-app.post("/api/auth/change-password", auth, async (req, res) => {
-  const { oldPassword, newPassword, confirmPassword } = req.body || {};
-  if (!oldPassword || !newPassword || !confirmPassword) {
-    return res.status(400).json({ message: "Заполните все поля смены пароля" });
-  }
-  if (String(newPassword).length < 6) {
-    return res.status(400).json({ message: "Новый пароль должен быть не менее 6 символов" });
-  }
-  if (newPassword !== confirmPassword) {
-    return res.status(400).json({ message: "Новый пароль и подтверждение не совпадают" });
-  }
-  const user = findUserById(req.userId);
-  if (!user) {
-    return res.status(404).json({ message: "Пользователь не найден" });
-  }
-  const ok = await bcrypt.compare(String(oldPassword), user.passwordHash);
-  if (!ok) {
-    return res.status(400).json({ message: "Старый пароль введен неверно" });
-  }
-  const newHash = await bcrypt.hash(String(newPassword), 10);
-  if (!updateUserPasswordHash(user.id, newHash)) {
-    return res.status(500).json({ message: "Не удалось сохранить новый пароль" });
-  }
-  return res.json({ success: true });
+/** Смена пароля только по ссылке из письма (forgot-password / reset), не по старому паролю в приложении. */
+app.post("/api/auth/change-password", auth, (_req, res) => {
+  return res.status(403).json({
+    message:
+      "Смена пароля только по ссылке из письма: на экране входа нажмите «Забыли пароль?» — мы отправим письмо на ваш email."
+  });
 });
 
 app.patch("/api/me/profile", auth, (req, res) => {
