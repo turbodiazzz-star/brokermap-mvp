@@ -3509,11 +3509,10 @@ async function renderCabinetProfilePage() {
         <h2>Редактировать профиль</h2>
         <p class="muted">Тип аккаунта: <strong>${escapeHtml(accountLabel)}</strong></p>
         <p class="profile-email-display muted"><strong>Email:</strong> ${escapeHtml(me.email || "—")}</p>
-        <p class="muted" style="margin-top: 4px;">
-          Смена пароля только по ссылке из письма: на экране
-          <a href="#/auth">входа</a>
-          нажмите «Забыли пароль?» — письмо придёт на этот адрес.
-        </p>
+        <h3>Пароль</h3>
+        <p class="muted">Новый пароль задаётся по ссылке из письма на этот адрес.</p>
+        <p><button type="button" class="btn" id="profileRequestPasswordEmailBtn">Сменить пароль</button></p>
+        <p class="muted" id="profilePasswordEmailStatus"></p>
         <form id="cabinetProfileForm" autocomplete="off">
           <div class="form-grid">
             <div class="field-block">
@@ -3581,6 +3580,28 @@ async function renderCabinetProfilePage() {
   document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
   document.getElementById("profileBackCabinet")?.addEventListener("click", () => {
     location.hash = "#/cabinet";
+  });
+  document.getElementById("profileRequestPasswordEmailBtn")?.addEventListener("click", async () => {
+    const st = document.getElementById("profilePasswordEmailStatus");
+    if (st) st.textContent = "";
+    const btn = document.getElementById("profileRequestPasswordEmailBtn");
+    const email = String(me.email || "").trim().toLowerCase();
+    if (!email) {
+      if (st) st.textContent = "Не удалось определить email.";
+      return;
+    }
+    if (btn) btn.disabled = true;
+    try {
+      const data = await api("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email })
+      });
+      if (st) st.textContent = data.message || "Проверьте почту.";
+    } catch (err) {
+      if (st) st.textContent = err.message || "Ошибка отправки";
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   });
   document.getElementById("cabinetProfileForm")?.addEventListener("submit", async (e) => {
     e.preventDefault();
