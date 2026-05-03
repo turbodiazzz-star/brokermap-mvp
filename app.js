@@ -185,6 +185,19 @@ function readinessLabel(value) {
   return map[value] || "-";
 }
 
+function normalizeHousingStatus(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "apartments") return "apartments";
+  return "flat";
+}
+
+function housingStatusLabel(value) {
+  const map = { flat: "Квартира", apartments: "Апартаменты" };
+  return map[value] || map.flat;
+}
+
 function money(value) {
   return new Intl.NumberFormat("ru-RU").format(Number(value || 0));
 }
@@ -289,13 +302,17 @@ async function generatePresentationPdf(property) {
     y = doc.y + 12;
 
     const specs = [
+      { icon: "◇", label: "Статус жилья", value: housingStatusLabel(property.housingStatus) },
       { icon: "▣", label: "Площадь", value: `${property.area ?? "-"} м²` },
       { icon: "◍", label: "Спален", value: `${property.bedrooms ?? "-"}` },
       { icon: "⌂", label: "Этаж", value: `${property.floor ?? "-"}` },
       { icon: "⇅", label: "Этажей в доме", value: `${property.totalFloors ?? "-"}` },
       { icon: "✦", label: "Высота потолков", value: `${property.ceilingHeight ?? "-"} м` },
       { icon: "◈", label: "Отделка", value: finishingLabel(property.finishing) },
-      { icon: "●", label: "Готовность дома", value: readinessLabel(property.readiness) }
+      { icon: "●", label: "Готовность дома", value: readinessLabel(property.readiness) },
+      ...(property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+        ? [{ icon: "↦", label: "До метро пешком", value: `${property.metroWalkMinutes} мин` }]
+        : [])
     ];
     const colGap = 12;
     const colWidth = (pageWidth - colGap) / 2;
@@ -1292,6 +1309,7 @@ app.post(
       return res.status(400).json({ message: "Заполните все обязательные поля объекта, включая фото." });
     }
 
+    const publishedAt = new Date().toISOString();
     const property = {
       id: createPropertyId(),
       ownerId: req.userId,
@@ -1307,12 +1325,15 @@ app.post(
       ceilingHeight: toOptionalNumber(req.body.ceilingHeight),
       finishing: normalizeFinishing(req.body.finishing),
       readiness: normalizeReadiness(req.body.readiness),
+      housingStatus: normalizeHousingStatus(req.body.housingStatus),
+      metroWalkMinutes: toOptionalNumber(req.body.metroWalkMinutes),
       description: req.body.description || "",
       photos,
       pdfUrl: presentation,
       commissionTotal: Number(req.body.commissionTotal),
       commissionPartner: Number(req.body.commissionPartner),
-      createdAt: new Date().toISOString(),
+      publishedAt,
+      createdAt: publishedAt,
       contacts: {
         phone: req.body.phone || "",
         telegram: req.body.telegram || "",
@@ -1386,6 +1407,9 @@ app.put(
         ceilingHeight: toOptionalNumber(req.body.ceilingHeight ?? property.ceilingHeight),
         finishing: req.body.finishing === undefined ? property.finishing : normalizeFinishing(req.body.finishing),
         readiness: req.body.readiness === undefined ? property.readiness : normalizeReadiness(req.body.readiness),
+        housingStatus: req.body.housingStatus === undefined ? property.housingStatus : normalizeHousingStatus(req.body.housingStatus),
+        metroWalkMinutes:
+          req.body.metroWalkMinutes === undefined ? property.metroWalkMinutes : toOptionalNumber(req.body.metroWalkMinutes),
         description: req.body.description ?? property.description,
         id: property.id
       });
@@ -1403,6 +1427,10 @@ app.put(
     property.ceilingHeight = toOptionalNumber(req.body.ceilingHeight ?? property.ceilingHeight);
     property.finishing = req.body.finishing === undefined ? property.finishing : normalizeFinishing(req.body.finishing);
     property.readiness = req.body.readiness === undefined ? property.readiness : normalizeReadiness(req.body.readiness);
+    property.housingStatus =
+      req.body.housingStatus === undefined ? property.housingStatus : normalizeHousingStatus(req.body.housingStatus);
+    property.metroWalkMinutes =
+      req.body.metroWalkMinutes === undefined ? property.metroWalkMinutes : toOptionalNumber(req.body.metroWalkMinutes);
     property.description = req.body.description ?? property.description;
     property.commissionTotal = Number(req.body.commissionTotal ?? property.commissionTotal);
     property.commissionPartner = Number(req.body.commissionPartner ?? property.commissionPartner);

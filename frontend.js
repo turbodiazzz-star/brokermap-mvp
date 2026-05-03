@@ -32,7 +32,12 @@ const state = {
     finishing: "",
     readiness: "",
     partnerCommissionMinPct: "",
-    partnerCommissionMinRub: ""
+    partnerCommissionMinRub: "",
+    minArea: "",
+    maxArea: "",
+    housingStatus: "",
+    publishedFrom: "",
+    metroWalkMax: ""
   },
   /** Фиксированный набор демо-объектов на сессию (фильтры не меняют «источник») */
   demoAllProperties: null,
@@ -55,11 +60,16 @@ function emptyFilters() {
     finishing: "",
     readiness: "",
     partnerCommissionMinPct: "",
-    partnerCommissionMinRub: ""
+    partnerCommissionMinRub: "",
+    minArea: "",
+    maxArea: "",
+    housingStatus: "",
+    publishedFrom: "",
+    metroWalkMax: ""
   };
 }
 
-const CURRENT_DEMO_DATA_VERSION = 6;
+const CURRENT_DEMO_DATA_VERSION = 7;
 
 let didSyncUserFromServer = false;
 
@@ -141,6 +151,24 @@ function readinessLabel(value) {
   return map[value] || "-";
 }
 
+function housingStatusLabel(value) {
+  const map = { flat: "Квартира", apartments: "Апартаменты" };
+  return map[value] || map.flat;
+}
+
+function formatPublishedDateRu(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function publishedAtTimeMs(item) {
+  const s = item.publishedAt || item.createdAt;
+  const t = Date.parse(String(s || ""));
+  return Number.isNaN(t) ? 0 : t;
+}
+
 function propertyRoomsShortLabel(bedrooms) {
   const b = Number(bedrooms || 0);
   if (!b) return "Квартира";
@@ -206,9 +234,14 @@ function propertyMetroLabel(property) {
 
 function propertyMetroHtml(property) {
   const metro = propertyMetroLabel(property).trim();
-  if (!metro) return "";
+  const walk =
+    property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+      ? `${Number(property.metroWalkMinutes)} мин пешком`
+      : "";
+  if (!metro && !walk) return "";
+  const line = [metro, walk].filter(Boolean).join(" · ");
   return `<div class="card-metro"><span class="card-metro__dot" aria-hidden="true"></span><span class="card-metro__name">${escapeHtml(
-    metro
+    line
   )}</span></div>`;
 }
 
@@ -351,7 +384,14 @@ function bindFiltersModalNumericFormatting() {
       e.target.value = formatSpacedNumber(raw);
     });
   };
-  ["filterFloorMin", "filterFloorMax", "filterTotalFloorsMin", "filterTotalFloorsMax", "filterPartnerRub"].forEach(wireInt);
+  [
+    "filterFloorMin",
+    "filterFloorMax",
+    "filterTotalFloorsMin",
+    "filterTotalFloorsMax",
+    "filterPartnerRub",
+    "filterMetroWalkMax"
+  ].forEach(wireInt);
   const pct = document.getElementById("filterPartnerPct");
   if (pct && pct.dataset.decBound !== "1") {
     pct.dataset.decBound = "1";
@@ -372,6 +412,22 @@ function bindFiltersModalNumericFormatting() {
       e.target.value = decimalPart ? `${formattedInteger},${decimalPart}` : formattedInteger;
     });
   }
+  const bindAreaFilterInput = (id) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.areaFilterBound === "1") return;
+    el.dataset.areaFilterBound = "1";
+    el.addEventListener("input", (e) => {
+      const cleaned = String(e.target.value || "")
+        .replace(",", ".")
+        .replace(/[^\d.]/g, "");
+      const [integerPart, ...rest] = cleaned.split(".");
+      const decimalPart = rest.join("").slice(0, 2);
+      const formattedInteger = formatSpacedNumber(integerPart);
+      e.target.value = decimalPart ? `${formattedInteger},${decimalPart}` : formattedInteger;
+    });
+  };
+  bindAreaFilterInput("filterAreaMin");
+  bindAreaFilterInput("filterAreaMax");
 }
 
 function moreFiltersModalHtml() {
@@ -449,6 +505,36 @@ function moreFiltersModalHtml() {
               <option value="resale" ${state.filters.readiness === "resale" ? "selected" : ""}>Вторичка</option>
               <option value="assignment" ${state.filters.readiness === "assignment" ? "selected" : ""}>Переуступка</option>
             </select>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterAreaMin">Площадь от (м²)</label>
+            <input id="filterAreaMin" type="text" inputmode="decimal" value="${escapeHtml(
+              String(state.filters.minArea || "").replace(".", ",")
+            )}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterAreaMax">Площадь до (м²)</label>
+            <input id="filterAreaMax" type="text" inputmode="decimal" value="${escapeHtml(
+              String(state.filters.maxArea || "").replace(".", ",")
+            )}" />
+          </div>
+          <div class="field-block field-span-2">
+            <label class="field-label" for="filterHousingStatus">Статус жилья</label>
+            <select id="filterHousingStatus">
+              <option value="">Любой</option>
+              <option value="flat" ${state.filters.housingStatus === "flat" ? "selected" : ""}>Квартира</option>
+              <option value="apartments" ${state.filters.housingStatus === "apartments" ? "selected" : ""}>Апартаменты</option>
+            </select>
+          </div>
+          <div class="field-block field-span-2">
+            <label class="field-label" for="filterPublishedFrom">Дата публикации от</label>
+            <input id="filterPublishedFrom" type="date" value="${escapeHtml(state.filters.publishedFrom || "")}" />
+          </div>
+          <div class="field-block field-span-2">
+            <label class="field-label" for="filterMetroWalkMax">До метро пешком, не более (мин)</label>
+            <input id="filterMetroWalkMax" type="text" inputmode="numeric" value="${formatSpacedNumber(
+              state.filters.metroWalkMax
+            )}" />
           </div>
         </div>
         <p>
@@ -762,6 +848,9 @@ function createDemoProperties(count = 100) {
     const { lat, lon, address } = slots[i] || slots[0];
     const priceBase = priceRoundedThousands(12_000_000 + (i * 601_001) % 59_000_000);
     const partnerPct = Number((1 + (i % 8) * 0.5).toFixed(1));
+    const daysAgo = 1 + (i % 120);
+    const pub = new Date();
+    pub.setDate(pub.getDate() - daysAgo);
     demo.push({
       id: `demo-${i + 1}`,
       title: `Квартира в Москве #${i + 1}`,
@@ -777,6 +866,9 @@ function createDemoProperties(count = 100) {
       ceilingHeight: Math.round((2.6 + (i % 5) * 0.1) * 10) / 10,
       finishing: finishingOptions[i % finishingOptions.length],
       readiness: readinessOptions[i % readinessOptions.length],
+      housingStatus: i % 4 === 0 ? "apartments" : "flat",
+      publishedAt: pub.toISOString(),
+      metroWalkMinutes: 3 + (i % 22),
       commissionTotal: 3,
       commissionPartner: partnerPct,
       contacts: {
@@ -1694,6 +1786,15 @@ function renderPublicDemoPage() {
     state.filters.partnerCommissionMinRub = toRawNumberString(document.getElementById("filterPartnerRub")?.value || "");
     state.filters.finishing = document.getElementById("filterFinishing")?.value || "";
     state.filters.readiness = document.getElementById("filterReadiness")?.value || "";
+    state.filters.minArea = normalizeDecimalInput(
+      String(document.getElementById("filterAreaMin")?.value || "").replace(",", ".")
+    );
+    state.filters.maxArea = normalizeDecimalInput(
+      String(document.getElementById("filterAreaMax")?.value || "").replace(",", ".")
+    );
+    state.filters.housingStatus = document.getElementById("filterHousingStatus")?.value || "";
+    state.filters.publishedFrom = document.getElementById("filterPublishedFrom")?.value || "";
+    state.filters.metroWalkMax = toRawNumberString(document.getElementById("filterMetroWalkMax")?.value || "");
     document.getElementById("filtersModal")?.classList.remove("open");
     applyDemoFilters();
   });
@@ -1711,6 +1812,11 @@ function renderPublicDemoPage() {
     document.getElementById("filterPartnerRub").value = "";
     document.getElementById("filterFinishing").value = "";
     document.getElementById("filterReadiness").value = "";
+    if (document.getElementById("filterAreaMin")) document.getElementById("filterAreaMin").value = "";
+    if (document.getElementById("filterAreaMax")) document.getElementById("filterAreaMax").value = "";
+    if (document.getElementById("filterHousingStatus")) document.getElementById("filterHousingStatus").value = "";
+    if (document.getElementById("filterPublishedFrom")) document.getElementById("filterPublishedFrom").value = "";
+    if (document.getElementById("filterMetroWalkMax")) document.getElementById("filterMetroWalkMax").value = "";
     document.getElementById("filtersModal")?.classList.remove("open");
     applyDemoFilters();
   });
@@ -1751,6 +1857,11 @@ function renderPublicDemoPage() {
       document.getElementById("filterPartnerRub").value = "";
       document.getElementById("filterFinishing").value = "";
       document.getElementById("filterReadiness").value = "";
+      if (document.getElementById("filterAreaMin")) document.getElementById("filterAreaMin").value = "";
+      if (document.getElementById("filterAreaMax")) document.getElementById("filterAreaMax").value = "";
+      if (document.getElementById("filterHousingStatus")) document.getElementById("filterHousingStatus").value = "";
+      if (document.getElementById("filterPublishedFrom")) document.getElementById("filterPublishedFrom").value = "";
+      if (document.getElementById("filterMetroWalkMax")) document.getElementById("filterMetroWalkMax").value = "";
     }
   });
 
@@ -1823,6 +1934,13 @@ function renderDemoPropertyPage(id) {
           <h3>${money(property.price)} ₽</h3>
           <p><strong>Адрес:</strong> ${property.address}</p>
           ${demoMetroLine ? `<p><strong>Метро:</strong> ${escapeHtml(demoMetroLine)}</p>` : ""}
+          ${
+            property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+              ? `<p><strong>Пешком до метро:</strong> ${Number(property.metroWalkMinutes)} мин</p>`
+              : ""
+          }
+          <p><strong>Статус жилья:</strong> ${housingStatusLabel(property.housingStatus)}</p>
+          <p><strong>Дата публикации:</strong> ${escapeHtml(formatPublishedDateRu(property.publishedAt || property.createdAt))}</p>
           <p><strong>Площадь:</strong> ${property.area} м²</p>
           <p><strong>Спален:</strong> ${property.bedrooms}</p>
           <p><strong>Общая комиссия:</strong> ${property.commissionTotal}%</p>
@@ -1929,6 +2047,15 @@ function renderMapPage() {
     state.filters.partnerCommissionMinRub = toRawNumberString(document.getElementById("filterPartnerRub")?.value || "");
     state.filters.finishing = document.getElementById("filterFinishing").value;
     state.filters.readiness = document.getElementById("filterReadiness").value;
+    state.filters.minArea = normalizeDecimalInput(
+      String(document.getElementById("filterAreaMin")?.value || "").replace(",", ".")
+    );
+    state.filters.maxArea = normalizeDecimalInput(
+      String(document.getElementById("filterAreaMax")?.value || "").replace(",", ".")
+    );
+    state.filters.housingStatus = document.getElementById("filterHousingStatus")?.value || "";
+    state.filters.publishedFrom = document.getElementById("filterPublishedFrom")?.value || "";
+    state.filters.metroWalkMax = toRawNumberString(document.getElementById("filterMetroWalkMax")?.value || "");
     document.getElementById("filtersModal").classList.remove("open");
     loadMapData();
   });
@@ -2279,9 +2406,31 @@ function filterPropertiesByState(list) {
   const partnerPctMin = Number(normalizeDecimalInput(state.filters.partnerCommissionMinPct || ""));
   const partnerRubMinRaw = toRawNumberString(state.filters.partnerCommissionMinRub || "");
   const partnerRubMin = partnerRubMinRaw ? Number(partnerRubMinRaw) : 0;
+  const areaMinRaw = normalizeDecimalInput(String(state.filters.minArea || "").replace(",", "."));
+  const areaMaxRaw = normalizeDecimalInput(String(state.filters.maxArea || "").replace(",", "."));
+  const areaMin = areaMinRaw ? Number(areaMinRaw) : 0;
+  const areaMax = areaMaxRaw ? Number(areaMaxRaw) : Number.POSITIVE_INFINITY;
+  const metroMaxRaw = toRawNumberString(state.filters.metroWalkMax || "");
+  const metroWalkMax = metroMaxRaw ? Number(metroMaxRaw) : 0;
+  const pubFrom = String(state.filters.publishedFrom || "").trim();
+  const pubFromMs = pubFrom ? Date.parse(`${pubFrom}T00:00:00`) : null;
   return list.filter((item) => {
     const price = Number(item.price || 0);
     if (price < minP || price > maxP) return false;
+    const area = Number(item.area || 0);
+    if (areaMinRaw && (Number.isNaN(area) || area < areaMin)) return false;
+    if (areaMaxRaw && (Number.isNaN(area) || area > areaMax)) return false;
+    if (state.filters.housingStatus) {
+      const hs = item.housingStatus || "flat";
+      if (hs !== state.filters.housingStatus) return false;
+    }
+    if (pubFromMs != null && !Number.isNaN(pubFromMs)) {
+      if (publishedAtTimeMs(item) < pubFromMs) return false;
+    }
+    if (metroWalkMax > 0) {
+      const m = item.metroWalkMinutes;
+      if (m != null && Number.isFinite(Number(m)) && Number(m) > metroWalkMax) return false;
+    }
     const brF = state.filters.bedrooms;
     if (brF) {
       const n = Number(item.bedrooms || 0);
@@ -2626,6 +2775,13 @@ async function renderPropertyPage(id) {
           <h3>${money(property.price)} ₽</h3>
           <p><strong>Адрес:</strong> ${property.address}</p>
           ${metroLine ? `<p><strong>Метро:</strong> ${escapeHtml(metroLine)}</p>` : ""}
+          ${
+            property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+              ? `<p><strong>Пешком до метро:</strong> ${Number(property.metroWalkMinutes)} мин</p>`
+              : ""
+          }
+          <p><strong>Статус жилья:</strong> ${housingStatusLabel(property.housingStatus)}</p>
+          <p><strong>Дата публикации:</strong> ${escapeHtml(formatPublishedDateRu(property.publishedAt || property.createdAt))}</p>
           <p><strong>Площадь:</strong> ${property.area} м²</p>
           <p><strong>Этаж:</strong> ${property.floor || "-"}</p>
           <p><strong>Этажность:</strong> ${property.totalFloors || "-"}</p>
@@ -3772,6 +3928,17 @@ async function renderCabinetPage(openForm = false) {
               </select>
             </div>
             <div class="field-block">
+              <label class="field-label" for="housingStatusInput">Статус жилья</label>
+              <select id="housingStatusInput" name="housingStatus" required>
+                <option value="flat">Квартира</option>
+                <option value="apartments">Апартаменты</option>
+              </select>
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="metroWalkInput">До метро пешком (мин)</label>
+              <input id="metroWalkInput" name="metroWalkMinutes" type="text" inputmode="numeric" placeholder="Необязательно" />
+            </div>
+            <div class="field-block">
               <label class="field-label" for="commissionPartnerInput">Комиссия партнеру (%)</label>
               <input id="commissionPartnerInput" name="commissionPartner" type="text" inputmode="decimal" required />
             </div>
@@ -3944,6 +4111,11 @@ async function renderCabinetPage(openForm = false) {
     form.elements.commissionTotal.value = property.commissionTotal ?? "";
     form.elements.finishing.value = property.finishing || "";
     form.elements.readiness.value = property.readiness || "";
+    form.elements.housingStatus.value = property.housingStatus || "flat";
+    form.elements.metroWalkMinutes.value =
+      property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+        ? formatSpacedNumber(String(property.metroWalkMinutes))
+        : "";
     form.elements.commissionPartner.value = property.commissionPartner ?? "";
     form.elements.phone.value = formatRussianPhoneMasked(String(property.contacts?.phone || "").replace(/\D/g, "").slice(-10));
     form.elements.telegram.value = property.contacts?.telegram || "";
@@ -3991,6 +4163,7 @@ async function renderCabinetPage(openForm = false) {
     formData.set("totalFloors", toRawNumberString(formData.get("totalFloors")));
     formData.set("commissionTotal", normalizeDecimalInput(String(formData.get("commissionTotal") || "").replace(",", ".")));
     formData.set("commissionPartner", normalizeDecimalInput(String(formData.get("commissionPartner") || "").replace(",", ".")));
+    formData.set("metroWalkMinutes", toRawNumberString(formData.get("metroWalkMinutes")));
     formData.set("phone", normalizeRussianPhone(formData.get("phone")));
     formData.set("telegram", normalizeTelegramNickname(formData.get("telegram")));
     if (!editingPropertyId && pendingPhotoFiles.length === 0) {
@@ -4029,6 +4202,7 @@ async function renderCabinetPage(openForm = false) {
   wireIntField("bedroomsInput");
   wireIntField("floorInput");
   wireIntField("totalFloorsInput");
+  wireIntField("metroWalkInput");
 
   document.getElementById("commissionTotalInput")?.addEventListener("input", (event) => {
     event.target.value = normalizeDecimalInput(event.target.value);
