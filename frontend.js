@@ -1097,9 +1097,10 @@ function getSheetGeometry(panel) {
   const yLiftExtra = Math.min(140, Math.max(72, Math.round(vh * 0.085)));
   const yMin = yBottomPinned - yLiftExtra;
   const yPeek = yMax;
-  const span = Math.max(56, yPeek - yMin);
-  let yHalf = Math.round(yPeek - span * 0.43);
-  yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, yHalf));
+  const usable = Math.max(160, vh - navH - 10);
+  const halfStep = Math.round(usable * 0.47);
+  let yHalf = Math.round(yPeek - halfStep);
+  yHalf = Math.min(yPeek - 12, Math.max(yMin + 22, yHalf));
   return { h: H, yMin, yMax, yPeek, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible };
 }
 
@@ -1134,12 +1135,21 @@ function rememberSheetPosition(panel) {
   if (!panel) return;
   if (!window.matchMedia("(max-width: 900px)").matches) return;
   if (state.panelCollapsed) return;
+  if (!state.panelSheetInitialized) return;
   const s = getSheetNode(panel);
   if (!s) return;
   const y = getPanelTranslateY(s);
   if (Number.isFinite(y)) {
     state.panelSheetT = y;
   }
+}
+
+/** Старт / возврат на карту или демо: всегда применяем «пол-экрана», не тянем старый translate с пустой панели. */
+function resetMobileSheetLandingState() {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  state.panelSheetInitialized = false;
+  state.panelSheetT = null;
+  state.panelCollapsed = false;
 }
 
 /** Лёгкое «резиновое» сопротивление у краёв жеста (как шторки iOS). */
@@ -1515,18 +1525,20 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
     return;
   }
   requestAnimationFrame(() => {
-    const g = getSheetGeometry(panel);
-    if (!g) return;
-    let t;
-    if (!state.panelSheetInitialized) {
-      t = clampSheetT(g.yHalf, g);
-      state.panelSheetT = t;
-      state.panelCollapsed = false;
-      state.panelSheetInitialized = true;
-    } else if (state.panelCollapsed) t = g.yPeek;
-    else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
-    else t = clampSheetT(g.yHalf, g);
-    setPanelTranslateY(s, t, animate, animate ? 480 : undefined);
+    requestAnimationFrame(() => {
+      const g = getSheetGeometry(panel);
+      if (!g) return;
+      let t;
+      if (!state.panelSheetInitialized) {
+        t = clampSheetT(g.yHalf, g);
+        state.panelSheetT = t;
+        state.panelCollapsed = false;
+        state.panelSheetInitialized = true;
+      } else if (state.panelCollapsed) t = g.yPeek;
+      else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
+      else t = clampSheetT(g.yHalf, g);
+      setPanelTranslateY(s, t, animate, animate ? 480 : undefined);
+    });
   });
 }
 
@@ -1672,6 +1684,7 @@ function applyDemoFilters() {
 
 function renderPublicDemoPage() {
   setMapBodyClass(true);
+  resetMobileSheetLandingState();
   if (state.demoDataVersion !== CURRENT_DEMO_DATA_VERSION) {
     state.demoAllProperties = null;
     state.demoDataVersion = CURRENT_DEMO_DATA_VERSION;
@@ -1907,11 +1920,8 @@ function renderPublicDemoPage() {
     }
   });
 
-  const demoP = document.getElementById("demoLeftPanel");
-  const demoLayout = document.getElementById("demoMapLayout");
   updateDemoOpenPanelButton();
   bindMobileBottomSheet({ panelId: "demoLeftPanel", layoutId: "demoMapLayout", isDemo: true });
-  mobileSheetSettleAfterRender(demoP, demoLayout);
   bindMapZoomGuards();
 }
 
@@ -1979,6 +1989,7 @@ function renderDemoPropertyPage(id) {
 
 function renderMapPage() {
   setMapBodyClass(true);
+  resetMobileSheetLandingState();
   app.innerHTML = `
     <section class="map-page">
     ${topbar()}
@@ -2084,10 +2095,7 @@ function renderMapPage() {
       mapCollapseLeftPanel();
     }
   });
-  const lp = document.getElementById("leftPanel");
-  const mapLayout = document.getElementById("mapLayout");
   bindMobileBottomSheet({ panelId: "leftPanel", layoutId: "mapLayout", isDemo: false });
-  mobileSheetSettleAfterRender(lp, mapLayout);
   bindMapZoomGuards();
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
   bindMapDrawHint();
