@@ -1558,13 +1558,12 @@ textarea {
     padding: 0;
     overflow: hidden;
     pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
   }
 
-  /* Развёрнутый лист перекрывает карту одним блоком (без постоянной «щели» с картой сверху). */
-  .map-page .map-layout--app-sheet:not(.collapsed) .left-panel,
-  .demo-page .map-layout--app-sheet:not(.collapsed) .left-panel {
-    background: #ffffff;
-  }
+  /* В полушторке должна быть видна карта сверху — фон только у белого трека, не на весь экран. */
 
   .map-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-anim,
   .demo-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-anim {
@@ -1583,7 +1582,6 @@ textarea {
 
   .map-page .map-layout--app-sheet.collapsed .left-panel,
   .demo-page .map-layout--app-sheet.collapsed .left-panel {
-    display: flex !important;
     visibility: visible;
     pointer-events: none;
   }
@@ -1621,15 +1619,14 @@ textarea {
   .demo-page .map-layout--app-sheet .left-panel__track {
     display: flex;
     flex-direction: column;
-    /* Высота до нижней навигации: не вычитаем `--mobile-sheet-top-gap`, иначе шторка визуально «короче экрана» и всегда сверху видна карта. */
-    height: calc(
-      100dvh - var(--mobile-bottom-nav-height, 72px) - max(0px, env(safe-area-inset-bottom, 0px))
-    );
+    flex: 0 0 auto;
+    /* Рулон снизу: высота растёт с контентом до потолка, дальше скролл внутри .left-panel-scroll */
+    height: auto;
     max-height: calc(
       100dvh - var(--mobile-bottom-nav-height, 72px) - max(0px, env(safe-area-inset-bottom, 0px))
     );
+    min-height: 72px;
     will-change: transform;
-    min-height: 260px;
     width: 100%;
     max-width: 100vw;
     box-sizing: border-box;
@@ -1645,6 +1642,18 @@ textarea {
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     background: #fff;
     pointer-events: auto;
+  }
+
+  .map-page .map-layout--app-sheet .left-panel-scroll,
+  .demo-page .map-layout--app-sheet .left-panel-scroll {
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: calc(
+      100dvh - var(--mobile-bottom-nav-height, 72px) - max(0px, env(safe-area-inset-bottom, 0px)) - var(
+          --mobile-sheet-scroll-chrome,
+          136px
+        )
+    );
   }
 
   .map-page .map-layout--app-sheet .left-panel__track::after,

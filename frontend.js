@@ -1067,8 +1067,8 @@ function refreshMobileSheetLayoutVars(panel) {
 }
 
 /**
- * y — translateY трека.
- * yMax: узкая полоса (peek), yMin: верхний предел (может быть отрицательным для длинной ленты).
+ * translateY трека: меньше — шторка выше (ближе полный экран), больше — ниже к свёртке только с счётчиком.
+ * Стопоры: yMin (полный разгон), yHalf (пол-экрана карты / объектов как на старте), yPeek/yMax (peek).
  */
 function getSheetGeometry(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return null;
@@ -1077,11 +1077,14 @@ function getSheetGeometry(panel) {
   const track = panel.querySelector("[data-sheet-track]");
   const bottomNav = document.querySelector(".mobile-map-bottom-nav");
   const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
-  let H = track ? Math.round(track.getBoundingClientRect().height) : 0;
-  if (!Number.isFinite(H) || H < 200) {
-    H = Math.max(260, Math.round(vh - navH - 6));
+  let H =
+    track && (track.offsetHeight || track.getBoundingClientRect().height)
+      ? Math.round(track.offsetHeight || track.getBoundingClientRect().height)
+      : 0;
+  if (!Number.isFinite(H) || H < 96) {
+    H = Math.max(260, Math.min(Math.round(vh - navH - 6), Math.round(vh * 0.54)));
   }
-  H = Math.max(240, Math.min(Math.round(vh - navH - 4), H));
+  H = Math.max(104, Math.min(Math.round(vh - navH - 4), H));
   const handleWrap = track?.querySelector(".left-panel-handle-wrap");
   const head = track?.querySelector(".left-panel-head");
   const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
@@ -1094,7 +1097,10 @@ function getSheetGeometry(panel) {
   const yLiftExtra = Math.min(140, Math.max(72, Math.round(vh * 0.085)));
   const yMin = yBottomPinned - yLiftExtra;
   const yPeek = yMax;
-  return { h: H, yMin, yMax, yPeek, yMid: yMin, yFirst: yMin, vh, navH, peekVisible };
+  const span = Math.max(56, yPeek - yMin);
+  let yHalf = Math.round(yPeek - span * 0.43);
+  yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, yHalf));
+  return { h: H, yMin, yMax, yPeek, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible };
 }
 
 function bindSheetReflowOnImages(panel, layoutId) {
@@ -1145,16 +1151,23 @@ function sheetDragRubberTranslate(t, g) {
   return t;
 }
 
-/** Выбор целевой позиции шторки по скорости и положению. vy в px/ms (вниз = +). Только два стопора: развёрнуто и свёрнуто (без «залипания» посередине). */
+/** Три положения: полностью развёрнуто | пол-экрана | только счётчик. */
 function pickMobileSheetSnapY(rawY, vy, g) {
   if (!g) return rawY;
-  const fling = 0.34;
+  const fling = 0.36;
   if (vy > fling) return g.yPeek;
   if (vy < -fling) return g.yMin;
-  const mid = (g.yMin + g.yPeek) * 0.5;
-  let best = rawY >= mid ? g.yPeek : g.yMin;
-  if (vy > 0.12 && rawY > g.yMin + (g.yPeek - g.yMin) * 0.35) best = g.yPeek;
-  if (vy < -0.12 && rawY < g.yPeek - (g.yPeek - g.yMin) * 0.35) best = g.yMin;
+  const { yMin, yHalf, yPeek } = g;
+  const d0 = Math.abs(rawY - yMin);
+  const d1 = Math.abs(rawY - yHalf);
+  const d2 = Math.abs(rawY - yPeek);
+  let best = yMin;
+  if (d1 <= d0 && d1 <= d2) best = yHalf;
+  else if (d2 <= d0 && d2 <= d1) best = yPeek;
+  if (vy > 0.12 && rawY > yPeek - (yPeek - yHalf) * 0.32) best = yPeek;
+  if (vy < -0.12 && rawY < yMin + (yHalf - yMin) * 0.38) best = yMin;
+  if (vy > 0.08 && rawY > yHalf + (yPeek - yHalf) * 0.38) best = yPeek;
+  if (vy < -0.08 && rawY < yHalf - (yHalf - yMin) * 0.38) best = yMin;
   return best;
 }
 
@@ -1297,7 +1310,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     ) {
       if (g) {
         L.classList.remove("collapsed");
-        const tOpen = state.panelSheetT != null ? clampSheetT(state.panelSheetT, g) : g.yMin;
+        const tOpen = state.panelSheetT != null ? clampSheetT(state.panelSheetT, g) : g.yHalf;
         const s0 = getSheetNode(panel);
         if (s0) {
           setPanelTranslateY(s0, tOpen, true, 460);
@@ -1492,13 +1505,13 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
     if (!g) return;
     let t;
     if (!state.panelSheetInitialized) {
-      t = clampSheetT(g.yMin, g);
+      t = clampSheetT(g.yHalf, g);
       state.panelSheetT = t;
       state.panelCollapsed = false;
       state.panelSheetInitialized = true;
     } else if (state.panelCollapsed) t = g.yPeek;
     else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
-    else t = clampSheetT(g.yMin, g);
+    else t = clampSheetT(g.yHalf, g);
     setPanelTranslateY(s, t, animate, animate ? 480 : undefined);
   });
 }
