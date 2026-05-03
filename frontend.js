@@ -717,8 +717,10 @@ function mapDrawToolsHtml() {
 function updateMobileNavMetrics() {
   if (!window.matchMedia("(max-width: 900px)").matches) return;
   const nav = document.querySelector(".mobile-map-bottom-nav");
-  if (!nav) return;
-  document.documentElement.style.setProperty("--mobile-bottom-nav-height", `${Math.round(nav.offsetHeight)}px`);
+  if (nav) {
+    document.documentElement.style.setProperty("--mobile-bottom-nav-height", `${Math.round(nav.offsetHeight)}px`);
+  }
+  refreshMobileSheetLayoutVars(null);
 }
 
 function bindBrandHomeButton() {
@@ -968,6 +970,10 @@ function leftPanelMobileBlock(handleAreaId, headHtml, bodyHtml) {
   return leftPanelTrackWrap(leftPanelHandleHtml(handleAreaId) + headHtml + body);
 }
 
+function sheetObjectsListFooterHtml() {
+  return `<div class="left-panel-list-footer"><p class="muted">${escapeHtml("Сейчас это все объекты по вашему поиску")}</p></div>`;
+}
+
 /** Узел с transform: внутр. трек (контент), не внешний clip — тогда «окно» стоит, едет лента */
 function getSheetNode(panel) {
   if (!panel) return null;
@@ -1012,17 +1018,55 @@ function setPanelTranslateY(el, y, withTransition, durationMs) {
   el.style.transform = `translate3d(0, ${y}px, 0)`;
 }
 
+function refreshMobileSheetLayoutVars(panel) {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  const root = document.documentElement;
+  const navEl = document.querySelector(".mobile-map-bottom-nav");
+  const navH = navEl
+    ? Math.max(48, Math.round(navEl.getBoundingClientRect().height || navEl.offsetHeight || 56))
+    : 56;
+  root.style.setProperty("--mobile-bottom-nav-height", `${navH}px`);
+
+  let topGap = 104;
+  if ((panel && panel.closest(".demo-page")) || document.querySelector("#demoLeftPanel")) {
+    const strip = document.getElementById("demoTopStrip");
+    const mobTop = document.querySelector(".demo-page .mobile-map-top");
+    const topbarDemo = document.querySelector(".demo-page .topbar");
+    const stripH = strip ? strip.getBoundingClientRect().height : 0;
+    const mobH = mobTop ? mobTop.getBoundingClientRect().height : 0;
+    const tbH = topbarDemo ? topbarDemo.getBoundingClientRect().height : 0;
+    topGap = Math.ceil(stripH + mobH + tbH + 14);
+    if (topGap < 108) topGap = 120;
+    if (topGap > 220) topGap = 220;
+  } else if (document.querySelector(".map-page")) {
+    const tb = document.querySelector(".map-page .topbar");
+    const mobTop = document.querySelector(".map-page .mobile-map-top");
+    topGap = Math.ceil((tb?.getBoundingClientRect().height || 76) + (mobTop?.getBoundingClientRect().height || 44) + 12);
+    if (topGap < 92) topGap = 100;
+    if (topGap > 200) topGap = 200;
+  }
+  root.style.setProperty("--mobile-sheet-top-gap", `${topGap}px`);
+}
+
 /**
  * y — translateY трека.
  * yMax: узкая полоса (peek), yMin: верхний предел (может быть отрицательным для длинной ленты).
  */
 function getSheetGeometry(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return null;
+  refreshMobileSheetLayoutVars(panel);
   const vh = window.innerHeight;
   const track = panel.querySelector("[data-sheet-track]");
   const bottomNav = document.querySelector(".mobile-map-bottom-nav");
   const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
-  const H = track ? Math.max(1, Math.round(track.offsetHeight)) : 1;
+  let H = track ? Math.round(track.getBoundingClientRect().height) : 0;
+  if (!Number.isFinite(H) || H < 200) {
+    const tg = Number.parseFloat(
+      window.getComputedStyle(document.documentElement).getPropertyValue("--mobile-sheet-top-gap") || String(104)
+    );
+    H = Math.max(260, Math.round(vh - navH - (Number.isFinite(tg) ? tg : 104) - 4));
+  }
+  H = Math.max(220, Math.min(Math.round(vh - 40), H));
   const handleWrap = track?.querySelector(".left-panel-handle-wrap");
   const head = track?.querySelector(".left-panel-head");
   const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
@@ -1116,8 +1160,8 @@ function sheetSnapAnimate(s, targetY, g, commit) {
 }
 
 /**
- * Моб. нижний лист: один transform на весь блок; скролл списка и движение шторки — один жест
- * (сначала расходует scrollTop, затем тащит шторку вниз/вверх). Плавный snap после отпускания.
+ * Моб. нижний лист: список внутри — нативный скролл; шторка двигается только за область захвата
+ * (ручка и шапка) или после нажатия кнопки открытия списка. Это исключает «уезд» контента относительно панели.
  */
 function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   const panel = document.getElementById(panelId);
@@ -1128,10 +1172,6 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
 
   let startY = 0;
   let startSheetT = 0;
-  let scrollStartTop = 0;
-  let scrollMax = 0;
-  /** @type {HTMLElement | null} */
-  let chainScrollEl = null;
   let mode = "idle";
   let activeId = null;
   let fromOpenBtn = false;
@@ -1159,42 +1199,31 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     }
   };
 
-  const isInteractiveOpen = (el) =>
-    el && (el.closest(".open-object") || el.closest(".open-demo-object") || el.closest("a[href]"));
-
   const onPointerDown = (e) => {
     if (!mq() || e.button !== 0) return;
-    const L = layout();
     const track = panel.querySelector("[data-sheet-track]");
-    if (!L || !track || !track.contains(e.target)) return;
+    if (!track || !track.contains(e.target)) return;
     if (e.target.closest("button.close-left-panel")) return;
     if (e.target.closest("button, a[href], input, textarea, select")) return;
+
+    fromOpenBtn = Boolean(e.target.closest(".open-left-panel-btn--sheet, #openLeftPanelBtn, #openDemoLeftPanelBtn"));
+    const onChrome = Boolean(e.target.closest(".left-panel-handle-wrap, .left-panel-head"));
+    if (!onChrome && !fromOpenBtn) return;
 
     const s = sheetNode();
     if (!s) return;
 
     s.classList.remove("left-panel--sheet-anim");
-
+    gestureGeometry = getSheetGeometry(panel);
     const frozen = getPanelTranslateY(s);
     setPanelTranslateY(s, frozen, false);
-    gestureGeometry = getSheetGeometry(panel);
     startY = e.clientY;
     startSheetT = frozen;
     lastMoveY = e.clientY;
     lastMoveTs = performance.now();
     velocityY = 0;
-
-    const scrollEl = panel.querySelector("[data-sheet-scroll]");
-    const onChrome = Boolean(e.target.closest(".left-panel-handle-wrap, .left-panel-head"));
-    const useChain = Boolean(scrollEl && scrollEl.contains(e.target) && !onChrome);
-
-    scrollStartTop = useChain ? scrollEl.scrollTop : 0;
-    scrollMax = useChain ? Math.max(0, scrollEl.scrollHeight - scrollEl.clientHeight) : 0;
-    chainScrollEl = useChain ? scrollEl : null;
-
     mode = "decide";
     activeId = e.pointerId;
-    fromOpenBtn = Boolean(e.target.closest(".open-left-panel-btn--sheet, #openLeftPanelBtn, #openDemoLeftPanelBtn"));
   };
 
   const onPointerMove = (e) => {
@@ -1202,11 +1231,10 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     if (e.pointerId != null && e.pointerId !== activeId) return;
     if (!mq()) return;
 
-    const totalDy = e.clientY - startY;
-    if (mode === "decide" && Math.abs(totalDy) < 10) return;
+    const dy = e.clientY - startY;
+    if (mode === "decide" && Math.abs(dy) < 8) return;
 
     if (mode === "decide") {
-      if (isInteractiveOpen(e.target) && !fromOpenBtn && Math.abs(totalDy) < 22) return;
       mode = "drag";
       e.preventDefault();
       try {
@@ -1223,21 +1251,13 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     if (!s || !g) return;
 
     e.preventDefault();
-
-    let sclDesired = scrollStartTop + totalDy;
-    let scl = Math.max(0, Math.min(scrollMax, sclDesired));
-    if (chainScrollEl) {
-      chainScrollEl.scrollTop = scl;
-    }
-    const scrollConsumed = scl - scrollStartTop;
-    const sheetDy = totalDy - scrollConsumed;
-    const tRaw = startSheetT + sheetDy;
+    const tRaw = startSheetT + (e.clientY - startY);
     const tRub = sheetDragRubberTranslate(tRaw, g);
     setPanelTranslateY(s, tRub, false);
 
     const snappedInner = clampSheetT(tRub, g);
     state.panelSheetT = snappedInner;
-    if (snappedInner < g.yPeek - 3) {
+    if (snappedInner < g.yPeek - 4) {
       state.panelCollapsed = false;
       const lay = layout();
       lay?.classList.remove("collapsed");
@@ -1251,7 +1271,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const now = performance.now();
     const dt = Math.max(1, now - lastMoveTs);
     const vy = (e.clientY - lastMoveY) / dt;
-    velocityY = velocityY * 0.28 + vy * 0.72;
+    velocityY = velocityY * 0.25 + vy * 0.75;
     lastMoveY = e.clientY;
     lastMoveTs = now;
   };
@@ -1267,30 +1287,17 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       L?.classList.contains("collapsed") &&
       Math.abs(e.clientY - startY) < 12
     ) {
-      const g0 = g;
-      if (g0) {
+      if (g) {
         L.classList.remove("collapsed");
-        const tOpen = state.panelSheetT != null ? clampSheetT(state.panelSheetT, g0) : g0.yMid;
+        const tOpen = state.panelSheetT != null ? clampSheetT(state.panelSheetT, g) : g.yMid;
         const s0 = getSheetNode(panel);
         if (s0) {
           setPanelTranslateY(s0, tOpen, true, 460);
-          commitSheetState(tOpen, g0);
+          commitSheetState(tOpen, g);
           state.panelSheetT = tOpen;
         }
       }
-      if (e.pointerId === activeId) {
-        try {
-          panel.releasePointerCapture(e.pointerId);
-        } catch (_) {
-          /* */
-        }
-      }
-      activeId = null;
-      mode = "idle";
-      gestureGeometry = null;
-      fromOpenBtn = false;
-      chainScrollEl = null;
-      s?.classList.remove("left-panel--sheet-live");
+      finishPointer(e.pointerId);
       return;
     }
 
@@ -1302,9 +1309,13 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       sheetSnapAnimate(s, snapY, g, commitSheetState);
     }
 
-    if (e.pointerId === activeId) {
+    finishPointer(e.pointerId);
+  };
+
+  const finishPointer = (pointerId) => {
+    if (pointerId === activeId && activeId != null) {
       try {
-        panel.releasePointerCapture(e.pointerId);
+        panel.releasePointerCapture(pointerId);
       } catch (_) {
         /* */
       }
@@ -1313,14 +1324,12 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     mode = "idle";
     gestureGeometry = null;
     fromOpenBtn = false;
-    chainScrollEl = null;
     sheetNode()?.classList.remove("left-panel--sheet-live");
   };
 
   const onPointerCancel = (e) => {
     const pid = activeId;
-    const wasDrag = mode === "drag";
-    if (wasDrag && e.pointerId === pid) {
+    if (mode === "drag" && e.pointerId === pid) {
       const s = sheetNode();
       const g = gestureGeometry || getSheetGeometry(panel);
       if (s && g) {
@@ -1330,19 +1339,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
         sheetSnapAnimate(s, snapY, g, commitSheetState);
       }
     }
-    if (pid != null && e.pointerId === pid) {
-      try {
-        panel.releasePointerCapture(pid);
-      } catch (_) {
-        /* */
-      }
-    }
-    activeId = null;
-    mode = "idle";
-    gestureGeometry = null;
-    fromOpenBtn = false;
-    chainScrollEl = null;
-    sheetNode()?.classList.remove("left-panel--sheet-live");
+    finishPointer(e.pointerId);
   };
 
   panel.addEventListener("pointerdown", onPointerDown);
@@ -1582,7 +1579,8 @@ function renderDemoPanel(list, title) {
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
   rememberSheetPosition(panel);
-  const bodyHtml = list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`;
+  const cards = list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`;
+  const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
   panel.innerHTML = leftPanelMobileBlock(
     "demoLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>${title}: ${list.length}</h3><button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -2117,7 +2115,8 @@ function renderAreaSelectionPanel(list) {
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
   rememberSheetPosition(panel);
-  const bodyHtml = list.length ? list.map(cardMarkup).join("") : `<p class="muted">Внутри области объекты не найдены.</p>`;
+  const cards = list.length ? list.map(cardMarkup).join("") : `<p class="muted">Внутри области объекты не найдены.</p>`;
+  const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>В выбранной области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -2157,7 +2156,8 @@ function renderViewportPanel() {
   if (!panel) return;
   rememberSheetPosition(panel);
   const list = getViewportProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
-  const bodyHtml = list.length ? list.map(cardMarkup).join("") : `<p class="muted">В текущей области объекты не найдены.</p>`;
+  const cards = list.length ? list.map(cardMarkup).join("") : `<p class="muted">В текущей области объекты не найдены.</p>`;
+  const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>Объекты в видимой области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -2567,7 +2567,7 @@ function showGroup(properties) {
   if (!panel) return;
   rememberSheetPosition(panel);
   properties.sort((a, b) => b.commissionPartner - a.commissionPartner);
-  const bodyHtml = properties.map(cardMarkup).join("");
+  const bodyHtml = `${properties.map(cardMarkup).join("")}${sheetObjectsListFooterHtml()}`;
   const [focusLat, focusLon] = groupCentroid(properties);
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
@@ -5521,3 +5521,22 @@ async function router() {
 
 window.addEventListener("hashchange", router);
 router();
+
+(function bindMobileSheetResizeOnce() {
+  let mobileSheetResizeTimer = 0;
+  window.addEventListener(
+    "resize",
+    () => {
+      window.clearTimeout(mobileSheetResizeTimer);
+      mobileSheetResizeTimer = window.setTimeout(() => {
+        updateMobileNavMetrics();
+        if (!window.matchMedia("(max-width: 900px)").matches) return;
+        const lp = document.getElementById("leftPanel");
+        const dm = document.getElementById("demoLeftPanel");
+        if (lp?.querySelector("[data-sheet-track]")) mobileSheetSettleAfterRender(lp, document.getElementById("mapLayout"));
+        if (dm?.querySelector("[data-sheet-track]")) mobileSheetSettleAfterRender(dm, document.getElementById("demoMapLayout"));
+      }, 140);
+    },
+    { passive: true }
+  );
+})();

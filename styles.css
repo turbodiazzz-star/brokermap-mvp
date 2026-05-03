@@ -8,6 +8,7 @@
   --brand-dark: #0e48c4;
   --premium: #ffb547;
   --mobile-bottom-nav-height: 72px;
+  --mobile-sheet-top-gap: 104px;
 }
 
 * {
@@ -448,15 +449,27 @@ body.view-map #app {
   line-height: 1;
 }
 
-/* Список карточек в нижнем листе карты — нативный скролл; лист тянется только за ручку/шапку. */
+.left-panel-list-footer {
+  padding: 16px 4px max(28px, env(safe-area-inset-bottom, 0px));
+}
+
+.left-panel-list-footer p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+/* Список карточек в нижнем листе карты — нативный вертикальный скролл; лист тянется только за ручку/шапку. */
 .left-panel-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: none;
+  overscroll-behavior-y: contain;
+  overscroll-behavior-x: none;
   -webkit-overflow-scrolling: touch;
-  touch-action: none;
+  touch-action: pan-y;
 }
 
 .map {
@@ -1547,6 +1560,18 @@ textarea {
     pointer-events: none;
   }
 
+  /* Пока лист не свёрнут, под нижнюю белую область экрана — без «просвета» карты над нижней навигацией при движении шторки. */
+  .map-page .map-layout--app-sheet:not(.collapsed) .left-panel,
+  .demo-page .map-layout--app-sheet:not(.collapsed) .left-panel {
+    background: linear-gradient(
+      to bottom,
+      rgba(244, 246, 251, 0) 0,
+      rgba(244, 246, 251, 0) calc(26dvh),
+      rgb(249, 250, 252) calc(62dvh + var(--mobile-bottom-nav-height)),
+      rgb(255, 255, 255) calc(100% - var(--mobile-bottom-nav-height) - env(safe-area-inset-bottom, 0px))
+    );
+  }
+
   .map-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-anim,
   .demo-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-anim {
     transition: transform 0.52s cubic-bezier(0.32, 0.72, 0, 1);
@@ -1602,17 +1627,21 @@ textarea {
   .demo-page .map-layout--app-sheet .left-panel__track {
     display: flex;
     flex-direction: column;
-    max-height: calc(100vh - 8px);
+    height: calc(100dvh - var(--mobile-sheet-top-gap, 104px) - var(--mobile-bottom-nav-height, 72px) - env(safe-area-inset-bottom, 0px));
+    max-height: calc(100dvh - var(--mobile-sheet-top-gap, 104px) - var(--mobile-bottom-nav-height, 72px) - env(safe-area-inset-bottom, 0px));
     will-change: transform;
-    min-height: 0;
+    min-height: 260px;
     width: 100%;
     max-width: 100vw;
     box-sizing: border-box;
     overflow: hidden;
-    touch-action: none;
+    touch-action: manipulation;
     border-top: 1px solid var(--border);
     border-radius: 16px 16px 0 0;
-    box-shadow: 0 -6px 28px rgba(16, 24, 40, 0.18);
+    /* Вторым слоем — фон под «носителем», чтобы между шторкой и нижней навигацией не зияла карта. */
+    box-shadow:
+      0 -6px 28px rgba(16, 24, 40, 0.18),
+      0 calc(140px + 50vmin) 0 calc(140px + 50vmin) rgb(255, 255, 255);
     padding: 0 12px 12px;
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     background: #fff;
