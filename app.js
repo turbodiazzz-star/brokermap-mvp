@@ -44,7 +44,9 @@ const {
   listAgenciesForAdmin,
   updateAgencyBrokerLimit,
   updateUserPasswordHash,
+  updateUserProfile,
   markUserEmailVerified,
+  completeAgencyBrokerInvite,
   listPrivateBrokersForAdmin,
   listPropertiesForAgencyOwner
 } = require("./lib/db");
@@ -359,7 +361,8 @@ function publicUser(user) {
     accountType: user.accountType || "broker",
     isAgencyOwner: user.accountType === "agency_owner",
     brokerLimit: Number(user.brokerLimit || 0),
-    emailVerified: Boolean(user.emailVerified)
+    emailVerified: Boolean(user.emailVerified),
+    marketingConsent: Boolean(user.marketingConsent)
   };
 }
 
@@ -429,6 +432,13 @@ function requireAgencyOwner(req, res, next) {
   }
   req.currentUser = user;
   next();
+}
+
+/** Брокеры, которым уже можно назначать объекты (прошли регистрацию по приглашению). */
+function agencyAssignableBrokerIds(ownerId) {
+  return listBrokersByAgencyOwner(ownerId)
+    .filter((b) => !b.invitePending)
+    .map((b) => b.id);
 }
 
 function requireAuthForFile(req, res, next) {
@@ -643,6 +653,91 @@ app.post("/api/auth/refresh-cookie", (req, res) => {
   return res.json({ ok: true });
 });
 
+app.get("/api/auth/agency-invite-info", (req, res) => {
+  const token = String(req.query.token || "");
+  if (!token) {
+    return res.status(400).json({ message: "Нужна ссылка из письма" });
+  }
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.action !== "agency_broker_invite" || !payload.userId || !payload.email) {
+      return res.status(400).json({ message: "Некорректная ссылка приглашения" });
+    }
+    const broker = findUserById(payload.userId);
+    const email = String(payload.email || "").toLowerCase();
+    if (
+      !broker ||
+      broker.accountType !== "broker" ||
+      !broker.agencyInvitePending ||
+      String(broker.email).toLowerCase() !== email
+    ) {
+      return res.status(400).json({ message: "Приглашение недействительно или уже использовано" });
+    }
+    const owner = findUserById(broker.agencyOwnerId);
+    const agencyName = (owner?.agency || owner?.name || "агентства").trim() || "агентства";
+    return res.json({
+      email: broker.email,
+      agencyName
+    });
+  } catch {
+    return res.status(400).json({ message: "Ссылка приглашения истекла или повреждена" });
+  }
+});
+
+app.post("/api/auth/complete-agency-invite", async (req, res) => {
+  const { token, firstName, lastName, password, phone, agree, marketingConsent } = req.body || {};
+  if (!token || !firstName || !lastName || !password || !phone) {
+    return res.status(400).json({ message: "Заполните все обязательные поля" });
+  }
+  if (!agree) {
+    return res.status(400).json({ message: "Нужно согласие на обработку персональных данных" });
+  }
+  if (String(password).length < 6) {
+    return res.status(400).json({ message: "Пароль должен быть не менее 6 символов" });
+  }
+  if (!/^\+7\d{10}$/.test(String(phone))) {
+    return res.status(400).json({ message: "Телефон должен быть в формате +7 и 10 цифр" });
+  }
+  let payload;
+  try {
+    payload = jwt.verify(String(token), JWT_SECRET);
+  } catch {
+    return res.status(400).json({ message: "Ссылка приглашения истекла или повреждена" });
+  }
+  if (payload.action !== "agency_broker_invite" || !payload.userId || !payload.email) {
+    return res.status(400).json({ message: "Некорректная ссылка приглашения" });
+  }
+  const broker = findUserById(payload.userId);
+  const email = String(payload.email || "").toLowerCase();
+  if (
+    !broker ||
+    broker.accountType !== "broker" ||
+    !broker.agencyInvitePending ||
+    String(broker.email).toLowerCase() !== email
+  ) {
+    return res.status(400).json({ message: "Приглашение недействительно или уже использовано" });
+  }
+  const passwordHash = await bcrypt.hash(String(password), 10);
+  const fn = String(firstName).trim();
+  const ln = String(lastName).trim();
+  const name = `${fn} ${ln}`.trim();
+  const ok = completeAgencyBrokerInvite(broker.id, {
+    firstName: fn,
+    lastName: ln,
+    name,
+    passwordHash,
+    phone: String(phone).trim(),
+    marketingConsent: Boolean(marketingConsent)
+  });
+  if (!ok) {
+    return res.status(500).json({ message: "Не удалось сохранить профиль" });
+  }
+  const updated = findUserById(broker.id);
+  const sessionToken = signUserToken(updated);
+  setAuthCookie(res, sessionToken);
+  return res.json({ token: sessionToken, user: publicUser(updated) });
+});
+
 app.get("/api/auth/verify-email", (req, res) => {
   const token = String(req.query.token || "");
   if (!token) {
@@ -791,6 +886,88 @@ app.post("/api/auth/change-password", auth, async (req, res) => {
   if (!updateUserPasswordHash(user.id, newHash)) {
     return res.status(500).json({ message: "Не удалось сохранить новый пароль" });
   }
+  return res.json({ success: true });
+});
+
+app.patch("/api/me/profile", auth, (req, res) => {
+  const body = req.body || {};
+  const firstName = String(body.firstName || "").trim();
+  const lastName = String(body.lastName || "").trim();
+  const phone = String(body.phone || "").trim();
+  const agency = String(body.agency || "").trim();
+  const inn = String(body.inn || "").trim();
+  const telegram = String(body.telegram || "").trim();
+  const whatsapp = String(body.whatsapp || "").trim();
+  const vk = String(body.vk || "").trim();
+  const max = String(body.max || "").trim();
+  const marketingConsent = Boolean(body.marketingConsent);
+  if (!firstName || !lastName) {
+    return res.status(400).json({ message: "Укажите имя и фамилию" });
+  }
+  if (!/^\+7\d{10}$/.test(phone)) {
+    return res.status(400).json({ message: "Телефон должен быть в формате +7 и 10 цифр" });
+  }
+  if (!agency) {
+    return res.status(400).json({ message: "Укажите название агентства или ФИО ИП/самозанятого" });
+  }
+  const user = findUserById(req.userId);
+  if (!user) {
+    return res.status(404).json({ message: "Пользователь не найден" });
+  }
+  const name = `${firstName} ${lastName}`.trim();
+  const ok = updateUserProfile(user.id, {
+    firstName,
+    lastName,
+    name,
+    phone,
+    agency,
+    inn,
+    telegram,
+    whatsapp,
+    vk,
+    max,
+    marketingConsent
+  });
+  if (!ok) {
+    return res.status(500).json({ message: "Не удалось сохранить профиль" });
+  }
+  const updated = findUserById(req.userId);
+  return res.json({ user: publicUser(updated) });
+});
+
+app.delete("/api/me", auth, (req, res) => {
+  const user = findUserById(req.userId);
+  if (!user) {
+    return res.status(404).json({ message: "Пользователь не найден" });
+  }
+  if (user.role === "admin") {
+    return res.status(400).json({ message: "Удаление администратора через приложение недоступно." });
+  }
+  if (user.accountType === "agency_owner") {
+    const n = countBrokersByAgencyOwner(user.id);
+    if (n > 0) {
+      return res.status(400).json({
+        message: "Сначала удалите всех брокеров агентства в панели агентства, затем повторите удаление профиля."
+      });
+    }
+  }
+  const purgeOwned = () => {
+    const owned = listPropertiesByOwner(user.id);
+    for (const property of owned) {
+      deletePropertyFilesOnDisk(property);
+    }
+    deletePropertiesByOwner(user.id);
+    return owned.length;
+  };
+  if (user.agencyOwnerId && user.accountType === "broker") {
+    reassignPropertiesToOwner(user.id, user.agencyOwnerId);
+  } else {
+    purgeOwned();
+  }
+  if (!deleteUserById(user.id)) {
+    return res.status(500).json({ message: "Не удалось удалить аккаунт" });
+  }
+  clearAuthCookie(res);
   return res.json({ success: true });
 });
 
@@ -978,13 +1155,14 @@ app.patch("/api/agency/properties/:id/owner", auth, requireAgencyOwner, (req, re
   if (!targetOwnerId) {
     return res.status(400).json({ message: "ownerId обязателен" });
   }
-  const brokers = listBrokersByAgencyOwner(req.userId);
-  const allowedOwnerIds = new Set([req.userId, ...brokers.map((b) => b.id)]);
+  const allowedOwnerIds = new Set([req.userId, ...agencyAssignableBrokerIds(req.userId)]);
   if (!allowedOwnerIds.has(property.ownerId)) {
     return res.status(403).json({ message: "Этот объект не относится к вашему агентству" });
   }
   if (!allowedOwnerIds.has(targetOwnerId)) {
-    return res.status(400).json({ message: "Можно назначить только брокера вашего агентства или само агентство" });
+    return res.status(400).json({
+      message: "Можно назначить только зарегистрированного брокера вашего агентства или само агентство"
+    });
   }
   if (!reassignPropertyOwner(property.id, targetOwnerId)) {
     return res.status(500).json({ message: "Не удалось обновить ответственного брокера" });
@@ -997,8 +1175,7 @@ app.delete("/api/agency/properties/:id", auth, requireAgencyOwner, (req, res) =>
   if (!property) {
     return res.status(404).json({ message: "Объект не найден" });
   }
-  const brokers = listBrokersByAgencyOwner(req.userId);
-  const allowedOwnerIds = new Set([req.userId, ...brokers.map((b) => b.id)]);
+  const allowedOwnerIds = new Set([req.userId, ...agencyAssignableBrokerIds(req.userId)]);
   if (!allowedOwnerIds.has(property.ownerId)) {
     return res.status(403).json({ message: "Этот объект не относится к вашему агентству" });
   }
@@ -1010,17 +1187,11 @@ app.delete("/api/agency/properties/:id", auth, requireAgencyOwner, (req, res) =>
 });
 
 app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
-  const { firstName, lastName, email, password, phone } = req.body;
-  if (!firstName || !lastName || !email || !password || !phone) {
-    return res.status(400).json({ message: "Заполните все поля брокера" });
+  const emailRaw = String(req.body?.email || "").trim().toLowerCase();
+  if (!emailRaw || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(emailRaw)) {
+    return res.status(400).json({ message: "Укажите корректный email сотрудника" });
   }
-  if (!/^\+7\d{10}$/.test(String(phone))) {
-    return res.status(400).json({ message: "Телефон брокера должен быть в формате +7 и 10 цифр" });
-  }
-  if (String(password).length < 6) {
-    return res.status(400).json({ message: "Пароль брокера должен быть не менее 6 символов" });
-  }
-  if (findUserByEmail(email)) {
+  if (findUserByEmail(emailRaw)) {
     return res.status(409).json({ message: "Пользователь с таким email уже есть" });
   }
   const owner = req.currentUser || findUserById(req.userId);
@@ -1029,17 +1200,18 @@ app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
   if (brokerLimit > 0 && currentBrokerCount >= brokerLimit) {
     return res.status(400).json({ message: `Достигнут лимит брокеров для агентства (${brokerLimit}).` });
   }
-  const passwordHash = await bcrypt.hash(password, 10);
+  const randomGate = crypto.randomBytes(48).toString("hex");
+  const passwordHash = await bcrypt.hash(randomGate, 10);
   const broker = {
     id: `u-${Date.now()}-${Math.round(Math.random() * 1e5)}`,
-    name: `${String(firstName).trim()} ${String(lastName).trim()}`.trim(),
-    email: String(email).trim(),
+    name: "Ожидает регистрации",
+    email: emailRaw,
     passwordHash,
-    firstName: String(firstName).trim(),
-    lastName: String(lastName).trim(),
+    firstName: "",
+    lastName: "",
     agency: owner?.agency || "",
     inn: owner?.inn || "",
-    phone: String(phone).trim(),
+    phone: "",
     marketingConsent: false,
     telegram: "",
     whatsapp: "",
@@ -1048,15 +1220,42 @@ app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
     role: "user",
     accountType: "broker",
     agencyOwnerId: req.userId,
+    brokerLimit: 0,
+    emailVerified: false,
+    agencyInvitePending: true,
     createdAt: new Date().toISOString()
   };
   createUserRecord(broker);
+  const agencyLabel = (owner?.agency || owner?.name || "агентства").trim() || "агентства";
+  const inviteToken = signActionToken(
+    { action: "agency_broker_invite", userId: broker.id, email: broker.email },
+    "14d"
+  );
+  const inviteUrl = `${APP_BASE_URL}/#/auth-agency-invite/${encodeURIComponent(inviteToken)}`;
+  try {
+    await sendEmail({
+      to: broker.email,
+      subject: `${agencyLabel} — приглашение в BrokerMap`,
+      text: `Здравствуйте.\n\n${agencyLabel} приглашает вас присоединиться к платформе BrokerMap как сотрудника агентства (брокер).\n\nПерейдите по ссылке, чтобы указать телефон, ФИО и пароль и принять условия: ${inviteUrl}\n\nСсылка действительна 14 дней.`,
+      html: `<p>Здравствуйте.</p><p><strong>${htmlEscape(agencyLabel)}</strong> приглашает вас в платформу <strong>BrokerMap</strong> как сотрудника агентства (брокер).</p><p>Чтобы завершить регистрацию — укажите телефон, имя, фамилию и пароль и примите условия обработки данных, перейдите по ссылке:</p><p><a href="${htmlEscape(
+        inviteUrl
+      )}">Принять приглашение</a></p><p style="color:#64748b;font-size:13px;">Ссылка действительна 14 дней.</p>`
+    });
+  } catch (error) {
+    deleteUserById(broker.id);
+    console.error("[mail] agency broker invite failed:", error?.message || error);
+    return res.status(502).json({
+      message:
+        "Не удалось отправить приглашение на почту. Проверьте настройки SMTP и попробуйте снова."
+    });
+  }
   return res.status(201).json({
     id: broker.id,
     email: broker.email,
     name: broker.name,
     phone: broker.phone,
     agency: broker.agency,
+    invitePending: true,
     createdAt: broker.createdAt
   });
 });

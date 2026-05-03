@@ -161,8 +161,51 @@ function propertySpecSummaryLine(property) {
   return parts.join(" · ");
 }
 
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toR = (d) => (d * Math.PI) / 180;
+  const dLat = toR(lat2 - lat1);
+  const dLon = toR(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function getMoscowMetroStationList() {
+  const g = typeof globalThis !== "undefined" ? globalThis : null;
+  if (g && Array.isArray(g.MOSCOW_METRO_STATIONS) && g.MOSCOW_METRO_STATIONS.length) {
+    return g.MOSCOW_METRO_STATIONS;
+  }
+  return [];
+}
+
+/** Ближайшая станция метро по координатам (данные OSM, см. moscowMetroStations.js). */
+function nearestMoscowMetroName(lat, lon) {
+  const stations = getMoscowMetroStationList();
+  if (!stations.length || !Number.isFinite(lat) || !Number.isFinite(lon)) return "";
+  let best = null;
+  let bestD = Infinity;
+  for (const s of stations) {
+    const d = haversineMeters(lat, lon, s.lat, s.lon);
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  return best?.name ? String(best.name) : "";
+}
+
+function propertyMetroLabel(property) {
+  const explicit = String(property?.metro || "").trim();
+  if (explicit) return explicit;
+  const lat = Number(property?.lat);
+  const lon = Number(property?.lon);
+  return nearestMoscowMetroName(lat, lon);
+}
+
 function propertyMetroHtml(property) {
-  const metro = String(property.metro || "").trim();
+  const metro = propertyMetroLabel(property).trim();
   if (!metro) return "";
   return `<div class="card-metro"><span class="card-metro__dot" aria-hidden="true"></span><span class="card-metro__name">${escapeHtml(
     metro
@@ -538,7 +581,7 @@ function getActiveMobileNavTab() {
   const hash = location.hash || "#/";
   if (
     hash.startsWith("#/cabinet") ||
-    hash.startsWith("#/auth") ||
+    (hash.startsWith("#/auth") && !hash.startsWith("#/auth-agency-invite")) ||
     hash.startsWith("#/admin") ||
     hash.startsWith("#/agency")
   ) {
@@ -713,7 +756,6 @@ function createDemoProperties(count = 100) {
   ];
   const finishingOptions = ["finished", "whitebox", "concrete"];
   const readinessOptions = ["resale", "assignment"];
-  const metroNames = ["Коломенская", "Текстильщики", "Авиамоторная", "Динамо", "Курская", "Тульская"];
   const slots = buildShuffledMoscowDemoSlots(count);
   const demo = [];
   for (let i = 0; i < count; i++) {
@@ -726,7 +768,7 @@ function createDemoProperties(count = 100) {
       address,
       lat,
       lon,
-      metro: metroNames[i % metroNames.length],
+      metro: nearestMoscowMetroName(lat, lon),
       price: priceBase,
       area: 28 + (i % 9) * 6,
       bedrooms: (i % 4) + 1,
@@ -1763,6 +1805,7 @@ function renderDemoPropertyPage(id) {
   }
   const property = state.demoAllProperties.find((item) => item.id === id) || state.demoAllProperties[0];
   const galleryPhotos = (property.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
+  const demoMetroLine = propertyMetroLabel(property);
   app.innerHTML = `
     <section class="page">
       <p><button class="btn" id="backToDemoBtn">← Назад к демо-карте</button></p>
@@ -1779,6 +1822,7 @@ function renderDemoPropertyPage(id) {
         <aside class="panel">
           <h3>${money(property.price)} ₽</h3>
           <p><strong>Адрес:</strong> ${property.address}</p>
+          ${demoMetroLine ? `<p><strong>Метро:</strong> ${escapeHtml(demoMetroLine)}</p>` : ""}
           <p><strong>Площадь:</strong> ${property.area} м²</p>
           <p><strong>Спален:</strong> ${property.bedrooms}</p>
           <p><strong>Общая комиссия:</strong> ${property.commissionTotal}%</p>
@@ -2560,6 +2604,7 @@ async function renderPropertyPage(id) {
   const galleryPhotos = (property.photos || []).length
     ? property.photos
     : [PLACEHOLDER_IMAGE_URL];
+  const metroLine = propertyMetroLabel(property);
   app.innerHTML = `
     ${topbar({ hideFilters: window.matchMedia("(max-width: 900px)").matches })}
     <section class="page">
@@ -2580,6 +2625,7 @@ async function renderPropertyPage(id) {
         <aside class="panel">
           <h3>${money(property.price)} ₽</h3>
           <p><strong>Адрес:</strong> ${property.address}</p>
+          ${metroLine ? `<p><strong>Метро:</strong> ${escapeHtml(metroLine)}</p>` : ""}
           <p><strong>Площадь:</strong> ${property.area} м²</p>
           <p><strong>Этаж:</strong> ${property.floor || "-"}</p>
           <p><strong>Этажность:</strong> ${property.totalFloors || "-"}</p>
@@ -2687,7 +2733,13 @@ async function renderPropertyPage(id) {
       }
       await renderPropertyPage(id);
     } catch (error) {
-      alert(error?.message || "Не удалось подготовить PDF");
+      const aborted =
+        error?.name === "AbortError" ||
+        (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError") ||
+        /abort|cancel|отмен/i.test(String(error?.message || ""));
+      if (!aborted) {
+        alert(error?.message || "Не удалось подготовить PDF");
+      }
     } finally {
       shareBtn.disabled = false;
       shareBtn.textContent = originalText || "Отправить клиенту";
@@ -3252,6 +3304,144 @@ function attachAuthDomListeners(demoOverlay) {
   }
 }
 
+function parseAgencyInviteTokenFromHash(hash) {
+  const prefix = "#/auth-agency-invite/";
+  if (!String(hash || "").startsWith(prefix)) return null;
+  try {
+    return decodeURIComponent(hash.slice(prefix.length));
+  } catch {
+    return null;
+  }
+}
+
+/** Завершение регистрации брокера по ссылке из письма от агентства. */
+async function renderAgencyInvitePage(token) {
+  removeAuthDemoOverlay();
+  state.authOverlayReturnHash = null;
+  setMapBodyClass(false);
+  let info = null;
+  let errMsg = "";
+  try {
+    info = await api(`/api/auth/agency-invite-info?token=${encodeURIComponent(token)}`);
+  } catch (e) {
+    errMsg = e.message || "Ссылка недействительна";
+  }
+
+  if (errMsg || !info?.email) {
+    app.innerHTML = `
+    <section class="login-page">
+      <div class="login-wrapper">
+        <div class="login-box">
+          <h3>Приглашение недоступно</h3>
+          <p class="muted">${escapeHtml(errMsg || "Запросите у руководителя агентства новое письмо.")}</p>
+          <p><button type="button" class="btn full" id="inviteErrToAuth">Перейти ко входу</button></p>
+        </div>
+      </div>
+    </section>
+    ${mobileBottomNavHtml("search")}
+    `;
+    document.getElementById("inviteErrToAuth")?.addEventListener("click", () => {
+      location.hash = "#/auth";
+    });
+    bindMobileBottomNavActions();
+    updateMobileNavMetrics();
+    return;
+  }
+
+  app.innerHTML = `
+    <section class="login-page">
+      <div class="login-wrapper">
+        <div class="login-box">
+          <h3>Регистрация по приглашению</h3>
+          <p class="muted">Агентство: <strong>${escapeHtml(info.agencyName || "")}</strong></p>
+          <p class="muted">Этот email указал руководитель; входить вы будете с ним:</p>
+          <p><strong>${escapeHtml(info.email)}</strong></p>
+          <label class="field-label" for="inviteFirstName">Имя</label>
+          <input id="inviteFirstName" placeholder="Иван" autocomplete="given-name" />
+          <label class="field-label" for="inviteLastName">Фамилия</label>
+          <input id="inviteLastName" placeholder="Иванов" autocomplete="family-name" />
+          <label class="field-label" for="invitePassword">Пароль</label>
+          <input id="invitePassword" type="password" placeholder="минимум 6 символов" autocomplete="new-password" />
+          <label class="field-label" for="invitePhone">Телефон</label>
+          <div class="phone-group">
+            <span>+7</span>
+            <input id="invitePhone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
+          </div>
+          <label class="checkbox-line">
+            <input type="checkbox" id="inviteAgree" />
+            <span>
+              Я соглашаюсь с
+              <a href="/privacy.html" target="_blank" rel="noopener noreferrer">обработкой персональных данных</a>
+            </span>
+          </label>
+          <label class="checkbox-line">
+            <input type="checkbox" id="inviteMarketing" />
+            <span>Я согласен получать рекламные сообщения</span>
+          </label>
+          <button class="btn primary full" type="button" id="inviteCompleteBtn">Завершить регистрацию</button>
+          <p class="muted" id="inviteStatus"></p>
+        </div>
+      </div>
+    </section>
+    ${mobileBottomNavHtml("search")}
+  `;
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
+  document.getElementById("inviteCompleteBtn")?.addEventListener("click", async () => {
+    const status = document.getElementById("inviteStatus");
+    if (status) status.textContent = "";
+    const firstName = document.getElementById("inviteFirstName")?.value.trim() || "";
+    const lastName = document.getElementById("inviteLastName")?.value.trim() || "";
+    const password = document.getElementById("invitePassword")?.value || "";
+    const phone = `+7${toDigits(document.getElementById("invitePhone")?.value || "")}`;
+    const agree = document.getElementById("inviteAgree")?.checked;
+    const marketingConsent = document.getElementById("inviteMarketing")?.checked;
+    if (!firstName || !lastName) {
+      if (status) status.textContent = "Укажите имя и фамилию";
+      return;
+    }
+    if (password.length < 6) {
+      if (status) status.textContent = "Пароль не менее 6 символов";
+      return;
+    }
+    if (!/^\+7\d{10}$/.test(phone)) {
+      if (status) status.textContent = "Телефон: 10 цифр после +7";
+      return;
+    }
+    if (!agree) {
+      if (status) status.textContent = "Нужно согласие на обработку персональных данных";
+      return;
+    }
+    const btn = document.getElementById("inviteCompleteBtn");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Сохранение…";
+    }
+    try {
+      const data = await api("/api/auth/complete-agency-invite", {
+        method: "POST",
+        body: JSON.stringify({
+          token,
+          firstName,
+          lastName,
+          password,
+          phone,
+          agree: true,
+          marketingConsent
+        })
+      });
+      setAuth(data);
+      location.hash = "#/map";
+    } catch (e) {
+      if (status) status.textContent = e.message || "Ошибка";
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Завершить регистрацию";
+      }
+    }
+  });
+}
+
 function collectAuth() {
   const phoneDigits = toDigits(document.getElementById("phone").value);
   return {
@@ -3292,6 +3482,205 @@ async function logout() {
   localStorage.removeItem("user");
 }
 
+async function renderCabinetProfilePage() {
+  setMapBodyClass(false);
+  if (!state.token) {
+    renderAuthPage();
+    return;
+  }
+  let me = state.user;
+  try {
+    me = await api("/api/auth/me");
+    state.user = me;
+    localStorage.setItem("user", JSON.stringify(me));
+  } catch {
+    /* use state.user */
+  }
+  const phoneDigits =
+    me.phone && String(me.phone).startsWith("+7") && String(me.phone).length >= 12
+      ? toDigits(String(me.phone).slice(3))
+      : toDigits(String(me.phone || ""));
+  const accountLabel = me.isAgencyOwner ? "Владелец агентства" : "Брокер";
+  app.innerHTML = `
+    ${topbar({ hideFilters: window.matchMedia("(max-width: 900px)").matches })}
+    <section class="cabinet cabinet--profile">
+      <div class="panel">
+        <p><button type="button" class="btn" id="profileBackCabinet">← В кабинет</button></p>
+        <h2>Редактировать профиль</h2>
+        <p class="muted">Тип аккаунта: <strong>${escapeHtml(accountLabel)}</strong></p>
+        <form id="cabinetProfileForm">
+          <div class="form-grid">
+            <div class="field-block field-span-2">
+              <label class="field-label" for="profileEmail">Email</label>
+              <input id="profileEmail" type="email" value="${escapeHtml(me.email || "")}" disabled />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileFirstName">Имя</label>
+              <input id="profileFirstName" required value="${escapeHtml(me.firstName || "")}" autocomplete="given-name" />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileLastName">Фамилия</label>
+              <input id="profileLastName" required value="${escapeHtml(me.lastName || "")}" autocomplete="family-name" />
+            </div>
+            <div class="field-block field-span-2">
+              <label class="field-label" for="profilePhone">Телефон</label>
+              <div class="phone-group">
+                <span>+7</span>
+                <input id="profilePhone" maxlength="10" inputmode="numeric" value="${escapeHtml(phoneDigits)}" autocomplete="tel-national" />
+              </div>
+            </div>
+            <div class="field-block field-span-2">
+              <label class="field-label" for="profileAgency">Название агентства или ФИО ИП/самозанятого</label>
+              <input id="profileAgency" required value="${escapeHtml(me.agency || "")}" />
+            </div>
+            <div class="field-block field-span-2">
+              <label class="field-label" for="profileInn">ИНН (необязательно)</label>
+              <input id="profileInn" value="${escapeHtml(me.inn || "")}" />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileTelegram">Telegram</label>
+              <input id="profileTelegram" value="${escapeHtml(me.telegram || "")}" placeholder="@nickname" />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileWhatsapp">WhatsApp</label>
+              <input id="profileWhatsapp" value="${escapeHtml(me.whatsapp || "")}" />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileVk">ВКонтакте</label>
+              <input id="profileVk" value="${escapeHtml(me.vk || "")}" />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileMax">MAX</label>
+              <input id="profileMax" value="${escapeHtml(me.max || "")}" />
+            </div>
+            <div class="field-block field-span-2">
+              <label class="checkbox-line">
+                <input type="checkbox" id="profileMarketing" ${me.marketingConsent ? "checked" : ""} />
+                <span>Я согласен получать рекламные сообщения</span>
+              </label>
+            </div>
+          </div>
+          <p><button type="submit" class="btn primary" id="profileSaveBtn">Сохранить данные</button></p>
+          <p class="muted" id="profileFormStatus"></p>
+        </form>
+        <hr />
+        <h3>Смена пароля</h3>
+        <div class="form-grid">
+          <div class="field-block field-span-2">
+            <label class="field-label" for="profileOldPassword">Текущий пароль</label>
+            <input id="profileOldPassword" type="password" autocomplete="current-password" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="profileNewPassword">Новый пароль</label>
+            <input id="profileNewPassword" type="password" autocomplete="new-password" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="profileNewPassword2">Повтор нового пароля</label>
+            <input id="profileNewPassword2" type="password" autocomplete="new-password" />
+          </div>
+        </div>
+        <p><button type="button" class="btn primary" id="profileChangePasswordBtn">Сменить пароль</button></p>
+        <p class="muted" id="profilePasswordStatus"></p>
+        <hr />
+        <p><button type="button" class="btn" id="profileLogoutBtn">Выйти из аккаунта</button></p>
+        <p style="margin-top: 28px;"><button type="button" class="btn danger-btn" id="profileDeleteBtn">Удалить профиль</button></p>
+        <p class="muted" id="profileDeleteHint">Удаление необратимо. Объекты брокера агентства перейдут к агентству; у владельца агентства без брокеров объекты будут удалены вместе с профилем.</p>
+      </div>
+    </section>
+    ${mobileBottomNavHtml("cabinet")}
+  `;
+  bindBrandHomeButton();
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
+  document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
+  document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
+  document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
+  document.getElementById("profileBackCabinet")?.addEventListener("click", () => {
+    location.hash = "#/cabinet";
+  });
+  document.getElementById("cabinetProfileForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const status = document.getElementById("profileFormStatus");
+    if (status) status.textContent = "";
+    const phone = `+7${toDigits(document.getElementById("profilePhone")?.value || "")}`;
+    const payload = {
+      firstName: document.getElementById("profileFirstName")?.value.trim() || "",
+      lastName: document.getElementById("profileLastName")?.value.trim() || "",
+      phone,
+      agency: document.getElementById("profileAgency")?.value.trim() || "",
+      inn: document.getElementById("profileInn")?.value.trim() || "",
+      telegram: document.getElementById("profileTelegram")?.value.trim() || "",
+      whatsapp: document.getElementById("profileWhatsapp")?.value.trim() || "",
+      vk: document.getElementById("profileVk")?.value.trim() || "",
+      max: document.getElementById("profileMax")?.value.trim() || "",
+      marketingConsent: Boolean(document.getElementById("profileMarketing")?.checked)
+    };
+    if (!/^\+7\d{10}$/.test(phone)) {
+      if (status) status.textContent = "Телефон: 10 цифр после +7";
+      return;
+    }
+    try {
+      const data = await api("/api/me/profile", { method: "PATCH", body: JSON.stringify(payload) });
+      state.user = data.user;
+      localStorage.setItem("user", JSON.stringify(data.user));
+      if (status) status.textContent = "Сохранено";
+    } catch (err) {
+      if (status) status.textContent = err.message || "Ошибка сохранения";
+    }
+  });
+  document.getElementById("profileChangePasswordBtn")?.addEventListener("click", async () => {
+    const status = document.getElementById("profilePasswordStatus");
+    if (status) status.textContent = "";
+    const oldPassword = document.getElementById("profileOldPassword")?.value || "";
+    const newPassword = document.getElementById("profileNewPassword")?.value || "";
+    const confirmPassword = document.getElementById("profileNewPassword2")?.value || "";
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      if (status) status.textContent = "Заполните все поля смены пароля";
+      return;
+    }
+    if (newPassword.length < 6) {
+      if (status) status.textContent = "Новый пароль не менее 6 символов";
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      if (status) status.textContent = "Пароли не совпадают";
+      return;
+    }
+    try {
+      await api("/api/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({ oldPassword, newPassword, confirmPassword })
+      });
+      if (status) status.textContent = "Пароль изменён";
+      document.getElementById("profileOldPassword").value = "";
+      document.getElementById("profileNewPassword").value = "";
+      document.getElementById("profileNewPassword2").value = "";
+    } catch (err) {
+      if (status) status.textContent = err.message || "Ошибка";
+    }
+  });
+  document.getElementById("profileLogoutBtn")?.addEventListener("click", async () => {
+    await logout();
+    location.hash = "#/auth";
+  });
+  document.getElementById("profileDeleteBtn")?.addEventListener("click", async () => {
+    if (
+      !window.confirm(
+        "Удалить профиль безвозвратно? Для владельца агентства с брокерами удаление недоступно, пока не удалены все брокеры."
+      )
+    ) {
+      return;
+    }
+    try {
+      await api("/api/me", { method: "DELETE" });
+      await logout();
+      location.hash = "#/auth";
+    } catch (err) {
+      alert(err.message || "Не удалось удалить профиль");
+    }
+  });
+}
+
 async function renderCabinetPage(openForm = false) {
   setMapBodyClass(false);
   if (!state.token) {
@@ -3306,8 +3695,7 @@ async function renderCabinetPage(openForm = false) {
         <div class="panel-head">
           <div class="cabinet-head-main">
             <h2>${state.user?.isAgencyOwner ? "Личный кабинет агентства" : "Личный кабинет брокера"}</h2>
-            <button class="btn" id="openChangePasswordModal">Сменить пароль</button>
-            <button class="btn" id="logoutCabinet">Выйти из личного кабинета</button>
+            <button class="btn primary" type="button" id="openCabinetProfile">Редактировать профиль</button>
           </div>
           <button class="close-panel-action" id="closeCabinetPanel" aria-label="Закрыть кабинет">×</button>
         </div>
@@ -3447,30 +3835,6 @@ async function renderCabinetPage(openForm = false) {
         </div>
       </div>
     </section>
-    <div class="modal" id="changePasswordModal">
-      <div class="modal-card">
-        <div class="panel-head">
-          <h3>Смена пароля</h3>
-          <button class="close-panel-action" id="closeChangePasswordModal" aria-label="Закрыть">×</button>
-        </div>
-        <div class="form-grid">
-          <div class="field-block field-span-2">
-            <label class="field-label" for="oldPasswordInput">Старый пароль</label>
-            <input id="oldPasswordInput" type="password" placeholder="Введите текущий пароль" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="newPasswordInput">Новый пароль</label>
-            <input id="newPasswordInput" type="password" placeholder="Минимум 6 символов" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="newPasswordConfirmInput">Повтор нового пароля</label>
-            <input id="newPasswordConfirmInput" type="password" placeholder="Повторите новый пароль" />
-          </div>
-        </div>
-        <p><button class="btn primary" type="button" id="changePasswordBtn">Сменить пароль</button></p>
-        <p class="muted" id="passwordStatus"></p>
-      </div>
-    </div>
     ${mobileBottomNavHtml("cabinet")}
   `;
   bindBrandHomeButton();
@@ -3495,55 +3859,8 @@ async function renderCabinetPage(openForm = false) {
   document.getElementById("closeCabinetPanel").addEventListener("click", () => {
     location.hash = "#/";
   });
-  document.getElementById("logoutCabinet").addEventListener("click", () => {
-    logout();
-    location.hash = "#/auth";
-  });
-  const changePasswordModal = document.getElementById("changePasswordModal");
-  const closeChangePasswordModal = () => {
-    changePasswordModal?.classList.remove("open");
-  };
-  document.getElementById("openChangePasswordModal")?.addEventListener("click", () => {
-    changePasswordModal?.classList.add("open");
-    document.getElementById("passwordStatus").textContent = "";
-  });
-  document.getElementById("closeChangePasswordModal")?.addEventListener("click", closeChangePasswordModal);
-  changePasswordModal?.addEventListener("click", (event) => {
-    if (event.target === changePasswordModal) closeChangePasswordModal();
-  });
-  document.getElementById("changePasswordBtn")?.addEventListener("click", async () => {
-    const oldPassword = document.getElementById("oldPasswordInput").value;
-    const newPassword = document.getElementById("newPasswordInput").value;
-    const confirmPassword = document.getElementById("newPasswordConfirmInput").value;
-    const status = document.getElementById("passwordStatus");
-    status.textContent = "";
-    if (!oldPassword || !newPassword || !confirmPassword) {
-      status.textContent = "Заполните все поля смены пароля";
-      return;
-    }
-    if (newPassword.length < 6) {
-      status.textContent = "Новый пароль должен быть не менее 6 символов";
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      status.textContent = "Новый пароль и подтверждение не совпадают";
-      return;
-    }
-    try {
-      await api("/api/auth/change-password", {
-        method: "POST",
-        body: JSON.stringify({ oldPassword, newPassword, confirmPassword })
-      });
-      status.textContent = "Пароль успешно изменен";
-      document.getElementById("oldPasswordInput").value = "";
-      document.getElementById("newPasswordInput").value = "";
-      document.getElementById("newPasswordConfirmInput").value = "";
-      setTimeout(() => {
-        closeChangePasswordModal();
-      }, 500);
-    } catch (err) {
-      status.textContent = err.message || "Ошибка смены пароля";
-    }
+  document.getElementById("openCabinetProfile")?.addEventListener("click", () => {
+    location.hash = "#/cabinet/profile";
   });
   let editingPropertyId = null;
   let pendingPhotoFiles = [];
@@ -4094,12 +4411,13 @@ async function renderAgencyPage() {
   }
 
   const brokers = Array.isArray(agencyData.brokers) ? agencyData.brokers : [];
+  const activeBrokers = brokers.filter((b) => !b.invitePending);
   const assignOptions = [
     {
       id: state.user.id,
       label: `Агентство (${state.user.agency || state.user.email || "владелец"})`
     },
-    ...brokers.map((b) => ({
+    ...activeBrokers.map((b) => ({
       id: b.id,
       label: `${b.email}${b.name ? ` (${b.name})` : ""}`
     }))
@@ -4108,8 +4426,8 @@ async function renderAgencyPage() {
     .map(
       (b) => `<tr>
       <td>${escapeHtml(b.email)}</td>
-      <td>${escapeHtml(b.name || "—")}</td>
-      <td>${escapeHtml(b.phone || "—")}</td>
+      <td>${escapeHtml(b.invitePending ? "ожидает регистрации" : b.name || "—")}</td>
+      <td>${escapeHtml(b.invitePending ? "—" : b.phone || "—")}</td>
       <td class="muted">${escapeHtml((b.createdAt || "").slice(0, 10))}</td>
       <td><button type="button" class="btn danger-btn agency-del-broker" data-id="${escapeHtml(b.id)}" data-email="${escapeHtml(
         b.email
@@ -4150,37 +4468,18 @@ async function renderAgencyPage() {
     ${topbar({ slim: true })}
     <section class="page admin-page">
       <h1>Панель агентства</h1>
-      <p class="muted">Вы можете добавлять логины брокеров агентства и удалять их при необходимости.</p>
+      <p class="muted">Добавьте email сотрудника — ему на почту уйдёт приглашение. Пароль, телефон и согласия он укажет сам по ссылке из письма.</p>
       <p class="muted">Лимит: <strong>${agencyData.brokerCount} / ${agencyData.brokerLimit || "∞"}</strong></p>
 
       <div class="panel">
-        <h3>Добавить брокера</h3>
+        <h3>Пригласить брокера</h3>
         <div class="form-grid">
-          <div class="field-block">
-            <label class="field-label" for="agencyBrokerFirstName">Имя</label>
-            <input id="agencyBrokerFirstName" placeholder="Иван" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="agencyBrokerLastName">Фамилия</label>
-            <input id="agencyBrokerLastName" placeholder="Иванов" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="agencyBrokerEmail">Email</label>
+          <div class="field-block field-span-2">
+            <label class="field-label" for="agencyBrokerEmail">Email сотрудника</label>
             <input id="agencyBrokerEmail" type="email" placeholder="broker@agency.ru" />
           </div>
-          <div class="field-block">
-            <label class="field-label" for="agencyBrokerPassword">Пароль</label>
-            <input id="agencyBrokerPassword" type="password" placeholder="минимум 6 символов" />
-          </div>
-          <div class="field-block field-span-2">
-            <label class="field-label" for="agencyBrokerPhone">Телефон</label>
-            <div class="phone-group">
-              <span>+7</span>
-              <input id="agencyBrokerPhone" placeholder="9991234567" maxlength="10" inputmode="numeric" />
-            </div>
-          </div>
         </div>
-        <p><button class="btn primary" type="button" id="agencyCreateBrokerBtn">Создать брокера</button></p>
+        <p><button class="btn primary" type="button" id="agencyCreateBrokerBtn">Отправить приглашение</button></p>
         <p class="muted" id="agencyStatus"></p>
       </div>
 
@@ -4191,7 +4490,7 @@ async function renderAgencyPage() {
             <thead>
               <tr>
                 <th>Email</th>
-                <th>Имя</th>
+                <th>Имя / статус</th>
                 <th>Телефон</th>
                 <th>Создан</th>
                 <th></th>
@@ -4237,25 +4536,21 @@ async function renderAgencyPage() {
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
 
   document.getElementById("agencyCreateBrokerBtn")?.addEventListener("click", async () => {
-    const firstName = document.getElementById("agencyBrokerFirstName").value.trim();
-    const lastName = document.getElementById("agencyBrokerLastName").value.trim();
     const email = document.getElementById("agencyBrokerEmail").value.trim();
-    const password = document.getElementById("agencyBrokerPassword").value;
-    const phone = `+7${toDigits(document.getElementById("agencyBrokerPhone").value)}`;
     const status = document.getElementById("agencyStatus");
     status.textContent = "";
-    if (!firstName || !lastName || !email || !password || !/^\+7\d{10}$/.test(phone)) {
-      status.textContent = "Заполните все поля и укажите корректный телефон";
+    if (!email) {
+      status.textContent = "Укажите email сотрудника";
       return;
     }
     try {
       await api("/api/agency/brokers", {
         method: "POST",
-        body: JSON.stringify({ firstName, lastName, email, password, phone })
+        body: JSON.stringify({ email })
       });
       await renderAgencyPage();
     } catch (err) {
-      status.textContent = err.message || "Ошибка создания брокера";
+      status.textContent = err.message || "Ошибка отправки приглашения";
     }
   });
 
@@ -4915,13 +5210,18 @@ async function renderAdminPage() {
 
 async function router() {
   const hash = location.hash || "#/";
+  const agencyInviteToken = parseAgencyInviteTokenFromHash(hash);
+  if (agencyInviteToken) {
+    await renderAgencyInvitePage(agencyInviteToken);
+    return;
+  }
   if (!state.token) {
     if (hash.startsWith("#/demo/property/")) {
       const id = decodeURIComponent(hash.split("/")[3] || "");
       renderDemoPropertyPage(id);
       return;
     }
-    if (hash === "#/cabinet" || hash === "#/cabinet/add") {
+    if (hash === "#/cabinet" || hash === "#/cabinet/add" || hash === "#/cabinet/profile") {
       location.hash = "#/auth";
       return;
     }
@@ -4991,6 +5291,10 @@ async function router() {
   if (hash.startsWith("#/property/")) {
     const id = hash.split("/")[2];
     await renderPropertyPage(id);
+    return;
+  }
+  if (hash === "#/cabinet/profile") {
+    await renderCabinetProfilePage();
     return;
   }
   if (hash === "#/cabinet") {
