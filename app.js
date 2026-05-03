@@ -491,6 +491,20 @@ app.get("/uploads/photos/:file", (req, res) => {
   if (!fs.existsSync(filePath)) {
     return res.status(404).end();
   }
+  const ext = path.extname(name).toLowerCase();
+  const mimeByExt = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".avif": "image/avif",
+    ".bin": "application/octet-stream"
+  };
+  const ctype = mimeByExt[ext];
+  if (ctype) {
+    res.setHeader("Content-Type", ctype);
+  }
   res.setHeader("Cache-Control", "public, max-age=86400");
   return res.sendFile(filePath);
 });

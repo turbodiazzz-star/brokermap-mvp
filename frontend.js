@@ -330,15 +330,33 @@ function optimizePhotoSrc(url, mode = "card") {
   return u;
 }
 
+/** Абсолютный URL превью — на части клиентов относительный путь внутри ленты резолвился неверно. */
+function absoluteMediaUrl(url) {
+  const u = String(url || "").trim();
+  if (!u || u.startsWith("data:")) return u;
+  try {
+    if (typeof location === "undefined") return u;
+    return new URL(u, location.href).href;
+  } catch {
+    return u;
+  }
+}
+
 function photoUrlWithFallback(url, opts = {}) {
   const mode = opts.gallery ? "gallery" : "card";
   const raw = url || PLACEHOLDER_IMAGE_URL;
-  return escapeHtml(optimizePhotoSrc(raw === PLACEHOLDER_IMAGE_URL ? raw : raw, mode));
+  let src = optimizePhotoSrc(raw === PLACEHOLDER_IMAGE_URL ? raw : raw, mode);
+  if (raw !== PLACEHOLDER_IMAGE_URL && !src.startsWith("data:")) {
+    src = absoluteMediaUrl(src);
+  }
+  return escapeHtml(src);
 }
 
 function imgLazyAttrs(extra = {}) {
-  const loading = extra.priority === "high" ? 'loading="eager"' : 'loading="lazy"';
-  return `${loading} decoding="async"`;
+  const eager = extra.priority === "high" || extra.feedCard === true;
+  const loading = eager ? 'loading="eager"' : 'loading="lazy"';
+  const fetchPr = extra.priority === "high" ? ' fetchpriority="high"' : "";
+  return `${loading} decoding="async"${fetchPr}`;
 }
 
 function photoOnErrorAttr() {
@@ -784,7 +802,7 @@ function cardMarkup(property) {
   return `
     <article class="card card--feed ${premium ? "premium" : ""}">
       <div class="card-media">
-        <img class="card-media__img" ${imgLazyAttrs()} src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
+        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
         ${propertyFeedPhotoDots(property)}
       </div>
       <div class="card-badges">
@@ -920,7 +938,7 @@ function demoCardMarkup(item) {
   return `
     <article class="card card--feed ${premium ? "premium" : ""}">
       <div class="card-media">
-        <img class="card-media__img" ${imgLazyAttrs()} src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
+        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
         ${propertyFeedPhotoDots(item)}
       </div>
       <div class="card-badges">
@@ -1061,12 +1079,9 @@ function getSheetGeometry(panel) {
   const navH = bottomNav ? Math.max(0, Math.round(bottomNav.offsetHeight)) : 0;
   let H = track ? Math.round(track.getBoundingClientRect().height) : 0;
   if (!Number.isFinite(H) || H < 200) {
-    const tg = Number.parseFloat(
-      window.getComputedStyle(document.documentElement).getPropertyValue("--mobile-sheet-top-gap") || String(104)
-    );
-    H = Math.max(260, Math.round(vh - navH - (Number.isFinite(tg) ? tg : 104) - 4));
+    H = Math.max(260, Math.round(vh - navH - 6));
   }
-  H = Math.max(220, Math.min(Math.round(vh - 40), H));
+  H = Math.max(240, Math.min(Math.round(vh - navH - 4), H));
   const handleWrap = track?.querySelector(".left-panel-handle-wrap");
   const head = track?.querySelector(".left-panel-head");
   const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
@@ -1076,10 +1091,10 @@ function getSheetGeometry(panel) {
   const yMaxByScreen = Math.max(yBottomPinned, vh - navH - peekVisible);
   const yMaxByContent = Math.max(yBottomPinned, H - peekVisible);
   const yMax = Math.min(yMaxByScreen, yMaxByContent);
-  const yMin = yBottomPinned;
-  const yMid = Math.max(yMin, Math.min(yMax, Math.round(vh * 0.5)));
-  const yFirst = Math.max(yMin, yMax - Math.min(360, Math.max(220, Math.round(vh * 0.44))));
-  return { h: H, yMin, yMax, yPeek: yMax, yMid, yFirst, vh, navH, peekVisible };
+  const yLiftExtra = Math.min(140, Math.max(72, Math.round(vh * 0.085)));
+  const yMin = yBottomPinned - yLiftExtra;
+  const yPeek = yMax;
+  return { h: H, yMin, yMax, yPeek, yMid: yMin, yFirst: yMin, vh, navH, peekVisible };
 }
 
 function bindSheetReflowOnImages(panel, layoutId) {
@@ -1130,23 +1145,16 @@ function sheetDragRubberTranslate(t, g) {
   return t;
 }
 
-/** Выбор целевой позиции шторки по скорости и положению. vy в px/ms (вниз = +). */
+/** Выбор целевой позиции шторки по скорости и положению. vy в px/ms (вниз = +). Только два стопора: развёрнуто и свёрнуто (без «залипания» посередине). */
 function pickMobileSheetSnapY(rawY, vy, g) {
   if (!g) return rawY;
-  const fling = 0.36;
+  const fling = 0.34;
   if (vy > fling) return g.yPeek;
   if (vy < -fling) return g.yMin;
-  let best = g.yMin;
-  let bestDist = Math.abs(rawY - best);
-  for (const p of [g.yFirst, g.yPeek]) {
-    const d = Math.abs(rawY - p);
-    if (d < bestDist) {
-      best = p;
-      bestDist = d;
-    }
-  }
-  if (vy > 0.1 && rawY > g.yFirst + (g.yPeek - g.yFirst) * 0.4) best = g.yPeek;
-  if (vy < -0.1 && rawY < g.yFirst - (g.yFirst - g.yMin) * 0.35) best = g.yMin;
+  const mid = (g.yMin + g.yPeek) * 0.5;
+  let best = rawY >= mid ? g.yPeek : g.yMin;
+  if (vy > 0.12 && rawY > g.yMin + (g.yPeek - g.yMin) * 0.35) best = g.yPeek;
+  if (vy < -0.12 && rawY < g.yPeek - (g.yPeek - g.yMin) * 0.35) best = g.yMin;
   return best;
 }
 
@@ -1289,7 +1297,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     ) {
       if (g) {
         L.classList.remove("collapsed");
-        const tOpen = state.panelSheetT != null ? clampSheetT(state.panelSheetT, g) : g.yMid;
+        const tOpen = state.panelSheetT != null ? clampSheetT(state.panelSheetT, g) : g.yMin;
         const s0 = getSheetNode(panel);
         if (s0) {
           setPanelTranslateY(s0, tOpen, true, 460);
@@ -1484,15 +1492,13 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
     if (!g) return;
     let t;
     if (!state.panelSheetInitialized) {
-      // First mobile render: top edge of sheet at middle of screen.
-      const topAtMiddle = Math.round(g.vh * 0.5);
-      t = clampSheetT(topAtMiddle, g);
+      t = clampSheetT(g.yMin, g);
       state.panelSheetT = t;
       state.panelCollapsed = false;
       state.panelSheetInitialized = true;
     } else if (state.panelCollapsed) t = g.yPeek;
     else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
-    else t = g.yFirst;
+    else t = clampSheetT(g.yMin, g);
     setPanelTranslateY(s, t, animate, animate ? 480 : undefined);
   });
 }
@@ -3903,7 +3909,7 @@ async function renderCabinetPage(openForm = false) {
                 .map(
                   (p) => `
           <article class="card">
-            <img ${imgLazyAttrs()} src="${photoUrlWithFallback(p.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="">
+            <img ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(p.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="">
             <div class="card-body">
               <div class="price">${money(p.price)} ₽</div>
               <div>${p.address}</div>
