@@ -799,7 +799,8 @@ app.get("/api/properties", auth, (req, res) => {
   const minPrice = Number(req.query.minPrice || 0);
   const maxPrice = Number(req.query.maxPrice || Number.MAX_SAFE_INTEGER);
   const bedrooms = req.query.bedrooms ? Number(req.query.bedrooms) : null;
-  const list = listPropertyRowsFiltered(minPrice, maxPrice, bedrooms);
+  const partnerCommissionMin = Number(req.query.partnerCommissionMin || 0);
+  const list = listPropertyRowsFiltered(minPrice, maxPrice, bedrooms, partnerCommissionMin);
   return res.json(list.map((p) => stripContacts(p)));
 });
 

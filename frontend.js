@@ -30,15 +30,36 @@ const state = {
     totalFloorsMax: "",
     ceilingHeightMin: "",
     finishing: "",
-    readiness: ""
+    readiness: "",
+    partnerCommissionMinPct: "",
+    partnerCommissionMinRub: ""
   },
   /** Фиксированный набор демо-объектов на сессию (фильтры не меняют «источник») */
   demoAllProperties: null,
   /** увеличивать, чтобы сбросить кэш демо после смены логики точек/адресов */
-  demoDataVersion: 0
+  demoDataVersion: 0,
+  /** При входе/регистрации с демо-карты или карточки демо — куда вернуться после закрытия оверлея */
+  authOverlayReturnHash: null
 };
 
-const CURRENT_DEMO_DATA_VERSION = 5;
+function emptyFilters() {
+  return {
+    minPrice: "",
+    maxPrice: "",
+    bedrooms: "",
+    floorMin: "",
+    floorMax: "",
+    totalFloorsMin: "",
+    totalFloorsMax: "",
+    ceilingHeightMin: "",
+    finishing: "",
+    readiness: "",
+    partnerCommissionMinPct: "",
+    partnerCommissionMinRub: ""
+  };
+}
+
+const CURRENT_DEMO_DATA_VERSION = 6;
 
 let didSyncUserFromServer = false;
 
@@ -120,6 +141,71 @@ function readinessLabel(value) {
   return map[value] || "-";
 }
 
+function propertyRoomsShortLabel(bedrooms) {
+  const b = Number(bedrooms || 0);
+  if (!b) return "Квартира";
+  if (b >= 5) return "5+-комн. кв.";
+  return `${b}-комн. кв.`;
+}
+
+function propertySpecSummaryLine(property) {
+  const parts = [
+    propertyRoomsShortLabel(property.bedrooms),
+    property.area ? `${Number(property.area)} м²` : "",
+    property.floor && property.totalFloors
+      ? `${Number(property.floor)}/${Number(property.totalFloors)} этаж`
+      : property.floor
+        ? `${Number(property.floor)} этаж`
+        : ""
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function propertyMetroHtml(property) {
+  const metro = String(property.metro || "").trim();
+  if (!metro) return "";
+  return `<div class="card-metro"><span class="card-metro__dot" aria-hidden="true"></span><span class="card-metro__name">${escapeHtml(
+    metro
+  )}</span></div>`;
+}
+
+function propertyFeedPhotoDots(property) {
+  const photos = Array.isArray(property.photos) ? property.photos : [];
+  if (photos.length <= 1) return "";
+  return `<div class="card-photo-dots" aria-hidden="true">${photos
+    .map((_, i) => `<span class="card-photo-dot${i === 0 ? " card-photo-dot--active" : ""}"></span>`)
+    .join("")}</div>`;
+}
+
+function downloadBlobAsFile(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "file.pdf";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function canOwnerRegeneratePropertyPdf(property) {
+  return Boolean(state.user && property?.ownerId && property.ownerId === state.user.id);
+}
+
+async function fetchPropertyPresentationBlob(property, id) {
+  let pdfUrl = property.pdfUrl;
+  if (!pdfUrl) {
+    if (!canOwnerRegeneratePropertyPdf(property)) {
+      throw new Error("Презентация PDF ещё не сформирована. Попросите владельца объекта сгенерировать её в карточке.");
+    }
+    const data = await api(`/api/my/properties/${id}/generate-pdf`, { method: "POST" });
+    pdfUrl = data.pdfUrl;
+  }
+  const absoluteUrl = new URL(pdfUrl, window.location.origin).toString();
+  return fetchPdfBlobWithAuth(absoluteUrl);
+}
+
 function formatRussianPhoneMasked(value) {
   const digits = String(value || "").replace(/\D/g, "").slice(0, 10);
   if (!digits) return "";
@@ -188,6 +274,8 @@ async function api(url, options = {}) {
   if (!response.ok) {
     if (response.status === 401 && state.token) {
       logout();
+      state.authOverlayReturnHash = null;
+      removeAuthDemoOverlay();
       location.hash = "#/auth";
     }
     if (response.status === 403) {
@@ -209,6 +297,39 @@ const agencyButtonHtml = () =>
     : "";
 
 const SUPPORT_EMAIL = "support@brokermap.ru";
+
+function bindFiltersModalNumericFormatting() {
+  const wireInt = (id) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.spacedBound === "1") return;
+    el.dataset.spacedBound = "1";
+    el.addEventListener("input", (e) => {
+      const raw = toRawNumberString(e.target.value);
+      e.target.value = formatSpacedNumber(raw);
+    });
+  };
+  ["filterFloorMin", "filterFloorMax", "filterTotalFloorsMin", "filterTotalFloorsMax", "filterPartnerRub"].forEach(wireInt);
+  const pct = document.getElementById("filterPartnerPct");
+  if (pct && pct.dataset.decBound !== "1") {
+    pct.dataset.decBound = "1";
+    pct.addEventListener("input", (e) => {
+      e.target.value = normalizeDecimalInput(e.target.value);
+    });
+  }
+  const ceil = document.getElementById("filterCeilingMin");
+  if (ceil && ceil.dataset.ceilBound !== "1") {
+    ceil.dataset.ceilBound = "1";
+    ceil.addEventListener("input", (e) => {
+      const cleaned = String(e.target.value || "")
+        .replace(",", ".")
+        .replace(/[^\d.]/g, "");
+      const [integerPart, ...rest] = cleaned.split(".");
+      const decimalPart = rest.join("").slice(0, 2);
+      const formattedInteger = formatSpacedNumber(integerPart);
+      e.target.value = decimalPart ? `${formattedInteger},${decimalPart}` : formattedInteger;
+    });
+  }
+}
 
 function moreFiltersModalHtml() {
   return `
@@ -239,23 +360,35 @@ function moreFiltersModalHtml() {
           </div>
           <div class="field-block">
             <label class="field-label" for="filterFloorMin">Этаж от</label>
-            <input id="filterFloorMin" type="number" min="1" value="${escapeHtml(state.filters.floorMin)}" />
+            <input id="filterFloorMin" type="text" inputmode="numeric" value="${formatSpacedNumber(state.filters.floorMin)}" />
           </div>
           <div class="field-block">
             <label class="field-label" for="filterFloorMax">Этаж до</label>
-            <input id="filterFloorMax" type="number" min="1" value="${escapeHtml(state.filters.floorMax)}" />
+            <input id="filterFloorMax" type="text" inputmode="numeric" value="${formatSpacedNumber(state.filters.floorMax)}" />
           </div>
           <div class="field-block">
             <label class="field-label" for="filterTotalFloorsMin">Этажей в доме от</label>
-            <input id="filterTotalFloorsMin" type="number" min="1" value="${escapeHtml(state.filters.totalFloorsMin)}" />
+            <input id="filterTotalFloorsMin" type="text" inputmode="numeric" value="${formatSpacedNumber(state.filters.totalFloorsMin)}" />
           </div>
           <div class="field-block">
             <label class="field-label" for="filterTotalFloorsMax">Этажей в доме до</label>
-            <input id="filterTotalFloorsMax" type="number" min="1" value="${escapeHtml(state.filters.totalFloorsMax)}" />
+            <input id="filterTotalFloorsMax" type="text" inputmode="numeric" value="${formatSpacedNumber(state.filters.totalFloorsMax)}" />
           </div>
           <div class="field-block">
             <label class="field-label" for="filterCeilingMin">Потолки от (м)</label>
-            <input id="filterCeilingMin" type="number" step="0.1" min="0" value="${escapeHtml(state.filters.ceilingHeightMin)}" />
+            <input id="filterCeilingMin" type="text" inputmode="decimal" value="${escapeHtml(
+              String(state.filters.ceilingHeightMin || "").replace(".", ",")
+            )}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterPartnerPct">Комиссия партнёру от (%)</label>
+            <input id="filterPartnerPct" type="text" inputmode="decimal" value="${escapeHtml(state.filters.partnerCommissionMinPct)}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterPartnerRub">Комиссия партнёру от (₽)</label>
+            <input id="filterPartnerRub" type="text" inputmode="numeric" value="${formatSpacedNumber(
+              state.filters.partnerCommissionMinRub
+            )}" />
           </div>
           <div class="field-block">
             <label class="field-label" for="filterFinishing">Отделка</label>
@@ -486,15 +619,27 @@ function bindMapDrawHint() {
 }
 
 function cardMarkup(property) {
+  const pct = Number(property.commissionPartner || 0);
+  const commissionRub = (Number(property.price || 0) * pct) / 100;
+  const premium = property.commissionPartner >= 4;
   return `
-    <article class="card ${property.commissionPartner >= 4 ? "premium" : ""}">
-      <img src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="Объект" />
+    <article class="card card--feed ${premium ? "premium" : ""}">
+      <div class="card-media">
+        <img class="card-media__img" src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
+        ${propertyFeedPhotoDots(property)}
+      </div>
+      <div class="card-badges">
+        <span class="card-badge card-badge--partner">Партнёру ${escapeHtml(String(pct))}%</span>
+        <span class="card-badge card-badge--amount">${money(commissionRub)} ₽ партнёру</span>
+      </div>
       <div class="card-body">
-        <div class="price">${money(property.price)} ₽</div>
-        <div>${property.address}</div>
-        <div class="muted">Комиссия партнеру: <strong>${property.commissionPartner}%</strong></div>
-        <div class="muted">Сумма: ${money((property.price * property.commissionPartner) / 100)} ₽</div>
-        <p><button class="btn primary open-object" data-id="${property.id}">Перейти к объекту</button></p>
+        <div class="card-price">${money(property.price)} ₽</div>
+        <div class="card-spec">${escapeHtml(propertySpecSummaryLine(property))}</div>
+        <div class="card-address muted">${escapeHtml(property.address || "")}</div>
+        ${propertyMetroHtml(property)}
+        <p class="card-actions"><button class="btn primary full open-object" type="button" data-id="${escapeHtml(
+          property.id
+        )}">Подробнее</button></p>
       </div>
     </article>
   `;
@@ -568,17 +713,20 @@ function createDemoProperties(count = 100) {
   ];
   const finishingOptions = ["finished", "whitebox", "concrete"];
   const readinessOptions = ["resale", "assignment"];
+  const metroNames = ["Коломенская", "Текстильщики", "Авиамоторная", "Динамо", "Курская", "Тульская"];
   const slots = buildShuffledMoscowDemoSlots(count);
   const demo = [];
   for (let i = 0; i < count; i++) {
     const { lat, lon, address } = slots[i] || slots[0];
     const priceBase = priceRoundedThousands(12_000_000 + (i * 601_001) % 59_000_000);
+    const partnerPct = Number((1 + (i % 8) * 0.5).toFixed(1));
     demo.push({
       id: `demo-${i + 1}`,
       title: `Квартира в Москве #${i + 1}`,
       address,
       lat,
       lon,
+      metro: metroNames[i % metroNames.length],
       price: priceBase,
       area: 28 + (i % 9) * 6,
       bedrooms: (i % 4) + 1,
@@ -588,7 +736,7 @@ function createDemoProperties(count = 100) {
       finishing: finishingOptions[i % finishingOptions.length],
       readiness: readinessOptions[i % readinessOptions.length],
       commissionTotal: 3,
-      commissionPartner: 1.5,
+      commissionPartner: partnerPct,
       contacts: {
         phone: "+7 (9••) •••-••-••",
         telegram: "@••••••••"
@@ -602,17 +750,28 @@ function createDemoProperties(count = 100) {
 }
 
 function demoCardMarkup(item) {
+  const pct = Number(item.commissionPartner || 0);
+  const commissionRub = (Number(item.price || 0) * pct) / 100;
+  const premium = item.commissionPartner >= 4;
   return `
-    <article class="card">
-      <img src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="Демо объект">
+    <article class="card card--feed ${premium ? "premium" : ""}">
+      <div class="card-media">
+        <img class="card-media__img" src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
+        ${propertyFeedPhotoDots(item)}
+      </div>
+      <div class="card-badges">
+        <span class="card-badge card-badge--partner">Партнёру ${escapeHtml(String(pct))}%</span>
+        <span class="card-badge card-badge--amount">${money(commissionRub)} ₽ партнёру</span>
+      </div>
       <div class="card-body">
-        <div class="price">${money(item.price)} ₽</div>
-        <div>${item.address}</div>
-        <div class="muted">${item.area} м² · ${item.bedrooms} спальни</div>
-        <div class="muted">Общая комиссия: <strong>${item.commissionTotal}%</strong></div>
-        <div class="muted">Комиссия партнера: <strong>${item.commissionPartner}%</strong></div>
-        <p><button class="btn open-demo-contacts">Открыть контакты</button></p>
-        <p><button class="btn primary open-demo-object" data-id="${item.id}">Открыть объект</button></p>
+        <div class="card-price">${money(item.price)} ₽</div>
+        <div class="card-spec">${escapeHtml(propertySpecSummaryLine(item))}</div>
+        <div class="card-address muted">${escapeHtml(item.address || "")}</div>
+        ${propertyMetroHtml(item)}
+        <p class="card-actions card-actions--split">
+          <button class="btn full open-demo-contacts" type="button">Открыть контакты</button>
+          <button class="btn primary full open-demo-object" type="button" data-id="${escapeHtml(item.id)}">Подробнее</button>
+        </p>
       </div>
     </article>
   `;
@@ -626,7 +785,7 @@ function bindDemoCardButtons(root = document) {
   });
   root.querySelectorAll(".open-demo-contacts").forEach((btn) => {
     btn.addEventListener("click", () => {
-      location.hash = "#/auth-register";
+      goToAuthFromGuestDemo("#/auth-register");
     });
   });
 }
@@ -1174,6 +1333,10 @@ function bindMobileBottomNavActions() {
         state.panelSheetTBeforeCabinet = null;
       }
       if (!state.token) {
+        if (document.getElementById("authDemoOverlay")) {
+          dismissDemoAuthOverlay();
+          return;
+        }
         if (location.hash !== "#/") location.hash = "#/";
       } else if (location.hash !== "#/map") {
         location.hash = "#/map";
@@ -1189,7 +1352,13 @@ function bindMobileBottomNavActions() {
       setActive("cabinet");
       state.panelCollapsedBeforeCabinet = state.panelCollapsed;
       state.panelSheetTBeforeCabinet = state.panelSheetT;
-      location.hash = state.token ? "#/cabinet" : "#/auth";
+      if (state.token) {
+        location.hash = "#/cabinet";
+      } else if (location.hash === "#/" || location.hash.startsWith("#/demo/property/")) {
+        goToAuthFromGuestDemo("#/auth");
+      } else {
+        location.hash = "#/auth";
+      }
     };
     cabinetBtn.onclick = onCabinet;
     cabinetBtn.onpointerup = onCabinet;
@@ -1472,27 +1641,22 @@ function renderPublicDemoPage() {
     state.filters.minPrice = toRawNumberString(modalMin);
     state.filters.maxPrice = toRawNumberString(modalMax);
     state.filters.bedrooms = modalBedrooms;
-    state.filters.floorMin = document.getElementById("filterFloorMin")?.value.trim() || "";
-    state.filters.floorMax = document.getElementById("filterFloorMax")?.value.trim() || "";
-    state.filters.totalFloorsMin = document.getElementById("filterTotalFloorsMin")?.value.trim() || "";
-    state.filters.totalFloorsMax = document.getElementById("filterTotalFloorsMax")?.value.trim() || "";
-    state.filters.ceilingHeightMin = document.getElementById("filterCeilingMin")?.value.trim() || "";
+    state.filters.floorMin = toRawNumberString(document.getElementById("filterFloorMin")?.value || "");
+    state.filters.floorMax = toRawNumberString(document.getElementById("filterFloorMax")?.value || "");
+    state.filters.totalFloorsMin = toRawNumberString(document.getElementById("filterTotalFloorsMin")?.value || "");
+    state.filters.totalFloorsMax = toRawNumberString(document.getElementById("filterTotalFloorsMax")?.value || "");
+    state.filters.ceilingHeightMin = normalizeDecimalInput(
+      String(document.getElementById("filterCeilingMin")?.value || "").replace(",", ".")
+    );
+    state.filters.partnerCommissionMinPct = normalizeDecimalInput(document.getElementById("filterPartnerPct")?.value || "");
+    state.filters.partnerCommissionMinRub = toRawNumberString(document.getElementById("filterPartnerRub")?.value || "");
     state.filters.finishing = document.getElementById("filterFinishing")?.value || "";
     state.filters.readiness = document.getElementById("filterReadiness")?.value || "";
     document.getElementById("filtersModal")?.classList.remove("open");
     applyDemoFilters();
   });
   document.getElementById("resetMoreFilters")?.addEventListener("click", () => {
-    state.filters.minPrice = "";
-    state.filters.maxPrice = "";
-    state.filters.bedrooms = "";
-    state.filters.floorMin = "";
-    state.filters.floorMax = "";
-    state.filters.totalFloorsMin = "";
-    state.filters.totalFloorsMax = "";
-    state.filters.ceilingHeightMin = "";
-    state.filters.finishing = "";
-    state.filters.readiness = "";
+    state.filters = emptyFilters();
     if (document.getElementById("modalMinPrice")) document.getElementById("modalMinPrice").value = "";
     if (document.getElementById("modalMaxPrice")) document.getElementById("modalMaxPrice").value = "";
     if (document.getElementById("modalBedrooms")) document.getElementById("modalBedrooms").value = "";
@@ -1501,11 +1665,14 @@ function renderPublicDemoPage() {
     document.getElementById("filterTotalFloorsMin").value = "";
     document.getElementById("filterTotalFloorsMax").value = "";
     document.getElementById("filterCeilingMin").value = "";
+    document.getElementById("filterPartnerPct").value = "";
+    document.getElementById("filterPartnerRub").value = "";
     document.getElementById("filterFinishing").value = "";
     document.getElementById("filterReadiness").value = "";
     document.getElementById("filtersModal")?.classList.remove("open");
     applyDemoFilters();
   });
+  bindFiltersModalNumericFormatting();
 
   document.getElementById("maxPrice")?.addEventListener("input", (e) => {
     const raw = toRawNumberString(e.target.value);
@@ -1524,18 +1691,7 @@ function renderPublicDemoPage() {
     applyDemoFilters();
   });
   document.getElementById("resetFilters")?.addEventListener("click", () => {
-    state.filters = {
-      minPrice: "",
-      maxPrice: "",
-      bedrooms: "",
-      floorMin: "",
-      floorMax: "",
-      totalFloorsMin: "",
-      totalFloorsMax: "",
-      ceilingHeightMin: "",
-      finishing: "",
-      readiness: ""
-    };
+    state.filters = emptyFilters();
     if (state.demoAllProperties && state.demoAllProperties.length) {
       state.properties = filterPropertiesByState(state.demoAllProperties);
     }
@@ -1549,16 +1705,18 @@ function renderPublicDemoPage() {
       document.getElementById("filterTotalFloorsMin").value = "";
       document.getElementById("filterTotalFloorsMax").value = "";
       document.getElementById("filterCeilingMin").value = "";
+      document.getElementById("filterPartnerPct").value = "";
+      document.getElementById("filterPartnerRub").value = "";
       document.getElementById("filterFinishing").value = "";
       document.getElementById("filterReadiness").value = "";
     }
   });
 
   document.getElementById("demoAuthLogin")?.addEventListener("click", () => {
-    location.hash = "#/auth-form";
+    goToAuthFromGuestDemo("#/auth-form");
   });
   document.getElementById("demoAuthRegister")?.addEventListener("click", () => {
-    location.hash = "#/auth-register";
+    goToAuthFromGuestDemo("#/auth-register");
   });
 
   applyDemoFilters();
@@ -1626,7 +1784,7 @@ function renderDemoPropertyPage(id) {
           <p><strong>Общая комиссия:</strong> ${property.commissionTotal}%</p>
           <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
           <p><button class="btn" id="demoOpenContactsBtn">Открыть контакты</button></p>
-          <p><button class="btn primary" id="demoToAuthBtn">Попробовать платформу</button></p>
+          <p><button class="btn primary" id="demoToAuthBtn">Начать делать сделки</button></p>
         </aside>
       </div>
     </section>
@@ -1636,10 +1794,10 @@ function renderDemoPropertyPage(id) {
     location.hash = "#/";
   });
   document.getElementById("demoToAuthBtn")?.addEventListener("click", () => {
-    location.hash = "#/auth-register";
+    goToAuthFromGuestDemo("#/auth-register");
   });
   document.getElementById("demoOpenContactsBtn")?.addEventListener("click", () => {
-    location.hash = "#/auth-register";
+    goToAuthFromGuestDemo("#/auth-register");
   });
   bindMobileBottomNavActions();
   updateMobileNavMetrics();
@@ -1716,30 +1874,26 @@ function renderMapPage() {
     state.filters.minPrice = toRawNumberString(document.getElementById("modalMinPrice")?.value || "");
     state.filters.maxPrice = toRawNumberString(document.getElementById("modalMaxPrice")?.value || "");
     state.filters.bedrooms = document.getElementById("modalBedrooms")?.value || "";
-    state.filters.floorMin = document.getElementById("filterFloorMin").value.trim();
-    state.filters.floorMax = document.getElementById("filterFloorMax").value.trim();
-    state.filters.totalFloorsMin = document.getElementById("filterTotalFloorsMin").value.trim();
-    state.filters.totalFloorsMax = document.getElementById("filterTotalFloorsMax").value.trim();
-    state.filters.ceilingHeightMin = document.getElementById("filterCeilingMin").value.trim();
+    state.filters.floorMin = toRawNumberString(document.getElementById("filterFloorMin")?.value || "");
+    state.filters.floorMax = toRawNumberString(document.getElementById("filterFloorMax")?.value || "");
+    state.filters.totalFloorsMin = toRawNumberString(document.getElementById("filterTotalFloorsMin")?.value || "");
+    state.filters.totalFloorsMax = toRawNumberString(document.getElementById("filterTotalFloorsMax")?.value || "");
+    state.filters.ceilingHeightMin = normalizeDecimalInput(
+      String(document.getElementById("filterCeilingMin")?.value || "").replace(",", ".")
+    );
+    state.filters.partnerCommissionMinPct = normalizeDecimalInput(document.getElementById("filterPartnerPct")?.value || "");
+    state.filters.partnerCommissionMinRub = toRawNumberString(document.getElementById("filterPartnerRub")?.value || "");
     state.filters.finishing = document.getElementById("filterFinishing").value;
     state.filters.readiness = document.getElementById("filterReadiness").value;
     document.getElementById("filtersModal").classList.remove("open");
     loadMapData();
   });
   document.getElementById("resetMoreFilters").addEventListener("click", () => {
-    state.filters.minPrice = "";
-    state.filters.maxPrice = "";
-    state.filters.bedrooms = "";
-    state.filters.floorMin = "";
-    state.filters.floorMax = "";
-    state.filters.totalFloorsMin = "";
-    state.filters.totalFloorsMax = "";
-    state.filters.ceilingHeightMin = "";
-    state.filters.finishing = "";
-    state.filters.readiness = "";
+    state.filters = emptyFilters();
     document.getElementById("filtersModal").classList.remove("open");
     renderMapPage();
   });
+  bindFiltersModalNumericFormatting();
   document.getElementById("closeLeftPanel")?.addEventListener("click", mapCollapseLeftPanel);
   document.getElementById("openLeftPanelBtn")?.addEventListener("click", openMapLeftPanel);
   document.getElementById("mapLeftPanelScrim")?.addEventListener("click", () => {
@@ -1775,16 +1929,7 @@ function renderMapPage() {
     loadMapData();
   });
   document.getElementById("resetFilters").addEventListener("click", () => {
-    state.filters.minPrice = "";
-    state.filters.maxPrice = "";
-    state.filters.bedrooms = "";
-    state.filters.floorMin = "";
-    state.filters.floorMax = "";
-    state.filters.totalFloorsMin = "";
-    state.filters.totalFloorsMax = "";
-    state.filters.ceilingHeightMin = "";
-    state.filters.finishing = "";
-    state.filters.readiness = "";
+    state.filters = emptyFilters();
     state.panelCollapsed = false;
     state.panelSheetT = null;
     clearAreaFilter();
@@ -2080,11 +2225,16 @@ function filterPropertiesByState(list) {
   const rawMax = toRawNumberString(state.filters.maxPrice);
   const minP = rawMin ? Number(rawMin) : 0;
   const maxP = rawMax ? Number(rawMax) : Number.MAX_SAFE_INTEGER;
-  const floorMin = Number(state.filters.floorMin || 0);
-  const floorMax = Number(state.filters.floorMax || Number.MAX_SAFE_INTEGER);
-  const totalFloorsMin = Number(state.filters.totalFloorsMin || 0);
-  const totalFloorsMax = Number(state.filters.totalFloorsMax || Number.MAX_SAFE_INTEGER);
-  const ceilingHeightMin = Number(state.filters.ceilingHeightMin || 0);
+  const floorMin = Number(toRawNumberString(state.filters.floorMin) || 0);
+  const floorMaxRaw = toRawNumberString(state.filters.floorMax);
+  const floorMax = floorMaxRaw ? Number(floorMaxRaw) : Number.MAX_SAFE_INTEGER;
+  const totalFloorsMin = Number(toRawNumberString(state.filters.totalFloorsMin) || 0);
+  const totalFloorsMaxRaw = toRawNumberString(state.filters.totalFloorsMax);
+  const totalFloorsMax = totalFloorsMaxRaw ? Number(totalFloorsMaxRaw) : Number.MAX_SAFE_INTEGER;
+  const ceilingHeightMin = Number(normalizeDecimalInput(String(state.filters.ceilingHeightMin || "").replace(",", ".")) || 0);
+  const partnerPctMin = Number(normalizeDecimalInput(state.filters.partnerCommissionMinPct || ""));
+  const partnerRubMinRaw = toRawNumberString(state.filters.partnerCommissionMinRub || "");
+  const partnerRubMin = partnerRubMinRaw ? Number(partnerRubMinRaw) : 0;
   return list.filter((item) => {
     const price = Number(item.price || 0);
     if (price < minP || price > maxP) return false;
@@ -2103,6 +2253,12 @@ function filterPropertiesByState(list) {
     const byCeiling = ceilingHeight >= ceilingHeightMin;
     const byFinishing = state.filters.finishing ? item.finishing === state.filters.finishing : true;
     const byReadiness = state.filters.readiness ? item.readiness === state.filters.readiness : true;
+    const cp = Number(item.commissionPartner || 0);
+    if (partnerPctMin > 0 && cp < partnerPctMin) return false;
+    if (partnerRubMin > 0) {
+      const partnerRub = (price * cp) / 100;
+      if (partnerRub < partnerRubMin) return false;
+    }
     return byFloor && byTotalFloors && byCeiling && byFinishing && byReadiness;
   });
 }
@@ -2112,6 +2268,8 @@ async function loadMapData() {
   if (state.filters.minPrice) query.append("minPrice", toRawNumberString(state.filters.minPrice));
   if (state.filters.maxPrice) query.append("maxPrice", toRawNumberString(state.filters.maxPrice));
   if (state.filters.bedrooms) query.append("bedrooms", state.filters.bedrooms);
+  const partnerPctMin = Number(normalizeDecimalInput(state.filters.partnerCommissionMinPct || ""));
+  if (partnerPctMin > 0) query.append("partnerCommissionMin", String(partnerPctMin));
   const list = await api(`/api/properties?${query.toString()}`);
   state.properties = filterPropertiesByState(list);
   initMap();
@@ -2403,7 +2561,7 @@ async function renderPropertyPage(id) {
     ? property.photos
     : [PLACEHOLDER_IMAGE_URL];
   app.innerHTML = `
-    ${topbar()}
+    ${topbar({ hideFilters: window.matchMedia("(max-width: 900px)").matches })}
     <section class="page">
       <p><button class="btn" id="goBack">← На карту</button></p>
       <div class="grid-2">
@@ -2481,20 +2639,16 @@ async function renderPropertyPage(id) {
     const link = document.getElementById("downloadPdfBtn");
     if (!link) return;
     const originalText = link.textContent;
-    link.textContent = "Обновление PDF...";
+    link.textContent = "Скачивание...";
     link.style.pointerEvents = "none";
     try {
-      const data = await api(`/api/my/properties/${id}/generate-pdf`, { method: "POST" });
-      const freshUrl = `${data.pdfUrl}?v=${encodeURIComponent(id || "")}-${Date.now()}`;
-      const isMobile = window.matchMedia("(max-width: 900px)").matches;
-      if (isMobile) {
-        // Open in current tab on mobile to avoid blank popup pages.
-        window.location.href = freshUrl;
-      } else {
-        window.open(freshUrl, "_blank", "noopener,noreferrer");
-      }
+      const latest = await api(`/api/properties/${id}`);
+      const blob = await fetchPropertyPresentationBlob(latest, id);
+      downloadBlobAsFile(blob, `presentation-${id}.pdf`);
       await renderPropertyPage(id);
-    } catch (_error) {
+    } catch (error) {
+      alert(error?.message || "Не удалось скачать PDF");
+    } finally {
       link.textContent = originalText || "Скачать презентацию PDF";
       link.style.pointerEvents = "";
     }
@@ -2504,14 +2658,12 @@ async function renderPropertyPage(id) {
     if (!shareBtn) return;
     const originalText = shareBtn.textContent;
     shareBtn.disabled = true;
-    shareBtn.textContent = "Подготовка PDF...";
+    shareBtn.textContent = "Подготовка...";
     try {
-      const data = await api(`/api/my/properties/${id}/generate-pdf`, { method: "POST" });
-      const freshUrl = `${data.pdfUrl}?v=${encodeURIComponent(id || "")}-${Date.now()}`;
-      const absoluteUrl = new URL(freshUrl, window.location.origin).toString();
+      const latest = await api(`/api/properties/${id}`);
+      const blob = await fetchPropertyPresentationBlob(latest, id);
+      const file = new File([blob], `presentation-${id}.pdf`, { type: "application/pdf" });
       if (navigator.share) {
-        const blob = await fetchPdfBlobWithAuth(absoluteUrl);
-        const file = new File([blob], `presentation-${id}.pdf`, { type: "application/pdf" });
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
           await navigator.share({
             title: "Презентация объекта",
@@ -2519,17 +2671,24 @@ async function renderPropertyPage(id) {
             files: [file]
           });
         } else {
-          await navigator.share({
-            title: "Презентация объекта",
-            text: "Ссылка на PDF презентацию объекта",
-            url: absoluteUrl
-          });
+          const blobUrl = URL.createObjectURL(blob);
+          try {
+            await navigator.share({
+              title: "Презентация объекта",
+              text: "Отправляю PDF презентацию объекта",
+              url: blobUrl
+            });
+          } finally {
+            URL.revokeObjectURL(blobUrl);
+          }
         }
       } else {
-        window.location.href = absoluteUrl;
+        downloadBlobAsFile(blob, `presentation-${id}.pdf`);
       }
       await renderPropertyPage(id);
-    } catch (_error) {
+    } catch (error) {
+      alert(error?.message || "Не удалось подготовить PDF");
+    } finally {
       shareBtn.disabled = false;
       shareBtn.textContent = originalText || "Отправить клиенту";
     }
@@ -2582,10 +2741,8 @@ async function renderPropertyPage(id) {
   });
 }
 
-function renderAuthPage() {
-  setMapBodyClass(false);
-  app.innerHTML = `
-    <section class="login-page">
+function authFormsInnerHtml() {
+  return `
       <div class="login-wrapper">
         <div class="login-box">
           <h3>Вход</h3>
@@ -2610,65 +2767,166 @@ function renderAuthPage() {
       <div class="auth-modal" id="registerModal">
         <div class="auth-modal-content auth-modal-content--register">
           <div class="panel-head">
-            <h3>Регистрация</h3>
+            <h3 id="registerModalTitle">Регистрация</h3>
             <button class="close-panel-action" id="closeRegisterXBtn" type="button" aria-label="Закрыть">×</button>
           </div>
-          <label class="field-label" for="accountType">Тип аккаунта</label>
-          <select id="accountType">
-            <option value="broker">Частный брокер</option>
-            <option value="agency_owner">Агентство</option>
-          </select>
-          <input id="lastName" placeholder="Фамилия (обязательно)" autocomplete="family-name" />
-          <input id="firstName" placeholder="Имя (обязательно)" autocomplete="given-name" />
-          <input id="email" placeholder="Email (обязательно)" type="email" autocomplete="email" />
-          <div class="phone-group">
-            <span>+7</span>
-            <input id="phone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
+          <div id="registerFormWrap">
+            <label class="field-label" for="accountType">Тип аккаунта</label>
+            <select id="accountType">
+              <option value="broker">Частный брокер</option>
+              <option value="agency_owner">Агентство</option>
+            </select>
+            <input id="lastName" placeholder="Фамилия (обязательно)" autocomplete="family-name" />
+            <input id="firstName" placeholder="Имя (обязательно)" autocomplete="given-name" />
+            <input id="email" placeholder="Email (обязательно)" type="email" autocomplete="email" />
+            <div class="phone-group">
+              <span>+7</span>
+              <input id="phone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
+            </div>
+            <input id="password" placeholder="Пароль (мин 6)" type="password" autocomplete="new-password" />
+            <label class="field-label" for="agency" id="agencyFieldLabel">ФИО ИП/самозанятого (обязательно)</label>
+            <input id="agency" placeholder="Название агентства или ФИО ИП/самозанятого" />
+            <p class="note">* ИП / юрлица должны иметь соответствующие ОКВЭД для операций с недвижимостью</p>
+            <label class="checkbox-line">
+              <input type="checkbox" id="agree" />
+              <span>
+                Я соглашаюсь с
+                <a href="/privacy.html" target="_blank" rel="noopener noreferrer">обработкой персональных данных</a>
+              </span>
+            </label>
+            <label class="checkbox-line">
+              <input type="checkbox" id="marketing" />
+              <span>Я согласен получать рекламные сообщения</span>
+            </label>
+            <p>
+              <button class="btn primary full" id="register" type="button">Создать аккаунт</button>
+            </p>
           </div>
-          <input id="password" placeholder="Пароль (мин 6)" type="password" autocomplete="new-password" />
-          <label class="field-label" for="agency" id="agencyFieldLabel">ФИО ИП/самозанятого (обязательно)</label>
-          <input id="agency" placeholder="Название агентства или ФИО ИП/самозанятого" />
-          <p class="note">* ИП / юрлица должны иметь соответствующие ОКВЭД для операций с недвижимостью</p>
-          <label class="checkbox-line">
-            <input type="checkbox" id="agree" />
-            <span>
-              Я соглашаюсь с
-              <a href="/privacy.html" target="_blank" rel="noopener noreferrer">обработкой персональных данных</a>
-            </span>
-          </label>
-          <label class="checkbox-line">
-            <input type="checkbox" id="marketing" />
-            <span>Я согласен получать рекламные сообщения</span>
-          </label>
-          <p>
-            <button class="btn primary full" id="register" type="button">Создать аккаунт</button>
-          </p>
-          <p class="muted" id="registerStatus"></p>
+          <div id="registerDoneWrap" class="auth-result-wrap" hidden>
+            <p class="auth-result-text" id="registerDoneText"></p>
+            <p><button class="btn primary full" type="button" id="registerDoneClose">Понятно</button></p>
+          </div>
         </div>
       </div>
 
       <div class="auth-modal" id="resetModal">
         <div class="auth-modal-content">
-          <h3>Восстановление пароля</h3>
-          <input id="resetEmail" placeholder="Введите email" type="email" />
-          <p>
-            <button class="btn primary full" id="forgot" type="button">Отправить ссылку</button>
-            <button class="btn full" id="closeReset" type="button">Закрыть</button>
-          </p>
-          <p class="muted" id="resetStatus"></p>
+          <div class="panel-head">
+            <h3 id="resetModalTitle">Восстановление пароля</h3>
+            <button class="close-panel-action" id="closeResetXBtn" type="button" aria-label="Закрыть">×</button>
+          </div>
+          <div id="resetFormWrap">
+            <label class="field-label" for="resetEmail">Email</label>
+            <input id="resetEmail" placeholder="Введите email" type="email" />
+            <p>
+              <button class="btn primary full" id="forgot" type="button">Отправить ссылку</button>
+              <button class="btn full" id="closeReset" type="button">Закрыть</button>
+            </p>
+          </div>
+          <div id="resetDoneWrap" class="auth-result-wrap" hidden>
+            <p class="auth-result-text" id="resetDoneText"></p>
+            <p><button class="btn primary full" type="button" id="resetDoneClose">Понятно</button></p>
+          </div>
         </div>
       </div>
+  `;
+}
+
+function removeAuthDemoOverlay() {
+  document.getElementById("authDemoOverlay")?.remove();
+}
+
+function dismissDemoAuthOverlay() {
+  document.getElementById("registerModal")?.classList.remove("active");
+  document.getElementById("resetModal")?.classList.remove("active");
+  document.body.classList.remove("auth-modal-open");
+  removeAuthDemoOverlay();
+  const target = state.authOverlayReturnHash || "#/";
+  state.authOverlayReturnHash = null;
+  if (location.hash !== target) {
+    location.hash = target;
+  } else {
+    router();
+  }
+}
+
+/** С демо-карты или карточки демо — открыть вход/регистрацию оверлеем с возвратом по «×». */
+function goToAuthFromGuestDemo(nextHash) {
+  const cur = location.hash || "#/";
+  if (cur === "#/" || cur.startsWith("#/demo/property/")) {
+    state.authOverlayReturnHash = cur;
+  } else if (!cur.startsWith("#/auth")) {
+    state.authOverlayReturnHash = null;
+  }
+  location.hash = nextHash;
+}
+
+function renderDemoAuthOverlay(initialHash) {
+  removeAuthDemoOverlay();
+  const shell = document.createElement("div");
+  shell.id = "authDemoOverlay";
+  shell.className = "auth-demo-overlay";
+  shell.innerHTML = `
+    <div class="auth-demo-overlay__backdrop" data-auth-overlay-dismiss role="presentation"></div>
+    <div class="auth-demo-overlay__panel login-page login-page--overlay">
+      <button type="button" class="auth-demo-overlay__x" id="authDemoOverlayClose" aria-label="Закрыть">×</button>
+      ${authFormsInnerHtml()}
+    </div>
+  `;
+  document.body.appendChild(shell);
+  attachAuthDomListeners(true);
+  if (initialHash === "#/auth-register") {
+    requestAnimationFrame(() => document.getElementById("openRegister")?.click());
+  }
+}
+
+function renderAuthPage() {
+  removeAuthDemoOverlay();
+  state.authOverlayReturnHash = null;
+  setMapBodyClass(false);
+  app.innerHTML = `
+    <section class="login-page">
+      ${authFormsInnerHtml()}
     </section>
     ${mobileBottomNavHtml(state.token ? "cabinet" : "search")}
   `;
+  attachAuthDomListeners(false);
+}
 
+function attachAuthDomListeners(demoOverlay) {
   const setAuthModalOpen = (open) => {
     document.body.classList.toggle("auth-modal-open", Boolean(open));
+  };
+  const resetRegisterModalUi = () => {
+    document.getElementById("registerFormWrap")?.removeAttribute("hidden");
+    document.getElementById("registerDoneWrap")?.setAttribute("hidden", "");
+    const title = document.getElementById("registerModalTitle");
+    if (title) title.textContent = "Регистрация";
+    const btn = document.getElementById("register");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Создать аккаунт";
+    }
+  };
+  const resetPasswordModalUi = () => {
+    document.getElementById("resetFormWrap")?.removeAttribute("hidden");
+    document.getElementById("resetDoneWrap")?.setAttribute("hidden", "");
+    const title = document.getElementById("resetModalTitle");
+    if (title) title.textContent = "Восстановление пароля";
+    const btn = document.getElementById("forgot");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Отправить ссылку";
+    }
   };
   const toDemoEl = document.getElementById("toDemoMapBtn");
   if (toDemoEl) {
     toDemoEl.textContent = state.token ? "На карту" : "К демо без входа";
     toDemoEl.addEventListener("click", () => {
+      if (demoOverlay) {
+        dismissDemoAuthOverlay();
+        return;
+      }
       if (
         state.panelCollapsedBeforeCabinet != null ||
         state.panelSheetTBeforeCabinet != null
@@ -2682,30 +2940,64 @@ function renderAuthPage() {
     });
   }
   document.getElementById("openRegister").addEventListener("click", () => {
+    resetRegisterModalUi();
     document.getElementById("registerModal").classList.add("active");
     setAuthModalOpen(true);
   });
   document.getElementById("closeRegisterXBtn")?.addEventListener("click", () => {
+    if (demoOverlay) {
+      dismissDemoAuthOverlay();
+      return;
+    }
     document.getElementById("registerModal").classList.remove("active");
     setAuthModalOpen(false);
+    resetRegisterModalUi();
   });
   document.getElementById("openReset").addEventListener("click", () => {
+    resetPasswordModalUi();
     document.getElementById("resetModal").classList.add("active");
     setAuthModalOpen(true);
   });
   document.getElementById("closeReset").addEventListener("click", () => {
     document.getElementById("resetModal").classList.remove("active");
     setAuthModalOpen(false);
+    resetPasswordModalUi();
+  });
+  document.getElementById("closeResetXBtn")?.addEventListener("click", () => {
+    document.getElementById("resetModal").classList.remove("active");
+    setAuthModalOpen(false);
+    resetPasswordModalUi();
   });
   document.getElementById("registerModal")?.addEventListener("click", (event) => {
     if (event.target?.id !== "registerModal") return;
+    if (demoOverlay) {
+      dismissDemoAuthOverlay();
+      return;
+    }
     document.getElementById("registerModal")?.classList.remove("active");
     setAuthModalOpen(false);
+    resetRegisterModalUi();
   });
   document.getElementById("resetModal")?.addEventListener("click", (event) => {
     if (event.target?.id !== "resetModal") return;
     document.getElementById("resetModal")?.classList.remove("active");
     setAuthModalOpen(false);
+    resetPasswordModalUi();
+  });
+  document.getElementById("registerDoneClose")?.addEventListener("click", () => {
+    if (demoOverlay) {
+      resetRegisterModalUi();
+      dismissDemoAuthOverlay();
+      return;
+    }
+    document.getElementById("registerModal")?.classList.remove("active");
+    setAuthModalOpen(false);
+    resetRegisterModalUi();
+  });
+  document.getElementById("resetDoneClose")?.addEventListener("click", () => {
+    document.getElementById("resetModal")?.classList.remove("active");
+    setAuthModalOpen(false);
+    resetPasswordModalUi();
   });
   bindMobileBottomNavActions();
   updateMobileNavMetrics();
@@ -2808,18 +3100,8 @@ function renderAuthPage() {
   );
 
   document.getElementById("register").addEventListener("click", async () => {
-    const registerStatus = document.getElementById("registerStatus");
     const authStatus = document.getElementById("authStatus");
     const authNotice = document.getElementById("authNotice");
-    const showRegisterStatus = (message, tone = "error") => {
-      if (registerStatus) {
-        registerStatus.textContent = message || "";
-        registerStatus.classList.remove("status-error", "status-success");
-        registerStatus.classList.add(tone === "success" ? "status-success" : "status-error");
-        registerStatus.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
-      if (authStatus) authStatus.textContent = message || "";
-    };
     const showAuthNotice = (message) => {
       if (!authNotice) return;
       authNotice.textContent = message || "";
@@ -2828,13 +3110,14 @@ function renderAuthPage() {
         authNotice.scrollIntoView({ block: "nearest", behavior: "smooth" });
       }
     };
-    if (registerStatus) {
-      registerStatus.textContent = "";
-      registerStatus.classList.remove("status-error", "status-success");
-    }
     if (authStatus) authStatus.textContent = "";
     showAuthNotice("");
-    showRegisterStatus("Отправка...", "success");
+    const registerBtn = document.getElementById("register");
+    const originalRegisterLabel = registerBtn?.textContent || "Создать аккаунт";
+    if (registerBtn) {
+      registerBtn.disabled = true;
+      registerBtn.textContent = "Отправка…";
+    }
     try {
       const isValid =
         validateEmailField(document.getElementById("email")) &&
@@ -2871,24 +3154,34 @@ function renderAuthPage() {
         body: JSON.stringify(payload)
       });
       if (data.requiresEmailVerification) {
-        document.getElementById("registerModal")?.classList.remove("active");
-        setAuthModalOpen(false);
-        showAuthNotice(
-          data.message ||
-            "Для подтверждения почты откройте письмо, перейдите по ссылке и затем войдите в аккаунт. Если письма нет, проверьте папку Спам."
-        );
+        const doneText = document.getElementById("registerDoneText");
+        const title = document.getElementById("registerModalTitle");
+        if (title) title.textContent = "Почти готово";
+        if (doneText) {
+          doneText.textContent =
+            data.message ||
+            "На вашу почту отправлено письмо для подтверждения email. Откройте письмо, перейдите по ссылке, затем войдите в аккаунт. Если письма нет, проверьте папку «Спам».";
+        }
+        document.getElementById("registerFormWrap")?.setAttribute("hidden", "");
+        document.getElementById("registerDoneWrap")?.removeAttribute("hidden");
+        if (registerBtn) {
+          registerBtn.disabled = false;
+          registerBtn.textContent = originalRegisterLabel;
+        }
         return;
       }
       setAuth(data);
+      removeAuthDemoOverlay();
+      state.authOverlayReturnHash = null;
       location.hash = "#/";
     } catch (error) {
-      showRegisterStatus(error?.message || "Ошибка регистрации", "error");
+      if (registerBtn) {
+        registerBtn.disabled = false;
+        registerBtn.textContent = originalRegisterLabel;
+      }
+      alert(error?.message || "Ошибка регистрации");
     }
   });
-  document.getElementById("register").onpointerup = (event) => {
-    event.preventDefault();
-    document.getElementById("register")?.click();
-  };
 
   document.getElementById("login").addEventListener("click", async () => {
     try {
@@ -2905,6 +3198,8 @@ function renderAuthPage() {
         })
       });
       setAuth(data);
+      removeAuthDemoOverlay();
+      state.authOverlayReturnHash = null;
       location.hash = "#/";
     } catch (error) {
       document.getElementById("authStatus").textContent = error.message;
@@ -2912,45 +3207,49 @@ function renderAuthPage() {
   });
 
   const onForgotPassword = async () => {
-    const resetStatus = document.getElementById("resetStatus");
     const authStatus = document.getElementById("authStatus");
-    const setResetStatus = (message, tone = "error") => {
-      if (resetStatus) {
-        resetStatus.textContent = message || "";
-        resetStatus.classList.remove("status-error", "status-success");
-        resetStatus.classList.add(tone === "success" ? "status-success" : "status-error");
-      }
-      if (authStatus) authStatus.textContent = message || "";
-    };
+    if (authStatus) authStatus.textContent = "";
     if (!validateEmailField(document.getElementById("resetEmail"), "Введите email для восстановления")) {
-      setResetStatus("Введите корректный email для восстановления", "error");
+      alert("Введите корректный email для восстановления");
       return;
     }
     const forgotBtn = document.getElementById("forgot");
-    if (forgotBtn) forgotBtn.disabled = true;
-    setResetStatus("Отправка...", "success");
+    const originalForgotLabel = forgotBtn?.textContent || "Отправить ссылку";
+    if (forgotBtn) {
+      forgotBtn.disabled = true;
+      forgotBtn.textContent = "Отправка…";
+    }
     try {
       const data = await api("/api/auth/forgot-password", {
         method: "POST",
         body: JSON.stringify({ email: document.getElementById("resetEmail").value })
       });
-      setResetStatus(
-        data.message || "Ссылка отправлена. Если письма нет, проверьте папку Спам.",
-        "success"
-      );
-      document.getElementById("resetModal")?.classList.remove("active");
-      setAuthModalOpen(false);
+      const doneText = document.getElementById("resetDoneText");
+      const title = document.getElementById("resetModalTitle");
+      if (title) title.textContent = "Проверьте почту";
+      if (doneText) {
+        doneText.textContent =
+          data.message ||
+          "Если такой email зарегистрирован, мы отправили письмо со ссылкой для сброса пароля. Если письма нет, проверьте папку «Спам».";
+      }
+      document.getElementById("resetFormWrap")?.setAttribute("hidden", "");
+      document.getElementById("resetDoneWrap")?.removeAttribute("hidden");
     } catch (error) {
-      setResetStatus(error?.message || "Не удалось отправить письмо", "error");
+      alert(error?.message || "Не удалось отправить письмо");
     } finally {
-      if (forgotBtn) forgotBtn.disabled = false;
+      if (forgotBtn) {
+        forgotBtn.disabled = false;
+        forgotBtn.textContent = originalForgotLabel;
+      }
     }
   };
-  document.getElementById("forgot").onclick = onForgotPassword;
-  document.getElementById("forgot").onpointerup = (event) => {
-    event.preventDefault();
-    onForgotPassword();
-  };
+  document.getElementById("forgot").addEventListener("click", onForgotPassword);
+  if (demoOverlay) {
+    document.getElementById("authDemoOverlayClose")?.addEventListener("click", dismissDemoAuthOverlay);
+    document
+      .querySelector("#authDemoOverlay [data-auth-overlay-dismiss]")
+      ?.addEventListener("click", dismissDemoAuthOverlay);
+  }
 }
 
 function collectAuth() {
@@ -2987,6 +3286,8 @@ async function logout() {
   }
   state.token = "";
   state.user = null;
+  state.authOverlayReturnHash = null;
+  removeAuthDemoOverlay();
   localStorage.removeItem("token");
   localStorage.removeItem("user");
 }
@@ -3073,15 +3374,15 @@ async function renderCabinetPage(openForm = false) {
             </div>
             <div class="field-block">
               <label class="field-label" for="bedroomsInput">Спальни</label>
-              <input id="bedroomsInput" name="bedrooms" type="number" required />
+              <input id="bedroomsInput" name="bedrooms" type="text" inputmode="numeric" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="floorInput">Этаж</label>
-              <input id="floorInput" name="floor" type="number" required />
+              <input id="floorInput" name="floor" type="text" inputmode="numeric" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="totalFloorsInput">Этажей в доме</label>
-              <input id="totalFloorsInput" name="totalFloors" type="number" required />
+              <input id="totalFloorsInput" name="totalFloors" type="text" inputmode="numeric" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="ceilingHeightInput">Высота потолков (м)</label>
@@ -3089,7 +3390,7 @@ async function renderCabinetPage(openForm = false) {
             </div>
             <div class="field-block">
               <label class="field-label" for="commissionTotalInput">Общая комиссия (%)</label>
-              <input id="commissionTotalInput" name="commissionTotal" type="number" step="0.1" required />
+              <input id="commissionTotalInput" name="commissionTotal" type="text" inputmode="decimal" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="finishingInput">Отделка</label>
@@ -3110,7 +3411,7 @@ async function renderCabinetPage(openForm = false) {
             </div>
             <div class="field-block">
               <label class="field-label" for="commissionPartnerInput">Комиссия партнеру (%)</label>
-              <input id="commissionPartnerInput" name="commissionPartner" type="number" step="0.1" required />
+              <input id="commissionPartnerInput" name="commissionPartner" type="text" inputmode="decimal" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="phoneInput">Телефон</label>
@@ -3345,9 +3646,9 @@ async function renderCabinetPage(openForm = false) {
     form.elements.address.value = property.address || "";
     form.elements.price.value = formatSpacedNumber(property.price || "");
     form.elements.area.value = String(property.area ?? "").replace(".", ",");
-    form.elements.bedrooms.value = property.bedrooms ?? "";
-    form.elements.floor.value = property.floor ?? "";
-    form.elements.totalFloors.value = property.totalFloors ?? "";
+    form.elements.bedrooms.value = formatSpacedNumber(property.bedrooms ?? "");
+    form.elements.floor.value = formatSpacedNumber(property.floor ?? "");
+    form.elements.totalFloors.value = formatSpacedNumber(property.totalFloors ?? "");
     form.elements.ceilingHeight.value = property.ceilingHeight ?? "";
     form.elements.commissionTotal.value = property.commissionTotal ?? "";
     form.elements.finishing.value = property.finishing || "";
@@ -3394,6 +3695,11 @@ async function renderCabinetPage(openForm = false) {
     }
     formData.set("price", toRawNumberString(formData.get("price")));
     formData.set("area", normalizeDecimalInput(formData.get("area")));
+    formData.set("bedrooms", toRawNumberString(formData.get("bedrooms")));
+    formData.set("floor", toRawNumberString(formData.get("floor")));
+    formData.set("totalFloors", toRawNumberString(formData.get("totalFloors")));
+    formData.set("commissionTotal", normalizeDecimalInput(String(formData.get("commissionTotal") || "").replace(",", ".")));
+    formData.set("commissionPartner", normalizeDecimalInput(String(formData.get("commissionPartner") || "").replace(",", ".")));
     formData.set("phone", normalizeRussianPhone(formData.get("phone")));
     formData.set("telegram", normalizeTelegramNickname(formData.get("telegram")));
     if (!editingPropertyId && pendingPhotoFiles.length === 0) {
@@ -3421,6 +3727,23 @@ async function renderCabinetPage(openForm = false) {
   priceInput?.addEventListener("input", (event) => {
     const raw = toRawNumberString(event.target.value);
     event.target.value = formatSpacedNumber(raw);
+  });
+
+  const wireIntField = (id) => {
+    document.getElementById(id)?.addEventListener("input", (event) => {
+      const raw = toRawNumberString(event.target.value);
+      event.target.value = formatSpacedNumber(raw);
+    });
+  };
+  wireIntField("bedroomsInput");
+  wireIntField("floorInput");
+  wireIntField("totalFloorsInput");
+
+  document.getElementById("commissionTotalInput")?.addEventListener("input", (event) => {
+    event.target.value = normalizeDecimalInput(event.target.value);
+  });
+  document.getElementById("commissionPartnerInput")?.addEventListener("input", (event) => {
+    event.target.value = normalizeDecimalInput(event.target.value);
   });
 
   const areaInput = document.getElementById("areaInput");
@@ -4600,6 +4923,23 @@ async function router() {
     }
     if (hash === "#/cabinet" || hash === "#/cabinet/add") {
       location.hash = "#/auth";
+      return;
+    }
+    const overlayReturn = state.authOverlayReturnHash;
+    const wantsAuthOverlay =
+      hash === "#/auth" || hash === "#/auth-form" || hash === "#/auth-register";
+    if (
+      wantsAuthOverlay &&
+      overlayReturn &&
+      (overlayReturn === "#/" || overlayReturn.startsWith("#/demo/property/"))
+    ) {
+      if (overlayReturn.startsWith("#/demo/property/")) {
+        const rid = decodeURIComponent(overlayReturn.split("/")[3] || "");
+        renderDemoPropertyPage(rid);
+      } else {
+        renderPublicDemoPage();
+      }
+      renderDemoAuthOverlay(hash);
       return;
     }
     if (hash === "#/auth") {
