@@ -1196,13 +1196,13 @@ function getSheetGeometry(panel) {
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
     const hi = secondCard ? Math.max(lo, secondTopFromTrack - 18) : H;
-    /** Не выше ~58% зоны карты: один объект с длинной карточкой иначе «съедает» весь экран (скрин с 75%). */
-    const aim = Math.round(baseUsable * 0.58);
-    targetOpenVis = Math.min(H, lo, hi, aim);
+    /** Полная первая карточка с кнопками + запас над фикс. навбаром, чтобы CTA не уезжали под «Поиск» / «Кабинет». */
+    const navTapPad = Math.min(40, Math.round(navH * 0.45));
+    targetOpenVis = Math.min(H, lo + navTapPad, hi);
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
-    const aim = Math.round(baseUsable * 0.58);
-    targetOpenVis = Math.min(H, Math.round(headStrip + cardH + 16), aim);
+    const navTapPad = Math.min(40, Math.round(navH * 0.45));
+    targetOpenVis = Math.min(H, Math.round(headStrip + cardH + 16) + navTapPad);
   }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));
 
@@ -1231,9 +1231,9 @@ function primeMobileSheetAfterPanelHtml(panel) {
   const g = getSheetGeometry(panel);
   if (!g) return;
   let t;
-  if (!state.panelSheetInitialized) t = clampSheetT(g.yHalf, g);
-  else if (state.panelCollapsed) t = clampSheetT(g.yPeek, g);
-  else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
+  if (state.panelCollapsed) t = clampSheetT(g.yPeek, g);
+  else if (state.panelSheetT != null && Number.isFinite(state.panelSheetT)) t = clampSheetT(state.panelSheetT, g);
+  else if (!state.panelSheetInitialized) t = clampSheetT(g.yHalf, g);
   else t = clampSheetT(g.yHalf, g);
   s.classList.remove("left-panel--sheet-anim");
   setPanelTranslateY(s, t, false);
@@ -1270,7 +1270,6 @@ function rememberSheetPosition(panel) {
   if (!panel) return;
   if (!window.matchMedia("(max-width: 900px)").matches) return;
   if (state.panelCollapsed) return;
-  if (!state.panelSheetInitialized) return;
   const s = getSheetNode(panel);
   if (!s) return;
   const y = getPanelTranslateY(s);
@@ -1705,15 +1704,26 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
       const g = getSheetGeometry(panel);
       if (!g) return;
       let t;
-      if (!state.panelSheetInitialized) {
+      if (state.panelCollapsed) {
+        t = clampSheetT(g.yPeek, g);
+      } else if (state.panelSheetT != null && Number.isFinite(state.panelSheetT)) {
+        t = clampSheetT(state.panelSheetT, g);
+      } else if (!state.panelSheetInitialized) {
         t = clampSheetT(g.yHalf, g);
         state.panelSheetT = t;
         state.panelCollapsed = false;
         state.panelSheetInitialized = true;
-      } else if (state.panelCollapsed) t = g.yPeek;
-      else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
-      else t = clampSheetT(g.yHalf, g);
+      } else {
+        t = clampSheetT(g.yHalf, g);
+      }
       setPanelTranslateY(s, t, animate, animate ? 480 : undefined);
+      if (state.panelCollapsed) {
+        state.panelSheetT = clampSheetT(g.yPeek, g);
+      } else {
+        state.panelSheetT = t;
+        state.panelCollapsed = false;
+        state.panelSheetInitialized = true;
+      }
     });
   });
 }
