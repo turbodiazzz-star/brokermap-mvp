@@ -1109,8 +1109,10 @@ function refreshMobileSheetLayoutVars(panel) {
 }
 
 /**
- * Рулон снизу. Важно: не привязывать yMin к полному scrollHeight ленты (100+ карточек) — иначе диапазон
- * translate тысячи px, шторка «улетает» / пружинит. Ход считаем от usable и cap, контентная высота H — для коротких листов.
+ * Рулон снизу. Трек прижат к низу .left-panel; translateY вниз прячет контент.
+ * Видимая высота белого блока ≈ min(W, max(0, H − t)) при t ≥ 0 (H — scrollHeight трека, W — высота .map-wrap).
+ * Свёртка «полоска»: t = H − peekVisible. Нельзя брать yPeek = usable − peekVisible — при длинном списке
+ * шторка как будто «не сворачивалась». Старт «~полэкрана»: t = H − targetVis по viewport/wrap, не процент от (yMax−yMin).
  */
 function getSheetGeometry(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return null;
@@ -1122,13 +1124,12 @@ function getSheetGeometry(panel) {
   const navH = bottomNav
     ? Math.max(56, Math.round(bottomNav.getBoundingClientRect().height || bottomNav.offsetHeight || 56))
     : 56;
-  /** База — видимая высота минус нижняя навигация. Высоту .map-wrap используем только если она уже правдоподобна (до reflow карты на iOS часто 0 или крошечная — иначе шторка «исчезает»). */
   const baseUsable = Math.max(120, vh - navH);
-  let usable = baseUsable;
+  let W = baseUsable;
   if (wrap) {
     const rh = Math.round(wrap.getBoundingClientRect().height);
     if (rh > 80 && rh >= baseUsable * 0.3) {
-      usable = Math.min(baseUsable, rh);
+      W = Math.min(baseUsable, rh);
     }
   }
   let H =
@@ -1136,7 +1137,7 @@ function getSheetGeometry(panel) {
       ? Math.round(Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height))
       : 0;
   if (!Number.isFinite(H) || H < 88) {
-    H = Math.round(Math.min(vh, usable) * 0.52);
+    H = Math.round(Math.min(vh, W) * 0.52);
   }
   H = Math.max(92, H);
   const handleWrap = track?.querySelector(".left-panel-handle-wrap");
@@ -1144,25 +1145,31 @@ function getSheetGeometry(panel) {
   const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
   const headH = head ? Math.round(head.offsetHeight) : 52;
   const peekVisible = Math.max(124, Math.min(276, Math.round(handleH + headH + 28)));
-  let yPeek = Math.round(usable - peekVisible);
-  const yShort = Math.round(usable - H);
-  if (H < usable + peekVisible - 24) {
-    yPeek = Math.max(yShort, yPeek);
-  }
+
+  const peekT = Math.max(0, Math.round(H - peekVisible));
+  const targetHalfVis = Math.max(
+    peekVisible + 48,
+    Math.min(Math.round(W * 0.5), Math.round(baseUsable * 0.5), H)
+  );
+  const halfT = Math.max(0, Math.round(H - targetHalfVis));
+
   const tabClear = Math.max(96, Math.round(navH + 48));
   const maxPullRaw = Math.max(0, H - peekVisible);
-  const maxPullCap = Math.round(usable * 8 + tabClear + navH);
+  const maxPullCap = Math.round(baseUsable * 10 + tabClear + navH);
   const maxPull = Math.min(maxPullRaw, maxPullCap);
   const yLiftExtra = Math.min(100, Math.max(44, Math.round(vh * 0.045)));
-  let yMin = Math.round(yPeek - maxPull - yLiftExtra);
-  let yMax = yPeek;
-  if (!Number.isFinite(yMax)) yMax = Math.round(usable - peekVisible);
-  if (yMax < yMin) yMax = yMin;
-  yPeek = yMax;
+  const yPeek = peekT;
+  let yMin = Math.min(0, Math.round(yPeek - maxPull - yLiftExtra));
+  const yMax = Number.isFinite(yPeek) ? yPeek : 0;
+  if (yMax < yMin) yMin = yMax;
+
+  let yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, Math.min(halfT, yPeek)));
   const span = Math.max(0, yPeek - yMin);
-  let yHalf = span > 1 ? Math.round(yMin + span * 0.48) : Math.round(yPeek - 24);
-  yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, yHalf));
-  return { h: H, yMin, yMax: yPeek, yPeek, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible };
+  if (span > 1 && (yHalf < yMin + 8 || yHalf > yPeek - 8)) {
+    yHalf = Math.round(yMin + span * 0.48);
+    yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, yHalf));
+  }
+  return { h: H, yMin, yMax, yPeek: yMax, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible, wWrap: W };
 }
 
 function bindSheetReflowOnImages(panel, layoutId) {
