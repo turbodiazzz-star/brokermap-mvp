@@ -1181,7 +1181,7 @@ function getSheetGeometry(panel) {
     cardH = Math.round(Math.min(W * 0.44, baseUsable * 0.46));
   }
   /**
-   * Старт (скрин №1): ~60% экрана над нижней навигацией, ровно одна карточка; не наступаем на вторую.
+   * Старт: не больше ~58% высоты зоны карты, полная первая карточка если помещается; при длинной карточке — обрез до aim, вторую не показываем.
    */
   let targetOpenVis;
   if (firstCard && scrollEl) {
@@ -1191,25 +1191,18 @@ function getSheetGeometry(panel) {
       firstCard.offsetTop + scrollEl.offsetTop + scrollPad + firstCard.offsetHeight + mb;
     const cards = scrollEl.querySelectorAll("article.card, .card");
     const secondCard = cards[1] || null;
+    const lo = Math.ceil(firstBottomFromTrackTop + 16);
     const secondTopFromTrack = secondCard
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
-      : H + 1;
-    const lo = Math.ceil(firstBottomFromTrackTop + 16);
-    const hi = Math.max(lo, secondTopFromTrack - 18);
-    const aim = Math.round(baseUsable * 0.595);
-    if (!secondCard) {
-      if (aim >= lo) targetOpenVis = Math.min(H, Math.max(lo, aim));
-      else targetOpenVis = Math.min(H, lo);
-    } else if (aim >= lo && aim <= hi) {
-      targetOpenVis = Math.min(H, aim);
-    } else if (aim < lo) {
-      targetOpenVis = Math.min(H, lo);
-    } else {
-      targetOpenVis = Math.min(H, hi);
-    }
+      : Infinity;
+    const hi = secondCard ? Math.max(lo, secondTopFromTrack - 18) : H;
+    /** Не выше ~58% зоны карты: один объект с длинной карточкой иначе «съедает» весь экран (скрин с 75%). */
+    const aim = Math.round(baseUsable * 0.58);
+    targetOpenVis = Math.min(H, lo, hi, aim);
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
-    targetOpenVis = Math.min(H, Math.round(headStrip + cardH + 16));
+    const aim = Math.round(baseUsable * 0.58);
+    targetOpenVis = Math.min(H, Math.round(headStrip + cardH + 16), aim);
   }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));
 
@@ -1223,12 +1216,7 @@ function getSheetGeometry(panel) {
   const yMax = Number.isFinite(yPeek) ? yPeek : 0;
   if (yMax < yMin) yMin = yMax;
 
-  let yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, Math.min(halfT, yPeek)));
-  const span = Math.max(0, yPeek - yMin);
-  if (span > 1 && (yHalf < yMin + 8 || yHalf > yPeek - 8)) {
-    yHalf = Math.round(yMin + span * 0.48);
-    yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, yHalf));
-  }
+  const yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, Math.min(halfT, yPeek)));
   return { h: H, yMin, yMax, yPeek: yMax, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible: peekCollapsedPx, wWrap: W };
 }
 
@@ -3008,7 +2996,10 @@ function initMap() {
       state.viewportUpdateTimer = setTimeout(() => {
         const p = document.getElementById("leftPanel");
         if (getSheetNode(p)?.classList.contains("left-panel--sheet-live")) return;
-        if (state.mapLeftPanelMode === "group") return;
+        if (state.mapLeftPanelMode === "group") {
+          state.mapLeftPanelMode = null;
+          state.mapViewportListSig = "";
+        }
         if (state.areaPolygonCoords?.length) {
           renderAreaSelectionPanel(getAreaFilteredProperties());
         } else {
@@ -3124,7 +3115,10 @@ function initDemoMap() {
       state.viewportUpdateTimer = setTimeout(() => {
         const p = document.getElementById("demoLeftPanel");
         if (getSheetNode(p)?.classList.contains("left-panel--sheet-live")) return;
-        if (state.demoLeftPanelMode === "group") return;
+        if (state.demoLeftPanelMode === "group") {
+          state.demoLeftPanelMode = null;
+          state.demoViewportListSig = "";
+        }
         if (state.areaPolygonCoords?.length) {
           renderDemoAreaSelectionPanel();
         } else {
