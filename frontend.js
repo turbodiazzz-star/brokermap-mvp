@@ -1154,20 +1154,35 @@ function getSheetGeometry(panel) {
   if (scrollEl) {
     chromeOnlyH = Math.max(chromeOnlyH, Math.round(scrollEl.offsetTop + scrollPad));
   }
+
+  const layoutEl = panel.closest(".map-layout");
+  const collapsedHeadBonus =
+    layoutEl && !layoutEl.classList.contains("collapsed")
+      ? Math.round(8 + Math.min(44, navH * 0.5))
+      : 0;
+  const headBottomFromTrack =
+    head && track
+      ? Math.round(head.offsetTop + head.offsetHeight) + collapsedHeadBonus
+      : Math.round(chromeOnlyH);
   /**
-   * Свёрнуто: ручка + заголовок; fixed-навбар (z-index 120) перекрывает низ полоски — добавляем «запас» к видимой высоте.
-   * Верх списка не поднимаем выше .card-media − margin (иначе мелькает превью).
+   * Свёрнуто: граница ровно под заголовком (как «красная линия» на референсе) — без превью карточки.
+   * Не раздуваем peek «из-за навбара»: отступ под текстом задаётся в CSS у .collapsed .left-panel-head.
    */
-  const navInk = Math.min(40, Math.round(navH * 0.48) + 10);
-  let peekCollapsedPx = Math.round(chromeOnlyH + 4 + navInk);
-  if (scrollEl && firstCard) {
-    const media = firstCard.querySelector(".card-media");
-    const innerTop = media ? media.offsetTop || 0 : 0;
-    const pixelsToMediaTop = firstCard.offsetTop + innerTop + scrollEl.offsetTop + scrollPad;
-    const capByMedia = Math.round(pixelsToMediaTop - 26);
-    peekCollapsedPx = Math.min(capByMedia, peekCollapsedPx);
+  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 2);
+  if (scrollEl) {
+    const firstInScroll = scrollEl.firstElementChild;
+    const topContent =
+      firstCard != null
+        ? firstCard.offsetTop + scrollEl.offsetTop + scrollPad
+        : firstInScroll
+          ? firstInScroll.offsetTop + scrollEl.offsetTop + scrollPad
+          : Infinity;
+    if (Number.isFinite(topContent) && topContent < Infinity) {
+      const capChromeOnly = Math.floor(topContent - 8);
+      peekCollapsedPx = Math.min(peekCollapsedPx, capChromeOnly);
+    }
   }
-  peekCollapsedPx = Math.max(78, Math.min(158, peekCollapsedPx));
+  peekCollapsedPx = Math.max(56, Math.min(132, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
 
