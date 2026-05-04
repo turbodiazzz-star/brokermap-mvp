@@ -1155,18 +1155,13 @@ function getSheetGeometry(panel) {
     chromeOnlyH = Math.max(chromeOnlyH, Math.round(scrollEl.offsetTop + scrollPad));
   }
 
-  const layoutEl = panel.closest(".map-layout");
-  const collapsedHeadBonus =
-    layoutEl && !layoutEl.classList.contains("collapsed")
-      ? Math.round(8 + Math.min(44, navH * 0.5))
-      : 0;
   const headBottomFromTrack =
     head && track
-      ? Math.round(head.offsetTop + head.offsetHeight) + collapsedHeadBonus
+      ? Math.round(head.offsetTop + head.offsetHeight)
       : Math.round(chromeOnlyH);
   /**
-   * Свёрнуто: граница ровно под заголовком (как «красная линия» на референсе) — без превью карточки.
-   * Не раздуваем peek «из-за навбара»: отступ под текстом задаётся в CSS у .collapsed .left-panel-head.
+   * Свёрнуто: граница под блоком «ручка + заголовок» (padding снизу заголовка — в CSS для моб. app-sheet всегда).
+   * Обрезка по верху списка: не показывать превью карточки (cap по first content).
    */
   let peekCollapsedPx = Math.ceil(headBottomFromTrack + 2);
   if (scrollEl) {
