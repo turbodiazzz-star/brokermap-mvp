@@ -1155,17 +1155,17 @@ function getSheetGeometry(panel) {
     chromeOnlyH = Math.max(chromeOnlyH, Math.round(scrollEl.offsetTop + scrollPad));
   }
   /**
-   * Крайнее свёрнутое положение: шторка уходит ниже — видна только полоска с текстом, не картинка карточки.
-   * peekCollapsed = видимая «толщина» белого блока снизу; только хром, строго меньше верха первой карточки.
+   * Крайнее свёрнутое (скрин №2): только ручка + «Объекты…», без карточек; кнопки Поиск/Кабинет — fixed поверх (z-index), не в треке.
+   * peekCollapsed = мала, верх первой карточки целиком ниже линии видимости.
    */
-  let peekCollapsedPx = Math.round(chromeOnlyH + 8);
+  let peekCollapsedPx = Math.round(chromeOnlyH + 6);
   if (scrollEl && firstCard) {
     const cardTopFromTrackTop = firstCard.offsetTop + scrollEl.offsetTop + scrollPad;
     const onlyChrome = Math.round(chromeOnlyH + 4);
-    const belowCardTop = Math.round(cardTopFromTrackTop - 14);
-    peekCollapsedPx = belowCardTop > 70 ? Math.min(onlyChrome, belowCardTop) : onlyChrome;
+    const belowCardTop = Math.round(cardTopFromTrackTop - 22);
+    peekCollapsedPx = Math.min(onlyChrome, belowCardTop > 64 ? belowCardTop : onlyChrome);
   }
-  peekCollapsedPx = Math.max(82, Math.min(300, peekCollapsedPx));
+  peekCollapsedPx = Math.max(68, Math.min(220, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
 
@@ -1181,7 +1181,7 @@ function getSheetGeometry(panel) {
     cardH = Math.round(Math.min(W * 0.44, baseUsable * 0.46));
   }
   /**
-   * Старт: одна карточка целиком, без куска второй — высота по нижнему краю первой карточки + зазор (не по offset 50% экрана).
+   * Старт (скрин №1): ~60% экрана над нижней навигацией, ровно одна карточка; не наступаем на вторую.
    */
   let targetOpenVis;
   if (firstCard && scrollEl) {
@@ -1189,7 +1189,24 @@ function getSheetGeometry(panel) {
     const mb = Math.ceil(parseFloat(cs.marginBottom) || 0);
     const firstBottomFromTrackTop =
       firstCard.offsetTop + scrollEl.offsetTop + scrollPad + firstCard.offsetHeight + mb;
-    targetOpenVis = Math.min(H, Math.ceil(firstBottomFromTrackTop + 22));
+    const cards = scrollEl.querySelectorAll("article.card, .card");
+    const secondCard = cards[1] || null;
+    const secondTopFromTrack = secondCard
+      ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
+      : H + 1;
+    const lo = Math.ceil(firstBottomFromTrackTop + 16);
+    const hi = Math.max(lo, secondTopFromTrack - 18);
+    const aim = Math.round(baseUsable * 0.595);
+    if (!secondCard) {
+      if (aim >= lo) targetOpenVis = Math.min(H, Math.max(lo, aim));
+      else targetOpenVis = Math.min(H, lo);
+    } else if (aim >= lo && aim <= hi) {
+      targetOpenVis = Math.min(H, aim);
+    } else if (aim < lo) {
+      targetOpenVis = Math.min(H, lo);
+    } else {
+      targetOpenVis = Math.min(H, hi);
+    }
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
     targetOpenVis = Math.min(H, Math.round(headStrip + cardH + 16));
