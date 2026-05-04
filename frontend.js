@@ -1122,11 +1122,14 @@ function getSheetGeometry(panel) {
   const navH = bottomNav
     ? Math.max(56, Math.round(bottomNav.getBoundingClientRect().height || bottomNav.offsetHeight || 56))
     : 56;
-  /** Высота области карты (контейнер шторки), а не весь viewport — иначе на iOS ломается flex и шторка «уезжает». */
-  let usable = Math.max(120, vh - navH);
+  /** База — видимая высота минус нижняя навигация. Высоту .map-wrap используем только если она уже правдоподобна (до reflow карты на iOS часто 0 или крошечная — иначе шторка «исчезает»). */
+  const baseUsable = Math.max(120, vh - navH);
+  let usable = baseUsable;
   if (wrap) {
-    const rh = wrap.getBoundingClientRect().height;
-    if (rh > 80) usable = Math.max(120, Math.round(rh));
+    const rh = Math.round(wrap.getBoundingClientRect().height);
+    if (rh > 80 && rh >= baseUsable * 0.3) {
+      usable = Math.min(baseUsable, rh);
+    }
   }
   let H =
     track && Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height)
@@ -1602,6 +1605,23 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
   });
 }
 
+/** Карта / flex после первого кадра меняют высоту .map-wrap — без повторного settle шторка остаётся с неверным translate (как в «старой» рабочей версии после reflow). */
+function scheduleMobileSheetReflow(panel, layout) {
+  if (!panel || !layout || !window.matchMedia("(max-width: 900px)").matches) return;
+  const run = () => {
+    const node = getSheetNode(panel);
+    if (!node?.querySelector(".left-panel-head") || node.classList.contains("left-panel--sheet-live")) return;
+    mobileSheetSettleAfterRender(panel, layout, false);
+  };
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      run();
+      window.setTimeout(run, 90);
+      window.setTimeout(run, 280);
+    });
+  });
+}
+
 function mapCollapseLeftPanel() {
   if (state.mapLeftPanelMode === "group") {
     state.mapLeftPanelMode = null;
@@ -1741,7 +1761,12 @@ function renderDemoPanel(list, title, opts = {}) {
     state.demoLeftPanelMode = opts.listKind;
   }
   if (!resetSheetPosition) rememberSheetPosition(panel);
-  else state.panelSheetT = null;
+  else {
+    state.panelSheetT = null;
+    if (window.matchMedia("(max-width: 900px)").matches) {
+      state.panelSheetInitialized = false;
+    }
+  }
   const cards = list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`;
   const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
   panel.innerHTML = leftPanelMobileBlock(
@@ -1798,6 +1823,7 @@ function showDemoGroup(properties) {
   const sorted = properties.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
   const [focusLat, focusLon] = groupCentroid(sorted);
   renderDemoPanel(sorted, "Объектов в точке", { resetSheetPosition: true, listKind: "group" });
+  scheduleMobileSheetReflow(document.getElementById("demoLeftPanel"), document.getElementById("demoMapLayout"));
   requestAnimationFrame(() => {
     requestAnimationFrame(() => focusMapOnPlacemark(focusLat, focusLon, "demoLeftPanel"));
   });
@@ -2776,6 +2802,9 @@ function showGroup(properties) {
   if (!panel) return;
   state.mapLeftPanelMode = "group";
   state.panelSheetT = null;
+  if (window.matchMedia("(max-width: 900px)").matches) {
+    state.panelSheetInitialized = false;
+  }
   properties.sort((a, b) => b.commissionPartner - a.commissionPartner);
   const bodyHtml = `${properties.map(cardMarkup).join("")}${sheetObjectsListFooterHtml()}`;
   const [focusLat, focusLon] = groupCentroid(properties);
@@ -2796,6 +2825,7 @@ function showGroup(properties) {
     });
   });
   bindSheetReflowOnImages(panel, "mapLayout");
+  scheduleMobileSheetReflow(panel, document.getElementById("mapLayout"));
   requestAnimationFrame(() => {
     requestAnimationFrame(() => focusMapOnPlacemark(focusLat, focusLon, "leftPanel"));
   });
@@ -2894,6 +2924,7 @@ function initMap() {
       const ml = document.getElementById("mapLayout");
       if (lp && ml) {
         mobileSheetSettleAfterRender(lp, ml);
+        scheduleMobileSheetReflow(lp, ml);
       }
     }
     ensureMapDrawControls();
@@ -3005,6 +3036,7 @@ function initDemoMap() {
       const ml = document.getElementById("demoMapLayout");
       if (lp && ml) {
         mobileSheetSettleAfterRender(lp, ml);
+        scheduleMobileSheetReflow(lp, ml);
       }
     }
     ensureMapDrawControls();

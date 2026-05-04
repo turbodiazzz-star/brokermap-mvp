@@ -1619,6 +1619,7 @@ textarea {
 
   .map-page .map-layout--app-sheet.collapsed .left-panel,
   .demo-page .map-layout--app-sheet.collapsed .left-panel {
+    display: flex !important;
     visibility: visible;
     pointer-events: none;
   }
