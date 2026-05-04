@@ -1142,16 +1142,42 @@ function getSheetGeometry(panel) {
   H = Math.max(92, H);
   const handleWrap = track?.querySelector(".left-panel-handle-wrap");
   const head = track?.querySelector(".left-panel-head");
+  const scrollEl = track?.querySelector("[data-sheet-scroll]");
   const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
   const headH = head ? Math.round(head.offsetHeight) : 52;
-  const peekVisible = Math.max(124, Math.min(276, Math.round(handleH + headH + 28)));
+  const scrollPad = scrollEl ? Math.ceil(parseFloat(getComputedStyle(scrollEl).paddingTop) || 0) : 0;
+  /** Высота блока над первой карточкой (ручка + шапка + отступ), без медиа карточки — иначе в «полоске» торчит изображение. */
+  let stripBeforeFirstCard = handleH + headH + scrollPad + 10;
+  if (scrollEl) {
+    stripBeforeFirstCard = Math.max(stripBeforeFirstCard, Math.round(scrollEl.offsetTop + scrollPad + 4));
+    const firstCard = scrollEl.querySelector("article.card, .card");
+    if (firstCard) {
+      stripBeforeFirstCard = Math.max(
+        stripBeforeFirstCard,
+        Math.round(firstCard.offsetTop + scrollEl.offsetTop + scrollPad + 2)
+      );
+    }
+  }
+  const peekVisible = Math.max(100, Math.min(340, Math.round(stripBeforeFirstCard)));
 
   const peekT = Math.max(0, Math.round(H - peekVisible));
-  const targetHalfVis = Math.max(
-    peekVisible + 48,
-    Math.min(Math.round(W * 0.5), Math.round(baseUsable * 0.5), H)
+  const firstCard =
+    scrollEl?.querySelector("article.card, .card") || scrollEl?.querySelector(".card");
+  let cardH = 0;
+  if (firstCard) {
+    cardH = Math.round(
+      Math.max(firstCard.offsetHeight || 0, firstCard.getBoundingClientRect().height || 0)
+    );
+  }
+  if (!cardH) {
+    cardH = Math.round(Math.min(W * 0.44, baseUsable * 0.46));
+  }
+  /** Старт и первый «шаг» из закрытия: ручка + заголовок + одна карточка (как на референсе), с картой сверху — не ровно 50% экрана. */
+  const targetOpenVis = Math.min(
+    H,
+    Math.max(peekVisible + 52, stripBeforeFirstCard + cardH + Math.ceil(Math.max(8, W * 0.02)))
   );
-  const halfT = Math.max(0, Math.round(H - targetHalfVis));
+  const halfT = Math.max(0, Math.round(H - targetOpenVis));
 
   const tabClear = Math.max(96, Math.round(navH + 48));
   const maxPullRaw = Math.max(0, H - peekVisible);
@@ -1170,6 +1196,25 @@ function getSheetGeometry(panel) {
     yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, yHalf));
   }
   return { h: H, yMin, yMax, yPeek: yMax, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible, wWrap: W };
+}
+
+/** Сразу после innerHTML выставить translate, чтобы не было кадра с transform 0 (шторка «на весь рост»). */
+function primeMobileSheetAfterPanelHtml(panel) {
+  if (!panel || !window.matchMedia("(max-width: 900px)").matches) return;
+  const root = panel.closest(".map-layout");
+  if (!root || !root.classList.contains("map-layout--app-sheet")) return;
+  const s = getSheetNode(panel);
+  if (!s || !s.querySelector(".left-panel-head")) return;
+  void panel.offsetHeight;
+  const g = getSheetGeometry(panel);
+  if (!g) return;
+  let t;
+  if (!state.panelSheetInitialized) t = clampSheetT(g.yHalf, g);
+  else if (state.panelCollapsed) t = clampSheetT(g.yPeek, g);
+  else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
+  else t = clampSheetT(g.yHalf, g);
+  s.classList.remove("left-panel--sheet-anim");
+  setPanelTranslateY(s, t, false);
 }
 
 function bindSheetReflowOnImages(panel, layoutId) {
@@ -1294,7 +1339,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       return;
     }
     let t = ty0;
-    let v = vy * 1.06;
+    let v = vy * 0.64;
     let lastTs = performance.now();
     const tStart = lastTs;
     const step = (now) => {
@@ -1313,8 +1358,8 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       commitSheetState(t, g);
       if (state.panelCollapsed) state.panelSheetT = g.yPeek;
       else state.panelSheetT = t;
-      v *= Math.pow(0.985, dt / 16.67);
-      if (Math.abs(v) < 0.052) {
+      v *= Math.pow(0.972, dt / 16.67);
+      if (Math.abs(v) < 0.048) {
         const settle = clampSheetT(t, g);
         setPanelTranslateY(s, settle, false);
         commitSheetState(settle, g);
@@ -1419,7 +1464,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     ) {
       if (g) {
         L.classList.remove("collapsed");
-        const tOpen = state.panelSheetT != null ? clampSheetT(state.panelSheetT, g) : g.yHalf;
+        const tOpen = clampSheetT(g.yHalf, g);
         const s0 = getSheetNode(panel);
         if (s0) {
           setPanelTranslateY(s0, tOpen, true, 460);
@@ -1762,6 +1807,7 @@ function setMapDefaultLeftPanel() {
     mapCollapseLeftPanel();
   });
   const lp = document.getElementById("leftPanel");
+  primeMobileSheetAfterPanelHtml(lp);
   mobileSheetSettleAfterRender(lp, document.getElementById("mapLayout"));
 }
 
@@ -1837,6 +1883,7 @@ function renderDemoPanel(list, title, opts = {}) {
     demoCollapseLeftPanel();
   });
   bindDemoCardButtons(panel);
+  primeMobileSheetAfterPanelHtml(panel);
   bindSheetReflowOnImages(panel, "demoMapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"), resetSheetPosition);
 }
@@ -2411,6 +2458,7 @@ function renderAreaSelectionPanel(list) {
     });
   });
   bindSheetReflowOnImages(panel, "mapLayout");
+  primeMobileSheetAfterPanelHtml(panel);
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
   state.mapLeftPanelMode = "area";
 }
@@ -2458,6 +2506,7 @@ function renderViewportPanel() {
     });
   });
   bindSheetReflowOnImages(panel, "mapLayout");
+  primeMobileSheetAfterPanelHtml(panel);
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
   state.mapLeftPanelMode = "viewport";
 }
@@ -2495,6 +2544,7 @@ function setDemoDefaultLeftPanel() {
   document.getElementById("closeDemoLeftPanel")?.addEventListener("click", () => {
     demoCollapseLeftPanel();
   });
+  primeMobileSheetAfterPanelHtml(panel);
   mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"));
 }
 
@@ -2875,6 +2925,7 @@ function showGroup(properties) {
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
     mapCollapseLeftPanel();
   });
+  primeMobileSheetAfterPanelHtml(panel);
   updateMapOpenPanelButton();
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), true);
   ensureMapDrawControls();
