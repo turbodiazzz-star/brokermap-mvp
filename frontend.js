@@ -1155,18 +1155,17 @@ function getSheetGeometry(panel) {
     chromeOnlyH = Math.max(chromeOnlyH, Math.round(scrollEl.offsetTop + scrollPad));
   }
   /**
-   * Крайнее свёрнутое (скрин №2): только ручка + «Объекты…», без карточек; кнопки Поиск/Кабинет — fixed поверх (z-index), не в треке.
-   * peekCollapsed = мала, верх первой карточки целиком ниже линии видимости.
+   * Свёрнуто: только ручка + заголовок. Ни одного пикселя медиа между шапкой и fixed-навбаром.
+   * Видимая полоска ≈ peekCollapsedPx; верх обрезается выше .card-media (не только article.card).
    */
-  let peekCollapsedPx = Math.round(chromeOnlyH + 6);
+  let peekCollapsedPx = Math.round(chromeOnlyH + 2);
   if (scrollEl && firstCard) {
-    const cardTopFromTrackTop = firstCard.offsetTop + scrollEl.offsetTop + scrollPad;
-    const onlyChrome = Math.round(chromeOnlyH + 4);
-    const belowCardTop = Math.round(cardTopFromTrackTop - 22);
-    peekCollapsedPx = Math.min(onlyChrome, belowCardTop > 64 ? belowCardTop : onlyChrome);
+    const media = firstCard.querySelector(".card-media");
+    const innerTop = media ? media.offsetTop || 0 : 0;
+    const pixelsToMediaTop = firstCard.offsetTop + innerTop + scrollEl.offsetTop + scrollPad;
+    peekCollapsedPx = Math.min(Math.round(chromeOnlyH + 2), Math.round(pixelsToMediaTop - 42));
   }
-  /** Референс «свёрнуто»: узкая полоска (ручка+заголовок), без подглядывания карточки. */
-  peekCollapsedPx = Math.max(72, Math.min(198, peekCollapsedPx));
+  peekCollapsedPx = Math.max(56, Math.min(118, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
 
@@ -1193,12 +1192,17 @@ function getSheetGeometry(panel) {
     const secondTopFromTrack = secondCard
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
-    const hi = secondCard ? Math.max(lo, secondTopFromTrack - 18) : H;
-    /** Полная первая карточка + отступ от навбара; старт «как на макете» ≈61.5% зоны карты между этими границами. */
-    const navTapPad = Math.min(40, Math.round(navH * 0.45));
-    const floorCard = Math.ceil(firstBottomFromTrackTop + 16) + navTapPad;
+    /** Большой зазор перед второй карточкой — иначе торчит превью во «втором» ряду (овал на скрине). */
+    const gapBefore2ndCard = 46;
+    const hi = secondCard ? Math.max(lo, secondTopFromTrack - gapBefore2ndCard) : H;
+    const navTapPad = Math.min(44, Math.round(navH * 0.5));
+    const floorCard = Math.ceil(firstBottomFromTrackTop + 20) + navTapPad;
     const aimStart = Math.round(baseUsable * 0.615);
-    const merged = Math.min(hi, Math.max(floorCard, Math.min(aimStart, hi)));
+    let merged = Math.min(hi, Math.max(floorCard, Math.min(aimStart, hi)));
+    if (secondCard) {
+      const hardCeil = secondTopFromTrack - gapBefore2ndCard - 4;
+      merged = Math.min(merged, hardCeil);
+    }
     targetOpenVis = Math.min(H, merged);
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
