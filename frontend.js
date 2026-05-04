@@ -1236,30 +1236,9 @@ function sheetDragRubberTranslate(t, g) {
 }
 
 /**
- * Два упора: развернуто (yMin) и свёрнуто до счётчика (yPeek).
- * Нельзя сравнивать rawY с (yMin+yPeek)/2 при сильно отрицательном yMin — rawY всегда > mid, получалось
- * «всегда yPeek» или хаос из-за ветки |vy|>0.1 при единицах px/ms.
+ * После отпускания: медленный жест — остаёмся там, где палец (можно «перелистывать» объекты по одному).
+ * Быстрый свайп — инерция (friction), как раскручивание рулона; без жёсткого снапа на середину диапазона.
  */
-function pickMobileSheetSnapY(rawY, vy, g) {
-  if (!g) return rawY;
-  const span = g.yPeek - g.yMin;
-  if (!(span > 0.5)) return g.yPeek;
-  const fling = 0.55;
-  if (vy > fling) return g.yPeek;
-  if (vy < -fling) return g.yMin;
-  const u = (rawY - g.yMin) / span;
-  return u <= 0.5 ? g.yMin : g.yPeek;
-}
-
-function sheetSnapAnimate(s, targetY, g, commit) {
-  if (!s || !g) return;
-  s.classList.remove("left-panel--sheet-live");
-  const ty = clampSheetT(targetY, g);
-  setPanelTranslateY(s, ty, true, 440);
-  commit(ty, g);
-  state.panelSheetT = ty;
-}
-
 /**
  * Моб. нижний лист: шторка и карточки — один блок без внутреннего скролла списка.
  * Двигается только transform всего трека; жест с любой точки трека (кроме ссылок/полей).
@@ -1282,6 +1261,8 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   let lastCollapsedUi = state.panelCollapsed;
   let dragMaxAbsDy = 0;
   let capturingTrack = null;
+  /** Новое касание отменяет текущую инерцию (fling). */
+  let sheetDragInterruptGen = 0;
 
   const commitSheetState = (y, g) => {
     const atPeek = Math.abs(y - g.yPeek) < 10;
@@ -1299,6 +1280,59 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     }
   };
 
+  /** Медленное отпускание — остаёмся на текущем translate (листаем объекты). Быстрый свайп — инерция до остановки. */
+  const finishMobileSheetRelease = (s, normalizedT, vy, g) => {
+    const gen = sheetDragInterruptGen;
+    const V_STAY = 0.32;
+    s.classList.remove("left-panel--sheet-live");
+    const ty0 = clampSheetT(normalizedT, g);
+    if (!Number.isFinite(vy) || Math.abs(vy) < V_STAY) {
+      setPanelTranslateY(s, ty0, false);
+      commitSheetState(ty0, g);
+      if (state.panelCollapsed) state.panelSheetT = g.yPeek;
+      else state.panelSheetT = ty0;
+      return;
+    }
+    let t = ty0;
+    let v = vy * 1.06;
+    let lastTs = performance.now();
+    const tStart = lastTs;
+    const step = (now) => {
+      if (sheetDragInterruptGen !== gen) return;
+      const dt = Math.min(44, Math.max(0, now - lastTs));
+      lastTs = now;
+      t += v * dt;
+      if (t < g.yMin) {
+        t = g.yMin;
+        v *= 0.32;
+      } else if (t > g.yPeek) {
+        t = g.yPeek;
+        v *= 0.32;
+      }
+      setPanelTranslateY(s, t, false);
+      commitSheetState(t, g);
+      if (state.panelCollapsed) state.panelSheetT = g.yPeek;
+      else state.panelSheetT = t;
+      v *= Math.pow(0.985, dt / 16.67);
+      if (Math.abs(v) < 0.052) {
+        const settle = clampSheetT(t, g);
+        setPanelTranslateY(s, settle, false);
+        commitSheetState(settle, g);
+        if (state.panelCollapsed) state.panelSheetT = g.yPeek;
+        else state.panelSheetT = settle;
+        return;
+      }
+      if (now - tStart > 5200) {
+        const settle = clampSheetT(t, g);
+        setPanelTranslateY(s, settle, false);
+        commitSheetState(settle, g);
+        return;
+      }
+      requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+
   const onPointerDown = (e) => {
     if (!mq() || e.button !== 0) return;
     const track = panel.querySelector("[data-sheet-track]");
@@ -1308,6 +1342,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
 
     const s = sheetNode();
     if (!s) return;
+    sheetDragInterruptGen += 1;
     capturingTrack = track;
 
     s.classList.remove("left-panel--sheet-anim");
@@ -1398,10 +1433,15 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
 
     if (mode === "drag" && s && g) {
       e.preventDefault();
+      const nowUp = performance.now();
+      const dtUp = Math.max(1, nowUp - lastMoveTs);
+      const vyLast = (e.clientY - lastMoveY) / dtUp;
+      const vyRelease = Number.isFinite(vyLast)
+        ? velocityY * 0.38 + vyLast * 0.62
+        : velocityY;
       const rawT = getPanelTranslateY(s);
       const normalizedT = clampSheetT(rawT, g);
-      const snapY = pickMobileSheetSnapY(normalizedT, velocityY, g);
-      sheetSnapAnimate(s, snapY, g, commitSheetState);
+      finishMobileSheetRelease(s, normalizedT, vyRelease, g);
     }
 
     finishPointer(e.pointerId);
@@ -1447,8 +1487,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       if (s && g) {
         const rawT = getPanelTranslateY(s);
         const normalizedT = clampSheetT(rawT, g);
-        const snapY = pickMobileSheetSnapY(normalizedT, velocityY, g);
-        sheetSnapAnimate(s, snapY, g, commitSheetState);
+        finishMobileSheetRelease(s, normalizedT, velocityY, g);
       }
     }
     finishPointer(e.pointerId);
