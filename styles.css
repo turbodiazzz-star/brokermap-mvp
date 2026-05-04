@@ -1686,6 +1686,14 @@ textarea {
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     background: #fff;
     pointer-events: auto;
+    /* До первого JS-settle держим трек ниже экрана, чтобы не было кадра "полностью раскрыто". */
+    transform: translate3d(0, 120%, 0);
+  }
+
+  .map-page .map-layout--app-sheet .left-panel.left-panel--updating .left-panel__track,
+  .demo-page .map-layout--app-sheet .left-panel.left-panel--updating .left-panel__track {
+    transition: opacity 140ms ease;
+    opacity: 0.94;
   }
 
   .map-page .map-layout--app-sheet .left-panel-scroll,

@@ -1003,6 +1003,22 @@ function sheetObjectsListFooterHtml() {
   return `<div class="left-panel-list-footer"><p class="muted">${escapeHtml("Сейчас это все объекты по вашему поиску")}</p></div>`;
 }
 
+function maybeListFooterHtml(count) {
+  return Number(count || 0) > 1 ? sheetObjectsListFooterHtml() : "";
+}
+
+function markPanelUpdating(panel) {
+  if (!panel) return;
+  panel.classList.add("left-panel--updating");
+  if (panel.__bmUpdateTimer) {
+    window.clearTimeout(panel.__bmUpdateTimer);
+  }
+  panel.__bmUpdateTimer = window.setTimeout(() => {
+    panel.classList.remove("left-panel--updating");
+    panel.__bmUpdateTimer = null;
+  }, 180);
+}
+
 /** Узел с transform: внутр. трек (контент), не внешний clip — тогда «окно» стоит, едет лента */
 function getSheetNode(panel) {
   if (!panel) return null;
@@ -1359,6 +1375,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   let lastCollapsedUi = state.panelCollapsed;
   let dragMaxAbsDy = 0;
   let capturingTrack = null;
+  let gestureStartedFromPeek = false;
   /** Новое касание отменяет текущую инерцию (fling). */
   let sheetDragInterruptGen = 0;
 
@@ -1367,6 +1384,9 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     state.panelCollapsed = atPeek;
     if (!atPeek) {
       state.panelSheetT = y;
+      state.panelSheetOpenOffset = Math.max(0, Math.round(g.yPeek - y));
+    } else {
+      state.panelSheetOpenOffset = 0;
     }
     const lay = layout();
     if (lay) {
@@ -1384,6 +1404,15 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const V_STAY = 0.32;
     s.classList.remove("left-panel--sheet-live");
     const ty0 = clampSheetT(normalizedT, g);
+    if (gestureStartedFromPeek && ty0 < g.yPeek - 10) {
+      // Первый подъём из свёрнутого: мягко фиксируем в "стартовом" положении, не даём улетать в самый верх.
+      const mid = clampSheetT(g.yHalf, g);
+      setPanelTranslateY(s, mid, true, 300);
+      commitSheetState(mid, g);
+      if (state.panelCollapsed) state.panelSheetT = g.yPeek;
+      else state.panelSheetT = mid;
+      return;
+    }
     if (!Number.isFinite(vy) || Math.abs(vy) < V_STAY) {
       setPanelTranslateY(s, ty0, false);
       commitSheetState(ty0, g);
@@ -1449,10 +1478,12 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     setPanelTranslateY(s, frozen, false);
     startY = e.clientY;
     startSheetT = frozen;
+    gestureStartedFromPeek = state.panelCollapsed || Math.abs(frozen - (gestureGeometry?.yPeek ?? frozen)) < 10;
     lastMoveY = e.clientY;
     lastMoveTs = performance.now();
     velocityY = 0;
     dragMaxAbsDy = 0;
+    gestureStartedFromPeek = false;
     mode = "decide";
     activeId = e.pointerId;
   };
@@ -1608,6 +1639,7 @@ function snapSheetToPeek(panelId, layoutId, isDemo) {
   if (!g || !s) return;
   state.panelCollapsed = true;
   state.panelSheetT = g.yPeek;
+  state.panelSheetOpenOffset = 0;
   layout.classList.add("collapsed");
   setPanelTranslateY(s, g.yPeek, false);
   if (isDemo) updateDemoOpenPanelButton();
@@ -1951,7 +1983,8 @@ function renderDemoPanel(list, title, opts = {}) {
     }
   }
   const cards = list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`;
-  const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
+  const bodyHtml = list.length ? `${cards}${maybeListFooterHtml(list.length)}` : cards;
+  markPanelUpdating(panel);
   panel.innerHTML = leftPanelMobileBlock(
     "demoLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>${title}: ${list.length}</h3><button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -2524,7 +2557,8 @@ function renderAreaSelectionPanel(list) {
   state.mapAreaListSig = sig;
   rememberSheetPosition(panel);
   const cards = list.length ? list.map(cardMarkup).join("") : `<p class="muted">Внутри области объекты не найдены.</p>`;
-  const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
+  const bodyHtml = list.length ? `${cards}${maybeListFooterHtml(list.length)}` : cards;
+  markPanelUpdating(panel);
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>Объекты в выделенной области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -2572,7 +2606,8 @@ function renderViewportPanel() {
   state.mapViewportListSig = sig;
   rememberSheetPosition(panel);
   const cards = list.length ? list.map(cardMarkup).join("") : `<p class="muted">В текущей области объекты не найдены.</p>`;
-  const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
+  const bodyHtml = list.length ? `${cards}${maybeListFooterHtml(list.length)}` : cards;
+  markPanelUpdating(panel);
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>Объекты в видимой области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -2997,8 +3032,9 @@ function showGroup(properties) {
     state.panelSheetInitialized = false;
   }
   properties.sort((a, b) => b.commissionPartner - a.commissionPartner);
-  const bodyHtml = `${properties.map(cardMarkup).join("")}${sheetObjectsListFooterHtml()}`;
+  const bodyHtml = `${properties.map(cardMarkup).join("")}${maybeListFooterHtml(properties.length)}`;
   const [focusLat, focusLon] = groupCentroid(properties);
+  markPanelUpdating(panel);
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>Объектов в точке: ${properties.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -3066,7 +3102,7 @@ function initMap() {
         } else {
           renderViewportPanel();
         }
-      }, 420);
+      }, 220);
     });
 
     grouped.forEach((group) => {
@@ -3186,7 +3222,7 @@ function initDemoMap() {
         } else {
           renderDemoViewportPanel();
         }
-      }, 420);
+      }, 220);
     });
 
     grouped.forEach((group) => {
