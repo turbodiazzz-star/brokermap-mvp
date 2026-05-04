@@ -1146,41 +1146,58 @@ function getSheetGeometry(panel) {
   const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
   const headH = head ? Math.round(head.offsetHeight) : 52;
   const scrollPad = scrollEl ? Math.ceil(parseFloat(getComputedStyle(scrollEl).paddingTop) || 0) : 0;
-  /** Высота блока над первой карточкой (ручка + шапка + отступ), без медиа карточки — иначе в «полоске» торчит изображение. */
-  let stripBeforeFirstCard = handleH + headH + scrollPad + 10;
-  if (scrollEl) {
-    stripBeforeFirstCard = Math.max(stripBeforeFirstCard, Math.round(scrollEl.offsetTop + scrollPad + 4));
-    const firstCard = scrollEl.querySelector("article.card, .card");
-    if (firstCard) {
-      stripBeforeFirstCard = Math.max(
-        stripBeforeFirstCard,
-        Math.round(firstCard.offsetTop + scrollEl.offsetTop + scrollPad + 2)
-      );
-    }
-  }
-  const peekVisible = Math.max(100, Math.min(340, Math.round(stripBeforeFirstCard)));
-
-  const peekT = Math.max(0, Math.round(H - peekVisible));
   const firstCard =
     scrollEl?.querySelector("article.card, .card") || scrollEl?.querySelector(".card");
+
+  /** Только ручка + заголовок (верх списка карточек не входит). */
+  let chromeOnlyH = handleH + headH + 12;
+  if (scrollEl) {
+    chromeOnlyH = Math.max(chromeOnlyH, Math.round(scrollEl.offsetTop + scrollPad));
+  }
+  /**
+   * Крайнее свёрнутое положение: шторка уходит ниже — видна только полоска с текстом, не картинка карточки.
+   * peekCollapsed = видимая «толщина» белого блока снизу; только хром, строго меньше верха первой карточки.
+   */
+  let peekCollapsedPx = Math.round(chromeOnlyH + 8);
+  if (scrollEl && firstCard) {
+    const cardTopFromTrackTop = firstCard.offsetTop + scrollEl.offsetTop + scrollPad;
+    const onlyChrome = Math.round(chromeOnlyH + 4);
+    const belowCardTop = Math.round(cardTopFromTrackTop - 14);
+    peekCollapsedPx = belowCardTop > 70 ? Math.min(onlyChrome, belowCardTop) : onlyChrome;
+  }
+  peekCollapsedPx = Math.max(82, Math.min(300, peekCollapsedPx));
+
+  const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
+
   let cardH = 0;
   if (firstCard) {
+    const cs = getComputedStyle(firstCard);
+    const mb = Math.ceil(parseFloat(cs.marginBottom) || 0);
     cardH = Math.round(
-      Math.max(firstCard.offsetHeight || 0, firstCard.getBoundingClientRect().height || 0)
+      Math.max(firstCard.offsetHeight || 0, firstCard.getBoundingClientRect().height || 0) + mb
     );
   }
   if (!cardH) {
     cardH = Math.round(Math.min(W * 0.44, baseUsable * 0.46));
   }
-  /** Старт и первый «шаг» из закрытия: ручка + заголовок + одна карточка (как на референсе), с картой сверху — не ровно 50% экрана. */
-  const targetOpenVis = Math.min(
-    H,
-    Math.max(peekVisible + 52, stripBeforeFirstCard + cardH + Math.ceil(Math.max(8, W * 0.02)))
-  );
+  /**
+   * Старт: одна карточка целиком, без куска второй — высота по нижнему краю первой карточки + зазор (не по offset 50% экрана).
+   */
+  let targetOpenVis;
+  if (firstCard && scrollEl) {
+    const cs = getComputedStyle(firstCard);
+    const mb = Math.ceil(parseFloat(cs.marginBottom) || 0);
+    const firstBottomFromTrackTop =
+      firstCard.offsetTop + scrollEl.offsetTop + scrollPad + firstCard.offsetHeight + mb;
+    targetOpenVis = Math.min(H, Math.ceil(firstBottomFromTrackTop + 22));
+  } else {
+    const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
+    targetOpenVis = Math.min(H, Math.round(headStrip + cardH + 16));
+  }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));
 
   const tabClear = Math.max(96, Math.round(navH + 48));
-  const maxPullRaw = Math.max(0, H - peekVisible);
+  const maxPullRaw = Math.max(0, H - peekCollapsedPx);
   const maxPullCap = Math.round(baseUsable * 10 + tabClear + navH);
   const maxPull = Math.min(maxPullRaw, maxPullCap);
   const yLiftExtra = Math.min(100, Math.max(44, Math.round(vh * 0.045)));
@@ -1195,7 +1212,7 @@ function getSheetGeometry(panel) {
     yHalf = Math.round(yMin + span * 0.48);
     yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, yHalf));
   }
-  return { h: H, yMin, yMax, yPeek: yMax, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible, wWrap: W };
+  return { h: H, yMin, yMax, yPeek: yMax, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible: peekCollapsedPx, wWrap: W };
 }
 
 /** Сразу после innerHTML выставить translate, чтобы не было кадра с transform 0 (шторка «на весь рост»). */
