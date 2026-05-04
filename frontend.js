@@ -1606,11 +1606,17 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
 }
 
 /** Карта / flex после первого кадра меняют высоту .map-wrap — без повторного settle шторка остаётся с неверным translate (как в «старой» рабочей версии после reflow). */
-function scheduleMobileSheetReflow(panel, layout) {
+function scheduleMobileSheetReflow(panel, layout, opts = {}) {
   if (!panel || !layout || !window.matchMedia("(max-width: 900px)").matches) return;
+  let landingResetOnce = opts.resetLandingOnce === true;
   const run = () => {
     const node = getSheetNode(panel);
     if (!node?.querySelector(".left-panel-head") || node.classList.contains("left-panel--sheet-live")) return;
+    if (landingResetOnce) {
+      landingResetOnce = false;
+      state.panelSheetInitialized = false;
+      state.panelSheetT = null;
+    }
     mobileSheetSettleAfterRender(panel, layout, false);
   };
   requestAnimationFrame(() => {
@@ -1620,6 +1626,13 @@ function scheduleMobileSheetReflow(panel, layout) {
       window.setTimeout(run, 280);
     });
   });
+}
+
+/** После создания карты пересчитываем геометрию шторки с нуля (до этого был рендер без карты / с неверной высотой wrap). */
+function resetMobileSheetForMapReady() {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  state.panelSheetInitialized = false;
+  state.panelSheetT = null;
 }
 
 function mapCollapseLeftPanel() {
@@ -2914,17 +2927,21 @@ function initMap() {
       );
       map.geoObjects.add(polygon);
       state.areaPolygonObject = polygon;
+      resetMobileSheetForMapReady();
+      state.mapAreaListSig = "";
       renderAreaSelectionPanel(getAreaFilteredProperties());
     } else {
       state.areaPolygonObject = null;
+      resetMobileSheetForMapReady();
+      state.mapViewportListSig = "";
       renderViewportPanel();
     }
+    refreshMapViewport();
     {
       const lp = document.getElementById("leftPanel");
       const ml = document.getElementById("mapLayout");
       if (lp && ml) {
-        mobileSheetSettleAfterRender(lp, ml);
-        scheduleMobileSheetReflow(lp, ml);
+        scheduleMobileSheetReflow(lp, ml, { resetLandingOnce: true });
       }
     }
     ensureMapDrawControls();
@@ -3026,17 +3043,21 @@ function initDemoMap() {
       );
       map.geoObjects.add(polygon);
       state.areaPolygonObject = polygon;
+      resetMobileSheetForMapReady();
+      state.demoAreaListSig = "";
       renderDemoAreaSelectionPanel();
     } else {
       state.areaPolygonObject = null;
+      resetMobileSheetForMapReady();
+      state.demoViewportListSig = "";
       renderDemoViewportPanel();
     }
+    refreshMapViewport();
     {
       const lp = document.getElementById("demoLeftPanel");
       const ml = document.getElementById("demoMapLayout");
       if (lp && ml) {
-        mobileSheetSettleAfterRender(lp, ml);
-        scheduleMobileSheetReflow(lp, ml);
+        scheduleMobileSheetReflow(lp, ml, { resetLandingOnce: true });
       }
     }
     ensureMapDrawControls();
