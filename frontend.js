@@ -1155,17 +1155,19 @@ function getSheetGeometry(panel) {
     chromeOnlyH = Math.max(chromeOnlyH, Math.round(scrollEl.offsetTop + scrollPad));
   }
   /**
-   * Свёрнуто: только ручка + заголовок. Ни одного пикселя медиа между шапкой и fixed-навбаром.
-   * Видимая полоска ≈ peekCollapsedPx; верх обрезается выше .card-media (не только article.card).
+   * Свёрнуто: ручка + заголовок; fixed-навбар (z-index 120) перекрывает низ полоски — добавляем «запас» к видимой высоте.
+   * Верх списка не поднимаем выше .card-media − margin (иначе мелькает превью).
    */
-  let peekCollapsedPx = Math.round(chromeOnlyH + 2);
+  const navInk = Math.min(40, Math.round(navH * 0.48) + 10);
+  let peekCollapsedPx = Math.round(chromeOnlyH + 4 + navInk);
   if (scrollEl && firstCard) {
     const media = firstCard.querySelector(".card-media");
     const innerTop = media ? media.offsetTop || 0 : 0;
     const pixelsToMediaTop = firstCard.offsetTop + innerTop + scrollEl.offsetTop + scrollPad;
-    peekCollapsedPx = Math.min(Math.round(chromeOnlyH + 2), Math.round(pixelsToMediaTop - 42));
+    const capByMedia = Math.round(pixelsToMediaTop - 26);
+    peekCollapsedPx = Math.min(capByMedia, peekCollapsedPx);
   }
-  peekCollapsedPx = Math.max(56, Math.min(118, peekCollapsedPx));
+  peekCollapsedPx = Math.max(78, Math.min(158, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
 
@@ -1234,6 +1236,7 @@ function primeMobileSheetAfterPanelHtml(panel) {
   if (!root || !root.classList.contains("map-layout--app-sheet")) return;
   const s = getSheetNode(panel);
   if (!s || !s.querySelector(".left-panel-head")) return;
+  void s.offsetHeight;
   void panel.offsetHeight;
   const g = getSheetGeometry(panel);
   if (!g) return;
@@ -1924,7 +1927,7 @@ function renderDemoPanel(list, title, opts = {}) {
   bindDemoCardButtons(panel);
   primeMobileSheetAfterPanelHtml(panel);
   bindSheetReflowOnImages(panel, "demoMapLayout");
-  mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"), resetSheetPosition);
+  mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"), false);
 }
 
 function getDemoViewportPropertyList() {
@@ -2966,7 +2969,7 @@ function showGroup(properties) {
   });
   primeMobileSheetAfterPanelHtml(panel);
   updateMapOpenPanelButton();
-  mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), true);
+  mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
   ensureMapDrawControls();
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {

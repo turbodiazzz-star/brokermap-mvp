@@ -1653,6 +1653,12 @@ textarea {
     flex-shrink: 0;
   }
 
+  /* Свёрнуто: нижняя навигация fixed поверх — поднимаем текст заголовка над «съеденной» зоной. */
+  .map-page .map-layout--app-sheet.collapsed .left-panel-head,
+  .demo-page .map-layout--app-sheet.collapsed .left-panel-head {
+    padding-bottom: calc(8px + min(44px, var(--mobile-bottom-nav-height, 72px) * 0.5));
+  }
+
   .map-page .map-layout--app-sheet .left-panel__track,
   .demo-page .map-layout--app-sheet .left-panel__track {
     display: flex;
