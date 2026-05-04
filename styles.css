@@ -58,8 +58,7 @@ body.view-map #app {
 }
 
 .demo-map-wrap {
-  position: relative;
-  min-height: 100%;
+  min-height: 0;
 }
 
 .demo-map-layout,
@@ -408,16 +407,44 @@ body.view-map #app {
 .map-layout {
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-columns: 380px 1fr;
+  display: flex;
+  flex-direction: column;
 }
 
-.map-layout--app-sheet {
-  grid-template-columns: clamp(290px, 24vw, 380px) 1fr;
+/** Обёртка карты: на мобилке колонка (карта flex); шторка — absolute поверх .map-stage. */
+.map-wrap {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
-.map-layout.collapsed {
-  grid-template-columns: 1fr;
+.map-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 901px) {
+  .map-layout--app-sheet .map-wrap {
+    display: grid;
+    grid-template-columns: clamp(290px, 24vw, 380px) 1fr;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .map-layout.collapsed .map-wrap {
+    grid-template-columns: 1fr;
+  }
+
+  .map-layout--app-sheet .map-stage {
+    display: block;
+    min-height: 0;
+  }
 }
 
 .left-panel {
@@ -475,14 +502,10 @@ body.view-map #app {
 .map {
   width: 100%;
   height: 100%;
+  min-height: 0;
+  flex: 1;
   touch-action: none;
   overscroll-behavior: none;
-}
-
-.map-wrap {
-  position: relative;
-  width: 100%;
-  height: 100%;
 }
 
 .map-draw-canvas {
@@ -1543,11 +1566,22 @@ textarea {
     min-height: 0;
     position: relative;
     z-index: 0;
+    display: flex;
+    flex-direction: column;
   }
 
+  .map-page .map-layout--app-sheet .map-stage,
+  .demo-page .map-layout--app-sheet .map-stage {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    z-index: 0;
+  }
+
+  /** Шторка — слой над картой в пределах .map-wrap, не fixed на весь viewport (ломало высоту карты на iOS). */
   .map-page .map-layout--app-sheet .left-panel,
   .demo-page .map-layout--app-sheet .left-panel {
-    position: fixed;
+    position: absolute;
     left: 0;
     right: 0;
     top: 0;

@@ -758,11 +758,12 @@ function bindBrandHomeButton() {
 function ensureMapDrawControls() {
   const mapWrap = document.querySelector(".map-wrap");
   if (!mapWrap) return;
+  const toolsParent = mapWrap.querySelector(".map-stage") || mapWrap;
   let tools = mapWrap.querySelector(".map-draw-tools");
   if (!tools) {
     tools = document.createElement("div");
     tools.className = "map-draw-tools";
-    mapWrap.appendChild(tools);
+    toolsParent.appendChild(tools);
   }
   let drawBtn = document.getElementById("mapDrawAreaBtn");
   if (!drawBtn) {
@@ -1116,17 +1117,23 @@ function getSheetGeometry(panel) {
   refreshMobileSheetLayoutVars(panel);
   const vh = mobileViewportInnerHeight();
   const track = panel.querySelector("[data-sheet-track]");
+  const wrap = panel.closest(".map-wrap");
   const bottomNav = document.querySelector(".mobile-map-bottom-nav");
   const navH = bottomNav
     ? Math.max(56, Math.round(bottomNav.getBoundingClientRect().height || bottomNav.offsetHeight || 56))
     : 56;
-  const usable = Math.max(120, vh - navH);
+  /** Высота области карты (контейнер шторки), а не весь viewport — иначе на iOS ломается flex и шторка «уезжает». */
+  let usable = Math.max(120, vh - navH);
+  if (wrap) {
+    const rh = wrap.getBoundingClientRect().height;
+    if (rh > 80) usable = Math.max(120, Math.round(rh));
+  }
   let H =
     track && Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height)
       ? Math.round(Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height))
       : 0;
   if (!Number.isFinite(H) || H < 88) {
-    H = Math.round(vh * 0.52);
+    H = Math.round(Math.min(vh, usable) * 0.52);
   }
   H = Math.max(92, H);
   const handleWrap = track?.querySelector(".left-panel-handle-wrap");
@@ -1834,25 +1841,27 @@ function renderPublicDemoPage() {
         <button type="button" class="btn demo-top-strip__open" id="demoAboutOpen">О демо</button>
       </div>
       <main class="map-layout demo-map-layout map-layout--app-sheet ${state.panelCollapsed ? "collapsed" : ""}" id="demoMapLayout">
-        <aside class="left-panel" id="demoLeftPanel"></aside>
         <div class="map-wrap demo-map-wrap">
-          <div id="demoMap" class="map"></div>
-          <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
-          <button
-            class="open-left-panel-btn open-left-panel-btn--sheet"
-            type="button"
-            id="openDemoLeftPanelBtn"
-            aria-label="Открыть список объектов"
-            aria-controls="demoLeftPanel"
-            aria-expanded="false"
-            aria-hidden="true"
-          >
-            <span class="open-left-panel-ico open-left-panel-ico--mob" aria-hidden="true">▲</span>
-            <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
-            <span class="open-left-panel-label">Список</span>
-          </button>
-          ${mapDrawToolsHtml()}
-          <div class="map-sheet-left-scrim" id="demoLeftPanelScrim" aria-hidden="true"></div>
+          <aside class="left-panel" id="demoLeftPanel"></aside>
+          <div class="map-stage">
+            <div id="demoMap" class="map"></div>
+            <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
+            <button
+              class="open-left-panel-btn open-left-panel-btn--sheet"
+              type="button"
+              id="openDemoLeftPanelBtn"
+              aria-label="Открыть список объектов"
+              aria-controls="demoLeftPanel"
+              aria-expanded="false"
+              aria-hidden="true"
+            >
+              <span class="open-left-panel-ico open-left-panel-ico--mob" aria-hidden="true">▲</span>
+              <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
+              <span class="open-left-panel-label">Список</span>
+            </button>
+            ${mapDrawToolsHtml()}
+            <div class="map-sheet-left-scrim" id="demoLeftPanelScrim" aria-hidden="true"></div>
+          </div>
         </div>
       </main>
       <div class="demo-hero demo-float-desktop">
@@ -2127,34 +2136,36 @@ function renderMapPage() {
     ${topbar()}
     ${mobileMapChromeHtml(false)}
     <main class="map-layout map-layout--app-sheet ${state.panelCollapsed ? "collapsed" : ""}" id="mapLayout">
-      <aside class="left-panel" id="leftPanel">
-        ${leftPanelMobileBlock(
-          "mapLeftPanelHandleArea",
-          `<div class="left-panel-head">
+      <div class="map-wrap">
+        <aside class="left-panel" id="leftPanel">
+          ${leftPanelMobileBlock(
+            "mapLeftPanelHandleArea",
+            `<div class="left-panel-head">
             <h3>Выберите объект на карте</h3>
             <button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button>
           </div>`,
-          ""
-        )}
-      </aside>
-      <div class="map-wrap">
-        <div id="map" class="map"></div>
-        <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
-        <button
-          class="open-left-panel-btn open-left-panel-btn--sheet"
-          type="button"
-          id="openLeftPanelBtn"
-          aria-label="Открыть список объектов"
-          aria-controls="leftPanel"
-          aria-expanded="false"
-          aria-hidden="true"
-        >
-          <span class="open-left-panel-ico open-left-panel-ico--mob" aria-hidden="true">▲</span>
-          <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
-          <span class="open-left-panel-label">Список</span>
-        </button>
-        ${mapDrawToolsHtml()}
-        <div class="map-sheet-left-scrim" id="mapLeftPanelScrim" aria-hidden="true"></div>
+            ""
+          )}
+        </aside>
+        <div class="map-stage">
+          <div id="map" class="map"></div>
+          <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
+          <button
+            class="open-left-panel-btn open-left-panel-btn--sheet"
+            type="button"
+            id="openLeftPanelBtn"
+            aria-label="Открыть список объектов"
+            aria-controls="leftPanel"
+            aria-expanded="false"
+            aria-hidden="true"
+          >
+            <span class="open-left-panel-ico open-left-panel-ico--mob" aria-hidden="true">▲</span>
+            <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
+            <span class="open-left-panel-label">Список</span>
+          </button>
+          ${mapDrawToolsHtml()}
+          <div class="map-sheet-left-scrim" id="mapLeftPanelScrim" aria-hidden="true"></div>
+        </div>
       </div>
     </main>
     </section>
