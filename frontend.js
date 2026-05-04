@@ -25,6 +25,9 @@ const state = {
   demoViewportListSig: "",
   mapAreaListSig: "",
   demoAreaListSig: "",
+  /** Не перерисовывать лист по boundschange, пока открыт список группы метки (иначе DOM и transform сбрасываются). */
+  mapLeftPanelMode: null,
+  demoLeftPanelMode: null,
   filters: {
     minPrice: "",
     maxPrice: "",
@@ -1202,6 +1205,8 @@ function resetMobileSheetLandingState() {
   state.demoViewportListSig = "";
   state.mapAreaListSig = "";
   state.demoAreaListSig = "";
+  state.mapLeftPanelMode = null;
+  state.demoLeftPanelMode = null;
 }
 
 /** Лёгкое «резиновое» сопротивление у краёв жеста (как шторки iOS). */
@@ -1591,6 +1596,26 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
 }
 
 function mapCollapseLeftPanel() {
+  if (state.mapLeftPanelMode === "group") {
+    state.mapLeftPanelMode = null;
+    state.mapViewportListSig = "";
+    state.mapAreaListSig = "";
+    state.panelCollapsed = true;
+    state.panelSheetT = null;
+    const layout = document.getElementById("mapLayout");
+    layout?.classList.add("collapsed");
+    const p0 = document.getElementById("leftPanel");
+    if (p0) getSheetNode(p0)?.classList.remove("left-panel--sheet-live");
+    if (state.areaPolygonCoords?.length) {
+      renderAreaSelectionPanel(getAreaFilteredProperties());
+    } else {
+      renderViewportPanel();
+    }
+    updateMapOpenPanelButton();
+    ensureMapDrawControls();
+    refreshMapViewport();
+    return;
+  }
   state.panelCollapsed = true;
   const layout = document.getElementById("mapLayout");
   const p = document.getElementById("leftPanel");
@@ -1613,6 +1638,7 @@ function mapCollapseLeftPanel() {
 function openMapLeftPanel() {
   state.panelCollapsed = false;
   state.panelSheetT = null;
+  state.mapLeftPanelMode = null;
   state.mapViewportListSig = "";
   state.mapAreaListSig = "";
   const layout = document.getElementById("mapLayout");
@@ -1637,6 +1663,7 @@ function setMapDefaultLeftPanel() {
   if (!panel) return;
   state.mapViewportListSig = "";
   state.mapAreaListSig = "";
+  state.mapLeftPanelMode = null;
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head">
@@ -1653,6 +1680,26 @@ function setMapDefaultLeftPanel() {
 }
 
 function demoCollapseLeftPanel() {
+  if (state.demoLeftPanelMode === "group") {
+    state.demoLeftPanelMode = null;
+    state.demoViewportListSig = "";
+    state.demoAreaListSig = "";
+    state.panelCollapsed = true;
+    state.panelSheetT = null;
+    const layout = document.getElementById("demoMapLayout");
+    layout?.classList.add("collapsed");
+    const p0 = document.getElementById("demoLeftPanel");
+    if (p0) getSheetNode(p0)?.classList.remove("left-panel--sheet-live");
+    if (state.areaPolygonCoords?.length) {
+      renderDemoAreaSelectionPanel();
+    } else {
+      renderDemoViewportPanel();
+    }
+    updateDemoOpenPanelButton();
+    ensureMapDrawControls();
+    refreshMapViewport();
+    return;
+  }
   state.panelCollapsed = true;
   const layout = document.getElementById("demoMapLayout");
   const p = document.getElementById("demoLeftPanel");
@@ -1683,6 +1730,9 @@ function renderDemoPanel(list, title, opts = {}) {
   const resetSheetPosition = opts.resetSheetPosition === true;
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
+  if (opts.listKind === "viewport" || opts.listKind === "area" || opts.listKind === "group") {
+    state.demoLeftPanelMode = opts.listKind;
+  }
   if (!resetSheetPosition) rememberSheetPosition(panel);
   else state.panelSheetT = null;
   const cards = list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`;
@@ -1709,25 +1759,27 @@ function getDemoViewportPropertyList() {
 }
 
 function renderDemoViewportPanel() {
+  if (state.demoLeftPanelMode === "group") return;
   const panel = document.getElementById("demoLeftPanel");
   const list = getDemoViewportPropertyList().sort((a, b) => b.commissionPartner - a.commissionPartner);
   const sig = `dv:${list.map((i) => i.id).join(",")}|n:${list.length}`;
   const hasTrack = Boolean(panel?.querySelector("[data-sheet-track]"));
-  if (hasTrack && sig === state.demoViewportListSig) return;
+  if (hasTrack && sig === state.demoViewportListSig && state.demoLeftPanelMode === "viewport") return;
   state.demoViewportListSig = sig;
-  renderDemoPanel(list, "Объекты в видимой области");
+  renderDemoPanel(list, "Объекты в видимой области", { listKind: "viewport" });
 }
 
 function renderDemoAreaSelectionPanel() {
+  if (state.demoLeftPanelMode === "group") return;
   const panel = document.getElementById("demoLeftPanel");
   const list = getAreaFilteredProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
   const poly = state.areaPolygonCoords || [];
   const polyKey = poly.length ? `${poly.length}:${Math.round((poly[0]?.[0] || 0) * 1e5)}` : "0";
   const sig = `da:${polyKey}:${list.map((i) => i.id).join(",")}|n:${list.length}`;
   const hasTrack = Boolean(panel?.querySelector("[data-sheet-track]"));
-  if (hasTrack && sig === state.demoAreaListSig) return;
+  if (hasTrack && sig === state.demoAreaListSig && state.demoLeftPanelMode === "area") return;
   state.demoAreaListSig = sig;
-  renderDemoPanel(list, "Объекты в выделенной области");
+  renderDemoPanel(list, "Объекты в выделенной области", { listKind: "area" });
 }
 
 function showDemoGroup(properties) {
@@ -1738,7 +1790,7 @@ function showDemoGroup(properties) {
   updateDemoOpenPanelButton();
   const sorted = properties.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
   const [focusLat, focusLon] = groupCentroid(sorted);
-  renderDemoPanel(sorted, "Объектов в точке", { resetSheetPosition: true });
+  renderDemoPanel(sorted, "Объектов в точке", { resetSheetPosition: true, listKind: "group" });
   requestAnimationFrame(() => {
     requestAnimationFrame(() => focusMapOnPlacemark(focusLat, focusLon, "demoLeftPanel"));
   });
@@ -1751,6 +1803,7 @@ function applyDemoFilters() {
   state.properties = filterPropertiesByState(state.demoAllProperties);
   state.demoViewportListSig = "";
   state.demoAreaListSig = "";
+  state.demoLeftPanelMode = null;
   if (window.ymaps) {
     ymaps.ready(() => initDemoMap());
   } else {
@@ -1971,6 +2024,7 @@ function renderPublicDemoPage() {
   function openDemoLeftPanel() {
     state.panelCollapsed = false;
     state.panelSheetT = null;
+    state.demoLeftPanelMode = null;
     state.demoViewportListSig = "";
     state.demoAreaListSig = "";
     const layout = document.getElementById("demoMapLayout");
@@ -2231,13 +2285,14 @@ function getAreaFilteredProperties() {
 }
 
 function renderAreaSelectionPanel(list) {
+  if (state.mapLeftPanelMode === "group") return;
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
   const poly = state.areaPolygonCoords || [];
   const polyKey = poly.length ? `${poly.length}:${Math.round((poly[0]?.[0] || 0) * 1e5)}` : "0";
   const sig = `a:${polyKey}:${list.map((i) => i.id).join(",")}|n:${list.length}`;
   const hasTrack = Boolean(panel.querySelector("[data-sheet-track]"));
-  if (hasTrack && sig === state.mapAreaListSig) return;
+  if (hasTrack && sig === state.mapAreaListSig && state.mapLeftPanelMode === "area") return;
   state.mapAreaListSig = sig;
   rememberSheetPosition(panel);
   const cards = list.length ? list.map(cardMarkup).join("") : `<p class="muted">Внутри области объекты не найдены.</p>`;
@@ -2257,6 +2312,7 @@ function renderAreaSelectionPanel(list) {
   });
   bindSheetReflowOnImages(panel, "mapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
+  state.mapLeftPanelMode = "area";
 }
 
 function isPointInsideBounds(lat, lon, bounds) {
@@ -2277,12 +2333,13 @@ function getViewportProperties() {
 }
 
 function renderViewportPanel() {
+  if (state.mapLeftPanelMode === "group") return;
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
   const list = getViewportProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
   const sig = `v:${list.map((i) => i.id).join(",")}|n:${list.length}`;
   const hasTrack = Boolean(panel.querySelector("[data-sheet-track]"));
-  if (hasTrack && sig === state.mapViewportListSig) return;
+  if (hasTrack && sig === state.mapViewportListSig && state.mapLeftPanelMode === "viewport") return;
   state.mapViewportListSig = sig;
   rememberSheetPosition(panel);
   const cards = list.length ? list.map(cardMarkup).join("") : `<p class="muted">В текущей области объекты не найдены.</p>`;
@@ -2302,6 +2359,7 @@ function renderViewportPanel() {
   });
   bindSheetReflowOnImages(panel, "mapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
+  state.mapLeftPanelMode = "viewport";
 }
 
 function syncDrawButtons() {
@@ -2325,6 +2383,7 @@ function setDemoDefaultLeftPanel() {
   if (!panel) return;
   state.demoViewportListSig = "";
   state.demoAreaListSig = "";
+  state.demoLeftPanelMode = null;
   panel.innerHTML = leftPanelMobileBlock(
     "demoLeftPanelHandleArea",
     `<div class="left-panel-head">
@@ -2700,6 +2759,7 @@ function showGroup(properties) {
   document.getElementById("mapLayout")?.classList.remove("collapsed");
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
+  state.mapLeftPanelMode = "group";
   state.panelSheetT = null;
   properties.sort((a, b) => b.commissionPartner - a.commissionPartner);
   const bodyHtml = `${properties.map(cardMarkup).join("")}${sheetObjectsListFooterHtml()}`;
@@ -2738,6 +2798,7 @@ function initMap() {
     if (state.mapInstance) {
       state.mapInstance.destroy();
       state.mapInstance = null;
+      state.mapLeftPanelMode = null;
     }
 
     const map = new ymaps.Map("map", {
@@ -2758,6 +2819,7 @@ function initMap() {
       state.viewportUpdateTimer = setTimeout(() => {
         const p = document.getElementById("leftPanel");
         if (getSheetNode(p)?.classList.contains("left-panel--sheet-live")) return;
+        if (state.mapLeftPanelMode === "group") return;
         if (state.areaPolygonCoords?.length) {
           renderAreaSelectionPanel(getAreaFilteredProperties());
         } else {
@@ -2847,6 +2909,7 @@ function initDemoMap() {
     if (state.mapInstance) {
       state.mapInstance.destroy();
       state.mapInstance = null;
+      state.demoLeftPanelMode = null;
     }
 
     const map = new ymaps.Map("demoMap", {
@@ -2867,6 +2930,7 @@ function initDemoMap() {
       state.viewportUpdateTimer = setTimeout(() => {
         const p = document.getElementById("demoLeftPanel");
         if (getSheetNode(p)?.classList.contains("left-panel--sheet-live")) return;
+        if (state.demoLeftPanelMode === "group") return;
         if (state.areaPolygonCoords?.length) {
           renderDemoAreaSelectionPanel();
         } else {
