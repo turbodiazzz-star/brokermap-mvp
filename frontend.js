@@ -1165,7 +1165,8 @@ function getSheetGeometry(panel) {
     const belowCardTop = Math.round(cardTopFromTrackTop - 22);
     peekCollapsedPx = Math.min(onlyChrome, belowCardTop > 64 ? belowCardTop : onlyChrome);
   }
-  peekCollapsedPx = Math.max(68, Math.min(220, peekCollapsedPx));
+  /** Референс «свёрнуто»: узкая полоска (ручка+заголовок), без подглядывания карточки. */
+  peekCollapsedPx = Math.max(72, Math.min(198, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
 
@@ -1180,9 +1181,6 @@ function getSheetGeometry(panel) {
   if (!cardH) {
     cardH = Math.round(Math.min(W * 0.44, baseUsable * 0.46));
   }
-  /**
-   * Старт: не больше ~58% высоты зоны карты, полная первая карточка если помещается; при длинной карточке — обрез до aim, вторую не показываем.
-   */
   let targetOpenVis;
   if (firstCard && scrollEl) {
     const cs = getComputedStyle(firstCard);
@@ -1196,13 +1194,18 @@ function getSheetGeometry(panel) {
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
     const hi = secondCard ? Math.max(lo, secondTopFromTrack - 18) : H;
-    /** Полная первая карточка с кнопками + запас над фикс. навбаром, чтобы CTA не уезжали под «Поиск» / «Кабинет». */
+    /** Полная первая карточка + отступ от навбара; старт «как на макете» ≈61.5% зоны карты между этими границами. */
     const navTapPad = Math.min(40, Math.round(navH * 0.45));
-    targetOpenVis = Math.min(H, lo + navTapPad, hi);
+    const floorCard = Math.ceil(firstBottomFromTrackTop + 16) + navTapPad;
+    const aimStart = Math.round(baseUsable * 0.615);
+    const merged = Math.min(hi, Math.max(floorCard, Math.min(aimStart, hi)));
+    targetOpenVis = Math.min(H, merged);
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
     const navTapPad = Math.min(40, Math.round(navH * 0.45));
-    targetOpenVis = Math.min(H, Math.round(headStrip + cardH + 16) + navTapPad);
+    const floorList = Math.round(headStrip + cardH + 16) + navTapPad;
+    const aimStart = Math.round(baseUsable * 0.615);
+    targetOpenVis = Math.min(H, Math.max(floorList, Math.min(aimStart, H)));
   }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));
 

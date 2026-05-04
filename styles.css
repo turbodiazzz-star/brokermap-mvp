@@ -1852,6 +1852,74 @@ textarea {
     font-weight: 500;
     border-radius: 10px;
   }
+
+  /**
+   * Та же DOM-разметка (трек + scroll), что и на мобилке, но на широком экране — сетка и скролл списка, без transform-шторки.
+   * Сбрасываем стили из @media (max-width: 900px), иначе overflow-y: visible / touch-action: none ломают прокрутку карточек.
+   */
+  .map-page .map-layout--app-sheet .left-panel,
+  .demo-page .map-layout--app-sheet .left-panel {
+    position: relative !important;
+    inset: auto !important;
+    width: auto !important;
+    z-index: auto;
+    overflow: hidden;
+    pointer-events: auto !important;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    padding: 16px;
+    background: #fff;
+    justify-content: flex-start;
+    border-right: 1px solid var(--border);
+  }
+
+  .map-page .map-layout--app-sheet .left-panel__track,
+  .demo-page .map-layout--app-sheet .left-panel__track {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transform: none !important;
+    will-change: auto;
+    touch-action: auto;
+    box-shadow: none !important;
+    border-radius: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    max-width: none !important;
+    width: 100% !important;
+  }
+
+  .map-page .map-layout--app-sheet .left-panel-scroll,
+  .demo-page .map-layout--app-sheet .left-panel-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+    overscroll-behavior-x: none;
+    touch-action: pan-y !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .map-page .map-layout--app-sheet .left-panel__track::after,
+  .demo-page .map-layout--app-sheet .left-panel__track::after {
+    display: none !important;
+  }
+
+  .map-page .map-layout--app-sheet .left-panel-handle-wrap,
+  .demo-page .map-layout--app-sheet .left-panel-handle-wrap {
+    display: none !important;
+  }
+
+  .map-page .map-layout--app-sheet .close-left-panel,
+  .demo-page .map-layout--app-sheet .close-left-panel {
+    display: inline-flex !important;
+  }
 }
 
 @media (max-width: 480px) {
