@@ -7,8 +7,6 @@
   --brand: #1760ff;
   --brand-dark: #0e48c4;
   --premium: #ffb547;
-  --mobile-bottom-nav-height: 72px;
-  --mobile-sheet-top-gap: 104px;
 }
 
 * {
@@ -58,7 +56,8 @@ body.view-map #app {
 }
 
 .demo-map-wrap {
-  min-height: 0;
+  position: relative;
+  min-height: 100%;
 }
 
 .demo-map-layout,
@@ -268,7 +267,7 @@ body.view-map #app {
 }
 
 .map-layout--app-sheet .left-panel {
-  width: 100%;
+  width: clamp(290px, 24vw, 380px);
 }
 
 .demo-blur-line {
@@ -407,44 +406,12 @@ body.view-map #app {
 .map-layout {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 380px 1fr;
 }
 
-/** Обёртка карты: на мобилке колонка (карта flex); шторка — absolute поверх .map-stage. */
-.map-wrap {
-  position: relative;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-}
-
-.map-stage {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-@media (min-width: 901px) {
-  .map-layout--app-sheet .map-wrap {
-    display: grid;
-    grid-template-columns: clamp(290px, 24vw, 380px) 1fr;
-    grid-template-rows: minmax(0, 1fr);
-    align-items: stretch;
-  }
-
-  .map-layout.collapsed .map-wrap {
-    grid-template-columns: 1fr;
-  }
-
-  .map-layout--app-sheet .map-stage {
-    display: block;
-    min-height: 0;
-  }
+.map-layout.collapsed {
+  grid-template-columns: 1fr;
 }
 
 .left-panel {
@@ -476,36 +443,17 @@ body.view-map #app {
   line-height: 1;
 }
 
-.left-panel-list-footer {
-  padding: 16px 4px max(28px, env(safe-area-inset-bottom, 0px));
-}
-
-.left-panel-list-footer p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.45;
-  text-align: center;
-}
-
-/* Десктоп: список скроллится. На моб. app-sheet переопределяется — шторка без внутреннего скролла, движется целиком. */
-.left-panel-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior-y: contain;
-  overscroll-behavior-x: none;
-  -webkit-overflow-scrolling: touch;
-  touch-action: pan-y;
-}
-
 .map {
   width: 100%;
   height: 100%;
-  min-height: 0;
-  flex: 1;
   touch-action: none;
   overscroll-behavior: none;
+}
+
+.map-wrap {
+  position: relative;
+  width: 100%;
+  height: 100%;
 }
 
 .map-draw-canvas {
@@ -548,80 +496,28 @@ body.view-map #app {
   right: max(14px, env(safe-area-inset-right, 0px));
   top: max(14px, env(safe-area-inset-top, 0px));
   transform: none;
-  z-index: 20;
+  z-index: 5000;
   display: flex !important;
   flex-direction: column;
   gap: 8px;
-  align-items: flex-end;
 }
 
 .map-draw-btn {
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  border: 1px solid #cdd8f3;
-  background: linear-gradient(180deg, #ffffff 0%, #f3f7ff 100%);
-  color: #1a4ed8;
+  border: 1px solid #d4dcef;
+  background: #fff;
+  color: var(--brand);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
-  box-shadow: 0 8px 20px rgba(19, 32, 62, 0.18);
-  transition: transform 0.16s ease, box-shadow 0.2s ease, background 0.2s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  line-height: 1;
-}
-
-.map-draw-btn__icon {
-  display: inline-block;
-  line-height: 1;
-  transform: translateY(-0.5px);
+  box-shadow: 0 3px 10px rgba(19, 32, 62, 0.18);
 }
 
 .map-draw-btn.active {
   border-color: var(--brand);
-  color: #fff;
-  background: linear-gradient(180deg, #2f67ff 0%, #1755f5 100%);
-  box-shadow: 0 10px 22px rgba(23, 96, 255, 0.36);
-}
-
-.map-draw-btn:active {
-  transform: translateY(1px) scale(0.98);
-}
-
-.map-draw-hint {
-  position: absolute;
-  right: calc(100% + 8px);
-  top: 0;
-  width: min(250px, calc(100vw - 84px));
-  border-radius: 12px;
-  border: 1px solid #dbe4fb;
-  background: rgba(255, 255, 255, 0.98);
-  color: #1f2a44;
-  font-size: 12px;
-  line-height: 1.35;
-  padding: 10px 28px 10px 10px;
-  box-shadow: 0 10px 24px rgba(19, 32, 62, 0.14);
-}
-
-.map-draw-hint.hidden {
-  display: none;
-}
-
-.map-draw-hint__close {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: #6f7788;
-  font-size: 14px;
-  cursor: pointer;
+  background: #eff4ff;
 }
 
 /* Демо: плашка «Демо BrokerMap» вверху справа — кисть смещена вниз, не перекрывает текст */
@@ -648,121 +544,6 @@ body.view-map #app {
 .card.premium {
   border-color: var(--premium);
   box-shadow: 0 8px 18px rgba(255, 181, 71, 0.26);
-}
-
-.card.card--feed {
-  padding: 0;
-  overflow: hidden;
-}
-
-.card.card--feed .card-body {
-  padding: 10px 12px 12px;
-}
-
-.card-media {
-  position: relative;
-}
-
-.card.card--feed .card-media__img {
-  display: block;
-  width: 100%;
-  height: 172px;
-  object-fit: cover;
-}
-
-.card-photo-dots {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 10px;
-  display: flex;
-  justify-content: center;
-  gap: 5px;
-  pointer-events: none;
-}
-
-.card-photo-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.55);
-}
-
-.card-photo-dot--active {
-  background: #fff;
-}
-
-.card-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 12px 0;
-}
-
-.card-badge {
-  display: inline-flex;
-  align-items: center;
-  font-size: 11px;
-  line-height: 1.2;
-  font-weight: 600;
-  padding: 4px 9px;
-  border-radius: 999px;
-}
-
-.card-badge--partner {
-  color: #047857;
-  background: #ecfdf5;
-  border: 1px solid #a7f3d0;
-}
-
-.card-badge--amount {
-  color: #1d4ed8;
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
-}
-
-.card-price {
-  font-size: 20px;
-  font-weight: 700;
-  margin: 2px 0 6px;
-}
-
-.card-spec {
-  font-size: 13px;
-  color: var(--text);
-  margin: 0 0 4px;
-}
-
-.card-address {
-  font-size: 13px;
-  margin: 0 0 6px;
-}
-
-.card-metro {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: var(--muted);
-  margin: 0 0 10px;
-}
-
-.card-metro__dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #22c55e;
-  flex-shrink: 0;
-}
-
-.card-actions {
-  margin: 0;
-}
-
-.card-actions--split {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
 }
 
 .card img {
@@ -955,109 +736,16 @@ body.view-map #app {
   min-height: 100vh;
   background: #f3f3f3;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
   padding: 20px;
   padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
 }
 
-/* Вход / регистрация поверх демо-карты (не отдельная страница) */
-.auth-demo-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 950;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: center;
-  pointer-events: none;
-}
-
-.auth-demo-overlay__backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(15, 23, 42, 0.45);
-  pointer-events: auto;
-}
-
-.auth-demo-overlay__panel {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  max-width: 440px;
-  max-height: min(92dvh, 92vh);
-  overflow-y: auto;
-  margin: 0 auto;
-  border-radius: 18px 18px 0 0;
-  box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.2);
-  pointer-events: auto;
-  padding-top: 8px;
-}
-
-.login-page.login-page--overlay {
-  min-height: 0;
-  max-height: min(92dvh, 92vh);
-  border-radius: 18px 18px 0 0;
-  margin: 0;
-  padding-top: 44px;
-}
-
-.auth-demo-overlay__x {
-  position: absolute;
-  top: max(10px, env(safe-area-inset-top, 0px));
-  right: max(12px, env(safe-area-inset-right, 0px));
-  z-index: 3;
-  width: 40px;
-  height: 40px;
-  border: none;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.95);
-  color: #334155;
-  font-size: 24px;
-  line-height: 1;
-  cursor: pointer;
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
-}
-
-.auth-demo-overlay__x:active {
-  transform: scale(0.96);
-}
-
 .login-wrapper {
   width: 100%;
   max-width: 420px;
-}
-
-.contact-us-card {
-  width: 100%;
-  max-width: 420px;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 14px;
-  box-shadow: 0 8px 20px rgba(16, 24, 40, 0.08);
-}
-
-.contact-us-card h4 {
-  margin: 0 0 6px;
-}
-
-.contact-us-card p {
-  margin: 0 0 8px;
-}
-
-.auth-result-wrap {
-  padding: 4px 0 2px;
-}
-
-.auth-result-text {
-  margin: 0 0 14px;
-  font-size: 14px;
-  line-height: 1.45;
-  color: var(--text);
 }
 
 .login-box {
@@ -1070,22 +758,6 @@ body.view-map #app {
 .login-box h3,
 .auth-modal-content h3 {
   margin-top: 0;
-}
-
-.auth-notice {
-  display: none;
-  margin: 0 0 10px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-  color: #1e3a8a;
-  font-size: 13px;
-  line-height: 1.35;
-}
-
-.auth-notice.visible {
-  display: block;
 }
 
 .login-box input,
@@ -1124,11 +796,6 @@ body.view-map #app {
   border-radius: 20px 20px 0 0;
   max-height: 90vh;
   overflow-y: auto;
-}
-
-.auth-modal-content--register {
-  border: 1px solid #dbe4fb;
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.24);
 }
 
 .phone-group {
@@ -1273,18 +940,6 @@ select {
   font-family: inherit;
 }
 
-.input-invalid {
-  border-color: #dc2626 !important;
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
-}
-
-.field-error-text {
-  margin: 6px 0 0;
-  font-size: 12px;
-  color: #dc2626;
-  line-height: 1.3;
-}
-
 textarea {
   min-height: 120px;
 }
@@ -1296,7 +951,7 @@ textarea {
   display: none;
   align-items: center;
   justify-content: center;
-  z-index: 300;
+  z-index: 50;
 }
 
 .modal.open {
@@ -1314,14 +969,6 @@ textarea {
   width: min(980px, 94vw);
   max-height: 88vh;
   overflow: visible;
-}
-
-.filters-modal-card {
-  width: min(620px, 92vw);
-  max-height: min(82vh, 760px);
-  overflow-y: auto;
-  border: 1px solid #dbe4fb;
-  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.24);
 }
 
 #propertyFormWrap {
@@ -1375,34 +1022,6 @@ textarea {
 }
 
 @media (max-width: 900px) {
-  body.auth-modal-open .mobile-map-bottom-nav {
-    display: none !important;
-  }
-
-  .auth-modal.active {
-    align-items: flex-start;
-    justify-content: center;
-    padding-top: max(64px, calc(env(safe-area-inset-top, 0px) + 54px));
-    padding-bottom: 10px;
-  }
-
-  .auth-modal-content {
-    width: calc(100% - 20px);
-    max-width: none;
-    margin: 0 10px;
-    border-radius: 14px;
-    max-height: calc(100dvh - max(92px, calc(env(safe-area-inset-top, 0px) + 80px)) - 10px);
-    overflow-y: auto;
-  }
-
-  .auth-modal-content--register {
-    border: 1px solid #dbe4fb;
-  }
-
-  .topbar.topbar--no-filters .filters {
-    display: none !important;
-  }
-
   .demo-page,
   .map-page {
     min-height: 100%;
@@ -1518,23 +1137,14 @@ textarea {
     background: rgba(23, 96, 255, 0.06);
   }
 
-  .mobile-map-bottom-nav__btn:active,
-  .mobile-map-bottom-nav__btn:focus-visible {
-    border-color: var(--brand);
-    color: var(--brand);
-    font-weight: 600;
-    background: rgba(23, 96, 255, 0.06);
-  }
-
   .demo-page > .demo-top-strip {
     margin-top: 0;
   }
 
-  /* Моб. шторка: без кнопки «Список» — только тянуть за блок (ручка/шапка/карточки). На десктопе кнопка в @media (min-width: 901px). */
-  .map-page .map-layout--app-sheet .map-wrap .open-left-panel-btn--sheet,
-  .demo-page .map-layout--app-sheet .map-wrap .open-left-panel-btn--sheet {
+  /* Круглую кнопку на моб. убираем: открытие — нижний лист */
+  .map-page .map-wrap .open-left-panel-btn--sheet,
+  .demo-page .map-wrap .open-left-panel-btn--sheet {
     display: none !important;
-    pointer-events: none !important;
   }
 
   .open-left-panel-btn--sheet .open-left-panel-ico--desk {
@@ -1564,24 +1174,11 @@ textarea {
   .demo-page .map-layout--app-sheet .map-wrap {
     flex: 1;
     min-height: 0;
-    position: relative;
-    z-index: 0;
-    display: flex;
-    flex-direction: column;
   }
 
-  .map-page .map-layout--app-sheet .map-stage,
-  .demo-page .map-layout--app-sheet .map-stage {
-    flex: 1;
-    min-height: 0;
-    position: relative;
-    z-index: 0;
-  }
-
-  /** Шторка — слой над картой в пределах .map-wrap, не fixed на весь viewport (ломало высоту карты на iOS). */
   .map-page .map-layout--app-sheet .left-panel,
   .demo-page .map-layout--app-sheet .left-panel {
-    position: absolute;
+    position: fixed;
     left: 0;
     right: 0;
     top: 0;
@@ -1600,11 +1197,9 @@ textarea {
     justify-content: flex-end;
   }
 
-  /* В полушторке должна быть видна карта сверху — фон только у белого трека, не на весь экран. */
-
   .map-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-anim,
   .demo-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-anim {
-    transition: transform 0.44s cubic-bezier(0.32, 0.72, 0, 1);
+    transition: transform 0.48s cubic-bezier(0.32, 1.16, 0.34, 1);
   }
 
   .map-page .map-layout--app-sheet .left-panel__track.left-panel--sheet-live,
@@ -1619,6 +1214,7 @@ textarea {
 
   .map-page .map-layout--app-sheet.collapsed .left-panel,
   .demo-page .map-layout--app-sheet.collapsed .left-panel {
+    display: flex !important;
     visibility: visible;
     pointer-events: none;
   }
@@ -1654,46 +1250,19 @@ textarea {
 
   .map-page .map-layout--app-sheet .left-panel__track,
   .demo-page .map-layout--app-sheet .left-panel__track {
-    display: flex;
-    flex-direction: column;
-    flex: 0 0 auto;
-    /* Вся белая штора = полная высота контента; «пролистывание» объектов = движение translateY всего блока */
-    height: auto;
-    max-height: none;
-    min-height: 72px;
     will-change: transform;
+    min-height: 0;
     width: 100%;
     max-width: 100vw;
     box-sizing: border-box;
     overflow: visible;
-    touch-action: none;
     border-top: 1px solid var(--border);
     border-radius: 16px 16px 0 0;
-    /* Вторым слоем — фон под «носителем», чтобы между шторкой и нижней навигацией не зияла карта. */
-    box-shadow:
-      0 -6px 28px rgba(16, 24, 40, 0.18),
-      0 calc(140px + 50vmin) 0 calc(140px + 50vmin) rgb(255, 255, 255);
+    box-shadow: 0 -6px 28px rgba(16, 24, 40, 0.18);
     padding: 0 12px 12px;
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     background: #fff;
     pointer-events: auto;
-  }
-
-  .map-page .map-layout--app-sheet .left-panel-scroll,
-  .demo-page .map-layout--app-sheet .left-panel-scroll {
-    flex: 0 0 auto;
-    min-height: 0;
-    max-height: none;
-    overflow-x: hidden;
-    overflow-y: visible;
-    overscroll-behavior: none;
-    touch-action: none;
-    -webkit-overflow-scrolling: auto;
-  }
-
-  .map-page .map-layout--app-sheet .left-panel__track button,
-  .demo-page .map-layout--app-sheet .left-panel__track button {
-    touch-action: manipulation;
   }
 
   .map-page .map-layout--app-sheet .left-panel__track::after,
@@ -1718,11 +1287,6 @@ textarea {
 
   .map-draw-tools {
     top: max(88px, env(safe-area-inset-top, 0px)) !important;
-  }
-
-  .map-page .map-layout--app-sheet .map-wrap .map-draw-tools,
-  .demo-page .map-layout--app-sheet .map-wrap .map-draw-tools {
-    z-index: 45;
   }
 
   .grid-2 {
@@ -1791,22 +1355,17 @@ textarea {
     height: 140px;
   }
 
-  .card.card--feed .card-media__img {
-    height: 148px;
-  }
-
   .page {
     margin: 12px auto;
     padding: 0 12px;
-    padding-bottom: calc(var(--mobile-bottom-nav-height, 72px) + max(16px, env(safe-area-inset-bottom, 0px)));
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
   }
 
   .cabinet,
-  .auth-wrap,
-  .login-page {
+  .auth-wrap {
     margin: 12px auto;
     padding: 0 12px;
-    padding-bottom: calc(var(--mobile-bottom-nav-height, 72px) + max(16px, env(safe-area-inset-bottom, 0px)));
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 0px));
   }
 
   .address-row {
@@ -1888,14 +1447,6 @@ textarea {
     height: 44px;
   }
 
-  .map-draw-hint {
-    right: calc(100% + 8px);
-    top: 0;
-    width: min(230px, calc(100vw - 96px));
-    font-size: 11px;
-    padding: 8px 24px 8px 8px;
-  }
-
   .open-left-panel-btn {
     min-width: 44px;
     min-height: 44px;
@@ -1921,21 +1472,6 @@ textarea {
 
   #galleryNextBtn {
     right: 8px;
-  }
-
-  #filtersModal {
-    align-items: flex-start;
-    justify-content: center;
-    padding-top: max(64px, calc(env(safe-area-inset-top, 0px) + 54px));
-    padding-bottom: 10px;
-  }
-
-  .filters-modal-card {
-    margin: 0 10px;
-    max-height: calc(100dvh - max(92px, calc(env(safe-area-inset-top, 0px) + 80px)) - 10px);
-    overflow-y: auto;
-    border: 1px solid #dbe4fb;
-    border-radius: 14px;
   }
 }
 
@@ -1964,14 +1500,6 @@ textarea {
   display: flex;
   gap: 8px;
   margin: 14px 0 6px;
-}
-
-.admin-search-row {
-  margin-bottom: 10px;
-}
-
-.admin-table-wrap--spaced {
-  margin-top: 10px;
 }
 
 .admin-tab-btn {
@@ -2069,28 +1597,6 @@ textarea {
   word-break: break-all;
 }
 
-.admin-row-actions {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.admin-prop-cell {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.admin-prop-thumb {
-  width: 56px;
-  height: 40px;
-  object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  background: #f4f6fb;
-  flex-shrink: 0;
-}
-
 .danger-btn {
   background: #b91c1c;
   border-color: #b91c1c;
@@ -2102,110 +1608,7 @@ textarea {
   border-color: #991b1b;
 }
 
-@media (max-width: 900px) {
-  .admin-page {
-    margin: 10px auto;
-    padding: 0 10px 18px;
-  }
-
-  .admin-tabs {
-    flex-wrap: wrap;
-  }
-
-  .admin-tab-btn {
-    flex: 1 1 0;
-    min-height: 42px;
-  }
-
-  .admin-search-row {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .admin-search-row .btn,
-  .admin-search-row input {
-    width: 100%;
-  }
-
-  .admin-table {
-    font-size: 13px;
-    border: 0;
-    background: transparent;
-  }
-
-  .admin-table thead {
-    display: none;
-  }
-
-  .admin-table,
-  .admin-table tbody,
-  .admin-table tr,
-  .admin-table td {
-    display: block;
-    width: 100%;
-  }
-
-  .admin-table tr {
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: #fff;
-    margin-bottom: 10px;
-    padding: 8px 10px;
-  }
-
-  .admin-table td {
-    padding: 6px 0;
-    border-bottom: 1px dashed #e8edf7;
-  }
-
-  .admin-table td:last-child {
-    border-bottom: 0;
-    padding-bottom: 2px;
-  }
-
-  .admin-table td::before {
-    content: attr(data-label);
-    display: block;
-    font-size: 11px;
-    color: var(--muted);
-    margin-bottom: 2px;
-    font-weight: 600;
-  }
-
-  .admin-row-actions {
-    display: grid;
-    grid-template-columns: 1fr;
-    width: 100%;
-  }
-
-  .admin-row-actions .btn {
-    width: 100%;
-    min-height: 38px;
-  }
-
-  .admin-modal-card {
-    width: 100%;
-    max-width: 100%;
-    min-height: 100dvh;
-    max-height: 100dvh;
-    border-radius: 0;
-  }
-
-  .admin-mini-list-item {
-    font-size: 12px;
-    line-height: 1.45;
-    display: grid;
-    gap: 8px;
-  }
-
-  .admin-prop-thumb {
-    width: 88px;
-    height: 62px;
-  }
-}
-
-@media (min-width: 901px) {
+@media (min-width: 768px) {
   .auth-modal.active {
     align-items: center;
   }
