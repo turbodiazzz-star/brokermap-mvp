@@ -1100,8 +1100,10 @@ function refreshMobileSheetLayoutVars(panel) {
 }
 
 /**
- * translateY трека: меньше — шторка выше (ближе полный экран), больше — ниже к свёртке только с счётчиком.
- * Стопоры: yMin (полный разгон), yHalf (пол-экрана карты / объектов как на старте), yPeek/yMax (peek).
+ * Рулон снизу: трек (белый блок) «приклеен» основанием к низу экрана, translateY сдвигает полотно.
+ * Меньше translateY — шторка уезжает вверх (карта снизу, лист на весь экран и выше верхней границы).
+ * Больше translateY — опускается, максимум yPeek: видна только полоса со счётчиком (ручка + заголовок).
+ * yHalf — только старт «~половина карты / половина листа» (не фиксируется при отпускании).
  */
 function getSheetGeometry(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return null;
@@ -1134,10 +1136,9 @@ function getSheetGeometry(panel) {
   if (!Number.isFinite(yMax)) yMax = yMaxByScreen;
   if (yMax < yMin) yMax = yMin;
   const yPeek = yMax;
-  const usable = Math.max(160, vh - navH - 10);
-  const halfStep = Math.round(usable * 0.47);
-  let yHalf = Math.round(yPeek - halfStep);
-  yHalf = Math.min(yPeek - 12, Math.max(yMin + 22, yHalf));
+  const stage = Math.max(160, vh - navH - 8);
+  let yHalf = Math.round(yPeek - stage * 0.5);
+  yHalf = Math.min(yPeek - 10, Math.max(yMin + 18, yHalf));
   return { h: H, yMin, yMax, yPeek, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible };
 }
 
@@ -1198,31 +1199,22 @@ function sheetDragRubberTranslate(t, g) {
   return t;
 }
 
-/** Три положения: полностью развёрнуто | пол-экрана | только счётчик. */
+/** После жеста — только два упора: вверх (лист) или вниз (полоса со счётчиком); без «липкого» среднего положения. */
 function pickMobileSheetSnapY(rawY, vy, g) {
   if (!g) return rawY;
-  const fling = 0.36;
+  const fling = 0.45;
   if (vy > fling) return g.yPeek;
   if (vy < -fling) return g.yMin;
-  const { yMin, yHalf, yPeek } = g;
-  const d0 = Math.abs(rawY - yMin);
-  const d1 = Math.abs(rawY - yHalf);
-  const d2 = Math.abs(rawY - yPeek);
-  let best = yMin;
-  if (d1 <= d0 && d1 <= d2) best = yHalf;
-  else if (d2 <= d0 && d2 <= d1) best = yPeek;
-  if (vy > 0.12 && rawY > yPeek - (yPeek - yHalf) * 0.32) best = yPeek;
-  if (vy < -0.12 && rawY < yMin + (yHalf - yMin) * 0.38) best = yMin;
-  if (vy > 0.08 && rawY > yHalf + (yPeek - yHalf) * 0.38) best = yPeek;
-  if (vy < -0.08 && rawY < yHalf - (yHalf - yMin) * 0.38) best = yMin;
-  return best;
+  const mid = (g.yMin + g.yPeek) / 2;
+  if (Math.abs(vy) > 0.1) return vy > 0 ? g.yPeek : g.yMin;
+  return rawY <= mid ? g.yMin : g.yPeek;
 }
 
 function sheetSnapAnimate(s, targetY, g, commit) {
   if (!s || !g) return;
   s.classList.remove("left-panel--sheet-live");
   const ty = clampSheetT(targetY, g);
-  setPanelTranslateY(s, ty, true, 520);
+  setPanelTranslateY(s, ty, true, 440);
   commit(ty, g);
   state.panelSheetT = ty;
 }
@@ -1263,8 +1255,6 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     }
     if (lastCollapsedUi !== atPeek) {
       lastCollapsedUi = atPeek;
-      if (isDemo) updateDemoOpenPanelButton();
-      else updateMapOpenPanelButton();
     }
   };
 
@@ -1329,11 +1319,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       state.panelCollapsed = false;
       const lay = layout();
       lay?.classList.remove("collapsed");
-      if (lastCollapsedUi) {
-        lastCollapsedUi = false;
-        if (isDemo) updateDemoOpenPanelButton();
-        else updateMapOpenPanelButton();
-      }
+      if (lastCollapsedUi) lastCollapsedUi = false;
     }
 
     const now = performance.now();
@@ -1453,6 +1439,7 @@ function snapSheetToPeek(panelId, layoutId, isDemo) {
 function updateDemoOpenPanelButton() {
   const btn = document.getElementById("openDemoLeftPanelBtn");
   if (!btn) return;
+  if (window.matchMedia("(max-width: 900px)").matches) return;
   if (state.panelCollapsed) {
     btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("aria-hidden", "false");
@@ -1465,6 +1452,7 @@ function updateDemoOpenPanelButton() {
 function updateMapOpenPanelButton() {
   const btn = document.getElementById("openLeftPanelBtn");
   if (!btn) return;
+  if (window.matchMedia("(max-width: 900px)").matches) return;
   if (state.panelCollapsed) {
     btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("aria-hidden", "false");
