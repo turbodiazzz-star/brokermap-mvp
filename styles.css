@@ -1652,7 +1652,13 @@ textarea {
   .map-page .map-layout--app-sheet .left-panel-head,
   .demo-page .map-layout--app-sheet .left-panel-head {
     flex-shrink: 0;
-    padding-bottom: calc(8px + min(44px, var(--mobile-bottom-nav-height, 72px) * 0.5));
+    padding-bottom: 8px;
+  }
+
+  .map-page .map-layout--app-sheet .left-panel-head h3,
+  .demo-page .map-layout--app-sheet .left-panel-head h3 {
+    margin: 0;
+    line-height: 1.25;
   }
 
   .map-page .map-layout--app-sheet .left-panel__track,

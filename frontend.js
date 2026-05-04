@@ -8,6 +8,8 @@ const state = {
   panelCollapsed: false,
   /** моб.: последний translateY трека (может быть < 0 при длинной ленте); null — взять по умолч. */
   panelSheetT: null,
+  /** На сколько px лист раскрыт выше свёрнутого yPeek (для стабильной высоты при смене списка). */
+  panelSheetOpenOffset: null,
   panelSheetInitialized: false,
   panelCollapsedBeforeCabinet: null,
   panelSheetTBeforeCabinet: null,
@@ -1163,7 +1165,7 @@ function getSheetGeometry(panel) {
    * Свёрнуто: граница под блоком «ручка + заголовок» (padding снизу заголовка — в CSS для моб. app-sheet всегда).
    * Обрезка по верху списка: не показывать превью карточки (cap по first content).
    */
-  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 2);
+  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 1);
   if (scrollEl) {
     const firstInScroll = scrollEl.firstElementChild;
     const topContent =
@@ -1173,11 +1175,11 @@ function getSheetGeometry(panel) {
           ? firstInScroll.offsetTop + scrollEl.offsetTop + scrollPad
           : Infinity;
     if (Number.isFinite(topContent) && topContent < Infinity) {
-      const capChromeOnly = Math.floor(topContent - 8);
+      const capChromeOnly = Math.floor(topContent - 4);
       peekCollapsedPx = Math.min(peekCollapsedPx, capChromeOnly);
     }
   }
-  peekCollapsedPx = Math.max(56, Math.min(132, peekCollapsedPx));
+  peekCollapsedPx = Math.max(52, Math.min(112, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
 
@@ -1205,15 +1207,20 @@ function getSheetGeometry(panel) {
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
     /** Большой зазор перед второй карточкой — иначе торчит превью во «втором» ряду (овал на скрине). */
-    const gapBefore2ndCard = 46;
+    const gapBefore2ndCard = 62;
     const hi = secondCard ? Math.max(lo, secondTopFromTrack - gapBefore2ndCard) : H;
-    const navTapPad = Math.min(44, Math.round(navH * 0.5));
+    const navTapPad = Math.min(38, Math.round(navH * 0.44));
     const floorCard = Math.ceil(firstBottomFromTrackTop + 20) + navTapPad;
-    const aimStart = Math.round(baseUsable * 0.615);
+    const aimStart = Math.round(baseUsable * 0.57);
     let merged = Math.min(hi, Math.max(floorCard, Math.min(aimStart, hi)));
     if (secondCard) {
       const hardCeil = secondTopFromTrack - gapBefore2ndCard - 4;
       merged = Math.min(merged, hardCeil);
+    }
+    const listFooter = scrollEl.querySelector(".left-panel-list-footer");
+    if (listFooter) {
+      const footerTop = listFooter.offsetTop + scrollEl.offsetTop + scrollPad;
+      merged = Math.min(merged, Math.max(lo, footerTop - 10));
     }
     targetOpenVis = Math.min(H, merged);
   } else {
@@ -1295,6 +1302,10 @@ function rememberSheetPosition(panel) {
   const y = getPanelTranslateY(s);
   if (Number.isFinite(y)) {
     state.panelSheetT = y;
+    const g = getSheetGeometry(panel);
+    if (g) {
+      state.panelSheetOpenOffset = Math.max(0, Math.round(g.yPeek - y));
+    }
   }
 }
 
@@ -1303,6 +1314,7 @@ function resetMobileSheetLandingState() {
   if (!window.matchMedia("(max-width: 900px)").matches) return;
   state.panelSheetInitialized = false;
   state.panelSheetT = null;
+  state.panelSheetOpenOffset = null;
   state.panelCollapsed = false;
   state.mapViewportListSig = "";
   state.demoViewportListSig = "";
@@ -1663,6 +1675,7 @@ function bindMobileBottomNavActions() {
         // Return to map/search with default half-open sheet position.
         state.panelCollapsed = false;
         state.panelSheetT = null;
+        state.panelSheetOpenOffset = null;
         state.panelSheetInitialized = false;
         state.panelCollapsedBeforeCabinet = null;
         state.panelSheetTBeforeCabinet = null;
@@ -1727,10 +1740,13 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
       if (state.panelCollapsed) {
         t = clampSheetT(g.yPeek, g);
       } else if (state.panelSheetT != null && Number.isFinite(state.panelSheetT)) {
-        t = clampSheetT(state.panelSheetT, g);
+        const hasOffset = Number.isFinite(state.panelSheetOpenOffset);
+        const fromOffset = hasOffset ? g.yPeek - Number(state.panelSheetOpenOffset) : state.panelSheetT;
+        t = clampSheetT(fromOffset, g);
       } else if (!state.panelSheetInitialized) {
         t = clampSheetT(g.yHalf, g);
         state.panelSheetT = t;
+        state.panelSheetOpenOffset = Math.max(0, Math.round(g.yPeek - t));
         state.panelCollapsed = false;
         state.panelSheetInitialized = true;
       } else {
@@ -1739,8 +1755,10 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
       setPanelTranslateY(s, t, animate, animate ? 480 : undefined);
       if (state.panelCollapsed) {
         state.panelSheetT = clampSheetT(g.yPeek, g);
+        state.panelSheetOpenOffset = 0;
       } else {
         state.panelSheetT = t;
+        state.panelSheetOpenOffset = Math.max(0, Math.round(g.yPeek - t));
         state.panelCollapsed = false;
         state.panelSheetInitialized = true;
       }
@@ -1759,6 +1777,7 @@ function scheduleMobileSheetReflow(panel, layout, opts = {}) {
       landingResetOnce = false;
       state.panelSheetInitialized = false;
       state.panelSheetT = null;
+      state.panelSheetOpenOffset = null;
     }
     mobileSheetSettleAfterRender(panel, layout, false);
   };
@@ -1776,6 +1795,7 @@ function resetMobileSheetForMapReady() {
   if (!window.matchMedia("(max-width: 900px)").matches) return;
   state.panelSheetInitialized = false;
   state.panelSheetT = null;
+  state.panelSheetOpenOffset = null;
 }
 
 function mapCollapseLeftPanel() {
@@ -1785,6 +1805,7 @@ function mapCollapseLeftPanel() {
     state.mapAreaListSig = "";
     state.panelCollapsed = true;
     state.panelSheetT = null;
+    state.panelSheetOpenOffset = 0;
     const layout = document.getElementById("mapLayout");
     layout?.classList.add("collapsed");
     const p0 = document.getElementById("leftPanel");
@@ -1800,6 +1821,7 @@ function mapCollapseLeftPanel() {
     return;
   }
   state.panelCollapsed = true;
+  state.panelSheetOpenOffset = 0;
   const layout = document.getElementById("mapLayout");
   const p = document.getElementById("leftPanel");
   layout?.classList.add("collapsed");
@@ -1821,6 +1843,7 @@ function mapCollapseLeftPanel() {
 function openMapLeftPanel() {
   state.panelCollapsed = false;
   state.panelSheetT = null;
+  state.panelSheetOpenOffset = null;
   state.mapLeftPanelMode = null;
   state.mapViewportListSig = "";
   state.mapAreaListSig = "";
@@ -1870,6 +1893,7 @@ function demoCollapseLeftPanel() {
     state.demoAreaListSig = "";
     state.panelCollapsed = true;
     state.panelSheetT = null;
+    state.panelSheetOpenOffset = 0;
     const layout = document.getElementById("demoMapLayout");
     layout?.classList.add("collapsed");
     const p0 = document.getElementById("demoLeftPanel");
@@ -1885,6 +1909,7 @@ function demoCollapseLeftPanel() {
     return;
   }
   state.panelCollapsed = true;
+  state.panelSheetOpenOffset = 0;
   const layout = document.getElementById("demoMapLayout");
   const p = document.getElementById("demoLeftPanel");
   layout?.classList.add("collapsed");
@@ -1920,6 +1945,7 @@ function renderDemoPanel(list, title, opts = {}) {
   if (!resetSheetPosition) rememberSheetPosition(panel);
   else {
     state.panelSheetT = null;
+    state.panelSheetOpenOffset = null;
     if (window.matchMedia("(max-width: 900px)").matches) {
       state.panelSheetInitialized = false;
     }
@@ -1976,6 +2002,7 @@ function showDemoGroup(properties) {
   state.demoViewportListSig = "";
   state.demoAreaListSig = "";
   state.panelCollapsed = false;
+  state.panelSheetOpenOffset = null;
   document.getElementById("demoMapLayout")?.classList.remove("collapsed");
   updateDemoOpenPanelButton();
   const sorted = properties.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
@@ -2221,6 +2248,7 @@ function renderPublicDemoPage() {
   function openDemoLeftPanel() {
     state.panelCollapsed = false;
     state.panelSheetT = null;
+    state.panelSheetOpenOffset = null;
     state.demoLeftPanelMode = null;
     state.demoViewportListSig = "";
     state.demoAreaListSig = "";
@@ -2454,6 +2482,7 @@ function renderMapPage() {
     state.filters = emptyFilters();
     state.panelCollapsed = false;
     state.panelSheetT = null;
+    state.panelSheetOpenOffset = null;
     clearAreaFilter();
     renderMapPage();
   });
@@ -2963,6 +2992,7 @@ function showGroup(properties) {
   if (!panel) return;
   state.mapLeftPanelMode = "group";
   state.panelSheetT = null;
+  state.panelSheetOpenOffset = null;
   if (window.matchMedia("(max-width: 900px)").matches) {
     state.panelSheetInitialized = false;
   }
@@ -3027,6 +3057,7 @@ function initMap() {
         const p = document.getElementById("leftPanel");
         if (getSheetNode(p)?.classList.contains("left-panel--sheet-live")) return;
         if (state.mapLeftPanelMode === "group") {
+          rememberSheetPosition(p);
           state.mapLeftPanelMode = null;
           state.mapViewportListSig = "";
         }
@@ -3146,6 +3177,7 @@ function initDemoMap() {
         const p = document.getElementById("demoLeftPanel");
         if (getSheetNode(p)?.classList.contains("left-panel--sheet-live")) return;
         if (state.demoLeftPanelMode === "group") {
+          rememberSheetPosition(p);
           state.demoLeftPanelMode = null;
           state.demoViewportListSig = "";
         }
