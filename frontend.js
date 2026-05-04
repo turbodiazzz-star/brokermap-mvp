@@ -20,6 +20,11 @@ const state = {
   areaDrawCanvas: null,
   mapView: null,
   viewportUpdateTimer: null,
+  /** Не пересобирать панель при boundschange, если список тот же — иначе рвётся жест шторки */
+  mapViewportListSig: "",
+  demoViewportListSig: "",
+  mapAreaListSig: "",
+  demoAreaListSig: "",
   filters: {
     minPrice: "",
     maxPrice: "",
@@ -1100,10 +1105,8 @@ function refreshMobileSheetLayoutVars(panel) {
 }
 
 /**
- * Рулон снизу: трек (белый блок) «приклеен» основанием к низу экрана, translateY сдвигает полотно.
- * Меньше translateY — шторка уезжает вверх (карта снизу, лист на весь экран и выше верхней границы).
- * Больше translateY — опускается, максимум yPeek: видна только полоса со счётчиком (ручка + заголовок).
- * yHalf — старт посередине между разворотом и полоской счётчика (translate), не фиксируется при отпускании.
+ * Рулон снизу. Важно: не привязывать yMin к полному scrollHeight ленты (100+ карточек) — иначе диапазон
+ * translate тысячи px, шторка «улетает» / пружинит. Ход считаем от usable и cap, контентная высота H — для коротких листов.
  */
 function getSheetGeometry(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return null;
@@ -1114,6 +1117,7 @@ function getSheetGeometry(panel) {
   const navH = bottomNav
     ? Math.max(56, Math.round(bottomNav.getBoundingClientRect().height || bottomNav.offsetHeight || 56))
     : 56;
+  const usable = Math.max(120, vh - navH);
   let H =
     track && Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height)
       ? Math.round(Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height))
@@ -1127,19 +1131,25 @@ function getSheetGeometry(panel) {
   const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
   const headH = head ? Math.round(head.offsetHeight) : 52;
   const peekVisible = Math.max(124, Math.min(276, Math.round(handleH + headH + 28)));
-  const yBottomPinned = vh - navH - H;
-  const yMaxByScreen = Math.max(yBottomPinned, vh - navH - peekVisible);
-  const yMaxByContent = Math.max(yBottomPinned, H - peekVisible);
-  let yMax = Math.min(yMaxByScreen, yMaxByContent);
-  const yLiftExtra = Math.min(140, Math.max(72, Math.round(vh * 0.085)));
-  const yMin = yBottomPinned - yLiftExtra;
-  if (!Number.isFinite(yMax)) yMax = yMaxByScreen;
+  let yPeek = Math.round(usable - peekVisible);
+  const yShort = Math.round(usable - H);
+  if (H < usable + peekVisible - 24) {
+    yPeek = Math.max(yShort, yPeek);
+  }
+  const tabClear = Math.max(96, Math.round(navH + 48));
+  const maxPullRaw = Math.max(0, H - peekVisible);
+  const maxPullCap = Math.round(usable * 8 + tabClear + navH);
+  const maxPull = Math.min(maxPullRaw, maxPullCap);
+  const yLiftExtra = Math.min(100, Math.max(44, Math.round(vh * 0.045)));
+  let yMin = Math.round(yPeek - maxPull - yLiftExtra);
+  let yMax = yPeek;
+  if (!Number.isFinite(yMax)) yMax = Math.round(usable - peekVisible);
   if (yMax < yMin) yMax = yMin;
-  const yPeek = yMax;
+  yPeek = yMax;
   const span = Math.max(0, yPeek - yMin);
-  let yHalf = span > 1 ? Math.round(yMin + span * 0.5) : Math.round(yPeek - 24);
-  yHalf = Math.min(yPeek - 10, Math.max(yMin + 18, yHalf));
-  return { h: H, yMin, yMax, yPeek, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible };
+  let yHalf = span > 1 ? Math.round(yMin + span * 0.48) : Math.round(yPeek - 24);
+  yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, yHalf));
+  return { h: H, yMin, yMax: yPeek, yPeek, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible };
 }
 
 function bindSheetReflowOnImages(panel, layoutId) {
@@ -1188,6 +1198,10 @@ function resetMobileSheetLandingState() {
   state.panelSheetInitialized = false;
   state.panelSheetT = null;
   state.panelCollapsed = false;
+  state.mapViewportListSig = "";
+  state.demoViewportListSig = "";
+  state.mapAreaListSig = "";
+  state.demoAreaListSig = "";
 }
 
 /** Лёгкое «резиновое» сопротивление у краёв жеста (как шторки iOS). */
@@ -1599,6 +1613,8 @@ function mapCollapseLeftPanel() {
 function openMapLeftPanel() {
   state.panelCollapsed = false;
   state.panelSheetT = null;
+  state.mapViewportListSig = "";
+  state.mapAreaListSig = "";
   const layout = document.getElementById("mapLayout");
   layout?.classList.remove("collapsed");
   const p = document.getElementById("leftPanel");
@@ -1619,6 +1635,8 @@ function openMapLeftPanel() {
 function setMapDefaultLeftPanel() {
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
+  state.mapViewportListSig = "";
+  state.mapAreaListSig = "";
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head">
@@ -1682,17 +1700,26 @@ function getDemoViewportPropertyList() {
 }
 
 function renderDemoViewportPanel() {
-  if (!state.mapInstance) return;
   const list = getDemoViewportPropertyList().sort((a, b) => b.commissionPartner - a.commissionPartner);
+  const sig = `dv:${list.map((i) => i.id).join(",")}|n:${list.length}`;
+  if (sig === state.demoViewportListSig) return;
+  state.demoViewportListSig = sig;
   renderDemoPanel(list, "Объекты в видимой области");
 }
 
 function renderDemoAreaSelectionPanel() {
   const list = getAreaFilteredProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
-  renderDemoPanel(list, "В выбранной области");
+  const poly = state.areaPolygonCoords || [];
+  const polyKey = poly.length ? `${poly.length}:${Math.round((poly[0]?.[0] || 0) * 1e5)}` : "0";
+  const sig = `da:${polyKey}:${list.map((i) => i.id).join(",")}|n:${list.length}`;
+  if (sig === state.demoAreaListSig) return;
+  state.demoAreaListSig = sig;
+  renderDemoPanel(list, "Объекты в выделенной области");
 }
 
 function showDemoGroup(properties) {
+  state.demoViewportListSig = "";
+  state.demoAreaListSig = "";
   state.panelCollapsed = false;
   document.getElementById("demoMapLayout")?.classList.remove("collapsed");
   updateDemoOpenPanelButton();
@@ -1709,6 +1736,8 @@ function applyDemoFilters() {
     state.demoAllProperties = createDemoProperties(100);
   }
   state.properties = filterPropertiesByState(state.demoAllProperties);
+  state.demoViewportListSig = "";
+  state.demoAreaListSig = "";
   if (window.ymaps) {
     ymaps.ready(() => initDemoMap());
   } else {
@@ -1929,6 +1958,8 @@ function renderPublicDemoPage() {
   function openDemoLeftPanel() {
     state.panelCollapsed = false;
     state.panelSheetT = null;
+    state.demoViewportListSig = "";
+    state.demoAreaListSig = "";
     const layout = document.getElementById("demoMapLayout");
     layout?.classList.remove("collapsed");
     const p = document.getElementById("demoLeftPanel");
@@ -2189,12 +2220,17 @@ function getAreaFilteredProperties() {
 function renderAreaSelectionPanel(list) {
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
+  const poly = state.areaPolygonCoords || [];
+  const polyKey = poly.length ? `${poly.length}:${Math.round((poly[0]?.[0] || 0) * 1e5)}` : "0";
+  const sig = `a:${polyKey}:${list.map((i) => i.id).join(",")}|n:${list.length}`;
+  if (sig === state.mapAreaListSig) return;
+  state.mapAreaListSig = sig;
   rememberSheetPosition(panel);
   const cards = list.length ? list.map(cardMarkup).join("") : `<p class="muted">Внутри области объекты не найдены.</p>`;
   const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
-    `<div class="left-panel-head"><h3>В выбранной области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
+    `<div class="left-panel-head"><h3>Объекты в выделенной области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
     bodyHtml
   );
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
@@ -2229,8 +2265,11 @@ function getViewportProperties() {
 function renderViewportPanel() {
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
-  rememberSheetPosition(panel);
   const list = getViewportProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
+  const sig = `v:${list.map((i) => i.id).join(",")}|n:${list.length}`;
+  if (sig === state.mapViewportListSig) return;
+  state.mapViewportListSig = sig;
+  rememberSheetPosition(panel);
   const cards = list.length ? list.map(cardMarkup).join("") : `<p class="muted">В текущей области объекты не найдены.</p>`;
   const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
   panel.innerHTML = leftPanelMobileBlock(
@@ -2269,6 +2308,8 @@ function syncDrawButtons() {
 function setDemoDefaultLeftPanel() {
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
+  state.demoViewportListSig = "";
+  state.demoAreaListSig = "";
   panel.innerHTML = leftPanelMobileBlock(
     "demoLeftPanelHandleArea",
     `<div class="left-panel-head">
@@ -2521,6 +2562,8 @@ async function loadMapData() {
   if (partnerPctMin > 0) query.append("partnerCommissionMin", String(partnerPctMin));
   const list = await api(`/api/properties?${query.toString()}`);
   state.properties = filterPropertiesByState(list);
+  state.mapViewportListSig = "";
+  state.mapAreaListSig = "";
   initMap();
 }
 
@@ -2636,6 +2679,8 @@ function focusMapOnPlacemark(lat, lon, panelId = "leftPanel") {
 }
 
 function showGroup(properties) {
+  state.mapViewportListSig = "";
+  state.mapAreaListSig = "";
   state.panelCollapsed = false;
   document.getElementById("mapLayout")?.classList.remove("collapsed");
   const panel = document.getElementById("leftPanel");
@@ -2703,7 +2748,7 @@ function initMap() {
         } else {
           renderViewportPanel();
         }
-      }, 220);
+      }, 420);
     });
 
     grouped.forEach((group) => {
@@ -2812,7 +2857,7 @@ function initDemoMap() {
         } else {
           renderDemoViewportPanel();
         }
-      }, 220);
+      }, 420);
     });
 
     grouped.forEach((group) => {
