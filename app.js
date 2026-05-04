@@ -10,6 +10,14 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const PDFDocument = require("pdfkit");
+let nodemailer = null;
+try {
+  // Optional dependency on runtime (prevents hard crash if not installed yet).
+  // eslint-disable-next-line global-require
+  nodemailer = require("nodemailer");
+} catch {
+  nodemailer = null;
+}
 const {
   initDb,
   findUserByEmail,
@@ -36,12 +44,22 @@ const {
   listAgenciesForAdmin,
   updateAgencyBrokerLimit,
   updateUserPasswordHash,
+  updateUserProfile,
+  markUserEmailVerified,
+  completeAgencyBrokerInvite,
   listPrivateBrokersForAdmin,
   listPropertiesForAgencyOwner
 } = require("./lib/db");
 
 const PORT = Number(process.env.PORT || 3000);
 const JWT_SECRET = process.env.JWT_SECRET || "dev-only-secret-change-me";
+const APP_BASE_URL = String(process.env.APP_BASE_URL || `http://localhost:${PORT}`).replace(/\/+$/, "");
+const EMAIL_FROM = process.env.EMAIL_FROM || process.env.SMTP_USER || "no-reply@brokermap.local";
+const SMTP_HOST = process.env.SMTP_HOST || "";
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_SECURE = String(process.env.SMTP_SECURE || "false").toLowerCase() === "true";
+const SMTP_USER = process.env.SMTP_USER || "";
+const SMTP_PASS = process.env.SMTP_PASS || "";
 const adminEmailList = (process.env.ADMIN_EMAILS || "")
   .split(",")
   .map((e) => e.trim().toLowerCase())
@@ -51,6 +69,37 @@ const UPLOADS_DIR = path.join(__dirname, "uploads");
 const PHOTOS_DIR = path.join(UPLOADS_DIR, "photos");
 const PDFS_DIR = path.join(UPLOADS_DIR, "pdfs");
 const app = express();
+
+const mailTransport = SMTP_HOST && nodemailer
+  ? nodemailer.createTransport({
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_SECURE,
+      auth: SMTP_USER ? { user: SMTP_USER, pass: SMTP_PASS } : undefined
+    })
+  : null;
+
+function htmlEscape(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+async function sendEmail({ to, subject, html, text }) {
+  if (!mailTransport) {
+    throw new Error("SMTP_NOT_CONFIGURED");
+  }
+  await mailTransport.sendMail({
+    from: EMAIL_FROM,
+    to,
+    subject,
+    text,
+    html
+  });
+  return { queued: true };
+}
 
 function unlinkUploadMaybe(url) {
   if (!url || typeof url !== "string" || !url.startsWith("/uploads/")) {
@@ -134,6 +183,19 @@ function readinessLabel(value) {
     assignment: "Переуступка"
   };
   return map[value] || "-";
+}
+
+function normalizeHousingStatus(value) {
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized === "apartments") return "apartments";
+  return "flat";
+}
+
+function housingStatusLabel(value) {
+  const map = { flat: "Квартира", apartments: "Апартаменты" };
+  return map[value] || map.flat;
 }
 
 function money(value) {
@@ -240,13 +302,17 @@ async function generatePresentationPdf(property) {
     y = doc.y + 12;
 
     const specs = [
+      { icon: "◇", label: "Статус жилья", value: housingStatusLabel(property.housingStatus) },
       { icon: "▣", label: "Площадь", value: `${property.area ?? "-"} м²` },
       { icon: "◍", label: "Спален", value: `${property.bedrooms ?? "-"}` },
       { icon: "⌂", label: "Этаж", value: `${property.floor ?? "-"}` },
       { icon: "⇅", label: "Этажей в доме", value: `${property.totalFloors ?? "-"}` },
       { icon: "✦", label: "Высота потолков", value: `${property.ceilingHeight ?? "-"} м` },
       { icon: "◈", label: "Отделка", value: finishingLabel(property.finishing) },
-      { icon: "●", label: "Готовность дома", value: readinessLabel(property.readiness) }
+      { icon: "●", label: "Готовность дома", value: readinessLabel(property.readiness) },
+      ...(property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+        ? [{ icon: "↦", label: "До метро пешком", value: `${property.metroWalkMinutes} мин` }]
+        : [])
     ];
     const colGap = 12;
     const colWidth = (pageWidth - colGap) / 2;
@@ -311,7 +377,9 @@ function publicUser(user) {
     isAdmin: user.role === "admin",
     accountType: user.accountType || "broker",
     isAgencyOwner: user.accountType === "agency_owner",
-    brokerLimit: Number(user.brokerLimit || 0)
+    brokerLimit: Number(user.brokerLimit || 0),
+    emailVerified: Boolean(user.emailVerified),
+    marketingConsent: Boolean(user.marketingConsent)
   };
 }
 
@@ -338,6 +406,14 @@ function signUserToken(user) {
     JWT_SECRET,
     { expiresIn: "7d" }
   );
+}
+
+function signActionToken(payload, expiresIn) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn });
+}
+
+function hashPasswordSignature(passwordHash) {
+  return crypto.createHash("sha256").update(String(passwordHash || "")).digest("hex").slice(0, 16);
 }
 
 function auth(req, res, next) {
@@ -375,6 +451,13 @@ function requireAgencyOwner(req, res, next) {
   next();
 }
 
+/** Брокеры, которым уже можно назначать объекты (прошли регистрацию по приглашению). */
+function agencyAssignableBrokerIds(ownerId) {
+  return listBrokersByAgencyOwner(ownerId)
+    .filter((b) => !b.invitePending)
+    .map((b) => b.id);
+}
+
 function requireAuthForFile(req, res, next) {
   const token = getTokenFromRequest(req);
   if (!token) {
@@ -393,7 +476,10 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/uploads/photos/:file", requireAuthForFile, (req, res) => {
+// Превью в карточках грузятся через <img src="..."> — без заголовка Authorization.
+// JWT у части клиентов только в памяти или сессии отсутствует → 401 для гостей = «нет фото у всех в ленте».
+// Обложки объектов считаются публичными (имена файлов неугадываемые); PDF остаются за авторизацией.
+app.get("/uploads/photos/:file", (req, res) => {
   const name = path.basename(req.params.file);
   if (!name || name !== req.params.file) {
     return res.status(400).end();
@@ -405,6 +491,21 @@ app.get("/uploads/photos/:file", requireAuthForFile, (req, res) => {
   if (!fs.existsSync(filePath)) {
     return res.status(404).end();
   }
+  const ext = path.extname(name).toLowerCase();
+  const mimeByExt = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".avif": "image/avif",
+    ".bin": "application/octet-stream"
+  };
+  const ctype = mimeByExt[ext];
+  if (ctype) {
+    res.setHeader("Content-Type", ctype);
+  }
+  res.setHeader("Cache-Control", "public, max-age=86400");
   return res.sendFile(filePath);
 });
 
@@ -482,14 +583,11 @@ const upload = multer({ storage });
 app.post("/api/auth/register", async (req, res) => {
   const { firstName, lastName, name, email, password, phone, agency, inn, marketingConsent, agree, accountType } = req.body;
   const normalizedType = accountType === "agency_owner" ? "agency_owner" : "broker";
-  if (!email || !password || !firstName || !lastName || !inn || !phone || !agency) {
+  if (!email || !password || !firstName || !lastName || !phone || !agency) {
     return res.status(400).json({ message: "Заполните все обязательные поля регистрации" });
   }
   if (!/^\+7\d{10}$/.test(String(phone))) {
     return res.status(400).json({ message: "Телефон должен быть в формате +7 и 10 цифр" });
-  }
-  if (!/^\d{10}$|^\d{12}$/.test(String(inn))) {
-    return res.status(400).json({ message: "ИНН должен быть 10 или 12 цифр" });
   }
   if (!agree) {
     return res.status(400).json({ message: "Нужно согласие на обработку данных" });
@@ -499,16 +597,17 @@ app.post("/api/auth/register", async (req, res) => {
   }
   const passwordHash = await bcrypt.hash(password, 10);
   const id = `u-${Date.now()}`;
-  const role = isAdminEmail(email) ? "admin" : "user";
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const role = isAdminEmail(normalizedEmail) ? "admin" : "user";
   const user = {
     id,
     name: name || `${firstName} ${lastName}`.trim(),
-    email,
+    email: normalizedEmail,
     passwordHash,
     firstName,
     lastName,
     agency,
-    inn,
+    inn: String(inn || "").trim(),
     phone,
     marketingConsent: Boolean(marketingConsent),
     telegram: "",
@@ -519,12 +618,34 @@ app.post("/api/auth/register", async (req, res) => {
     accountType: normalizedType,
     agencyOwnerId: null,
     brokerLimit: normalizedType === "agency_owner" ? 100 : 0,
+    emailVerified: false,
     createdAt: new Date().toISOString()
   };
   createUserRecord(user);
-  const token = signUserToken(user);
-  setAuthCookie(res, token);
-  return res.json({ token, user: publicUser({ ...user, role }) });
+  const verifyToken = signActionToken(
+    { action: "verify_email", userId: user.id, email: user.email },
+    "24h"
+  );
+  const verifyLink = `${APP_BASE_URL}/api/auth/verify-email?token=${encodeURIComponent(verifyToken)}`;
+  try {
+    await sendEmail({
+      to: user.email,
+      subject: "Подтвердите email в BrokerMap",
+      text: `Подтвердите email: ${verifyLink}`,
+      html: `<p>Подтвердите email для входа в BrokerMap:</p><p><a href="${htmlEscape(verifyLink)}">Подтвердить email</a></p>`
+    });
+  } catch (error) {
+    // Do not leave "half-created" users when email delivery is unavailable.
+    deleteUserById(user.id);
+    console.error("[mail] register verification send failed:", error?.message || error);
+    return res.status(502).json({
+      message: "Не удалось отправить письмо подтверждения. Проверьте настройки почты и попробуйте снова."
+    });
+  }
+  return res.json({
+    requiresEmailVerification: true,
+    message: "Мы отправили письмо для подтверждения email. Откройте ссылку из письма. Если письма нет, проверьте папку Спам."
+  });
 });
 
 app.post("/api/auth/login", async (req, res) => {
@@ -536,6 +657,11 @@ app.post("/api/auth/login", async (req, res) => {
   const ok = await bcrypt.compare(password || "", user.passwordHash);
   if (!ok) {
     return res.status(401).json({ message: "Неверный email или пароль" });
+  }
+  if (!user.emailVerified) {
+    return res.status(403).json({
+      message: "Email не подтвержден. Подтвердите почту по ссылке из письма."
+    });
   }
   const token = signUserToken(user);
   setAuthCookie(res, token);
@@ -562,10 +688,206 @@ app.post("/api/auth/refresh-cookie", (req, res) => {
   return res.json({ ok: true });
 });
 
-app.post("/api/auth/forgot-password", (req, res) => {
-  return res.json({
-    message: `Запрос на восстановление для ${req.body.email || "email"} принят. Для MVP используйте регистрацию заново.`
+app.get("/api/auth/agency-invite-info", (req, res) => {
+  const token = String(req.query.token || "");
+  if (!token) {
+    return res.status(400).json({ message: "Нужна ссылка из письма" });
+  }
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.action !== "agency_broker_invite" || !payload.userId || !payload.email) {
+      return res.status(400).json({ message: "Некорректная ссылка приглашения" });
+    }
+    const broker = findUserById(payload.userId);
+    const email = String(payload.email || "").toLowerCase();
+    if (
+      !broker ||
+      broker.accountType !== "broker" ||
+      !broker.agencyInvitePending ||
+      String(broker.email).toLowerCase() !== email
+    ) {
+      return res.status(400).json({ message: "Приглашение недействительно или уже использовано" });
+    }
+    const owner = findUserById(broker.agencyOwnerId);
+    const agencyName = (owner?.agency || owner?.name || "агентства").trim() || "агентства";
+    return res.json({
+      email: broker.email,
+      agencyName
+    });
+  } catch {
+    return res.status(400).json({ message: "Ссылка приглашения истекла или повреждена" });
+  }
+});
+
+app.post("/api/auth/complete-agency-invite", async (req, res) => {
+  const { token, firstName, lastName, password, phone, agree, marketingConsent } = req.body || {};
+  if (!token || !firstName || !lastName || !password || !phone) {
+    return res.status(400).json({ message: "Заполните все обязательные поля" });
+  }
+  if (!agree) {
+    return res.status(400).json({ message: "Нужно согласие на обработку персональных данных" });
+  }
+  if (String(password).length < 6) {
+    return res.status(400).json({ message: "Пароль должен быть не менее 6 символов" });
+  }
+  if (!/^\+7\d{10}$/.test(String(phone))) {
+    return res.status(400).json({ message: "Телефон должен быть в формате +7 и 10 цифр" });
+  }
+  let payload;
+  try {
+    payload = jwt.verify(String(token), JWT_SECRET);
+  } catch {
+    return res.status(400).json({ message: "Ссылка приглашения истекла или повреждена" });
+  }
+  if (payload.action !== "agency_broker_invite" || !payload.userId || !payload.email) {
+    return res.status(400).json({ message: "Некорректная ссылка приглашения" });
+  }
+  const broker = findUserById(payload.userId);
+  const email = String(payload.email || "").toLowerCase();
+  if (
+    !broker ||
+    broker.accountType !== "broker" ||
+    !broker.agencyInvitePending ||
+    String(broker.email).toLowerCase() !== email
+  ) {
+    return res.status(400).json({ message: "Приглашение недействительно или уже использовано" });
+  }
+  const passwordHash = await bcrypt.hash(String(password), 10);
+  const fn = String(firstName).trim();
+  const ln = String(lastName).trim();
+  const name = `${fn} ${ln}`.trim();
+  const ok = completeAgencyBrokerInvite(broker.id, {
+    firstName: fn,
+    lastName: ln,
+    name,
+    passwordHash,
+    phone: String(phone).trim(),
+    marketingConsent: Boolean(marketingConsent)
   });
+  if (!ok) {
+    return res.status(500).json({ message: "Не удалось сохранить профиль" });
+  }
+  const updated = findUserById(broker.id);
+  const sessionToken = signUserToken(updated);
+  setAuthCookie(res, sessionToken);
+  return res.json({ token: sessionToken, user: publicUser(updated) });
+});
+
+app.get("/api/auth/verify-email", (req, res) => {
+  const token = String(req.query.token || "");
+  if (!token) {
+    return res.status(400).send("<h2>Некорректная ссылка подтверждения</h2>");
+  }
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.action !== "verify_email" || !payload.userId || !payload.email) {
+      return res.status(400).send("<h2>Некорректный токен подтверждения</h2>");
+    }
+    const user = findUserById(payload.userId);
+    if (!user || String(user.email).toLowerCase() !== String(payload.email).toLowerCase()) {
+      return res.status(400).send("<h2>Пользователь не найден</h2>");
+    }
+    markUserEmailVerified(user.id);
+    return res.send(
+      `<h2>Email подтвержден</h2><p>Теперь можно войти в аккаунт.</p><p><a href="${htmlEscape(
+        `${APP_BASE_URL}/#/auth`
+      )}">Перейти ко входу</a></p>`
+    );
+  } catch {
+    return res.status(400).send("<h2>Ссылка подтверждения недействительна или истекла</h2>");
+  }
+});
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const user = findUserByEmail(email);
+  if (user) {
+    const resetToken = signActionToken(
+      {
+        action: "reset_password",
+        userId: user.id,
+        email: user.email,
+        pwdSig: hashPasswordSignature(user.passwordHash)
+      },
+      "1h"
+    );
+    const resetLink = `${APP_BASE_URL}/api/auth/reset-password?token=${encodeURIComponent(resetToken)}`;
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: "Сброс пароля в BrokerMap",
+        text: `Для сброса пароля перейдите по ссылке: ${resetLink}`,
+        html: `<p>Для сброса пароля перейдите по ссылке:</p><p><a href="${htmlEscape(resetLink)}">Сбросить пароль</a></p>`
+      });
+    } catch (error) {
+      console.error("[mail] forgot-password send failed:", error?.message || error);
+      return res.status(502).json({
+        message: "Письмо не отправлено. Проверьте настройки почты и попробуйте снова."
+      });
+    }
+  }
+  return res.json({
+    message: "Если такой email зарегистрирован, мы отправили письмо со ссылкой для сброса пароля. Если письма нет, проверьте папку Спам."
+  });
+});
+
+app.get("/api/auth/reset-password", (req, res) => {
+  const token = String(req.query.token || "");
+  if (!token) {
+    return res.status(400).send("<h2>Некорректная ссылка сброса</h2>");
+  }
+  return res.send(`<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Сброс пароля</title>
+<style>body{font-family:Inter,Arial,sans-serif;background:#f4f6fb;margin:0;padding:20px} .card{max-width:440px;margin:40px auto;background:#fff;border:1px solid #e5e9f2;border-radius:14px;padding:16px} input,button{width:100%;height:42px;border-radius:10px;border:1px solid #d8deeb;padding:0 12px;margin:8px 0} button{background:#1760ff;border-color:#1760ff;color:#fff;font-weight:600;cursor:pointer}</style>
+</head><body><div class="card"><h2>Сброс пароля</h2><form method="post" action="/api/auth/reset-password">
+<input type="hidden" name="token" value="${htmlEscape(token)}">
+<label>Новый пароль</label><input name="newPassword" type="password" minlength="6" required>
+<label>Повтор нового пароля</label><input name="confirmPassword" type="password" minlength="6" required>
+<button type="submit">Сохранить новый пароль</button></form></div></body></html>`);
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  const token = String(req.body.token || "");
+  const newPassword = String(req.body.newPassword || "");
+  const confirmPassword = String(req.body.confirmPassword || "");
+  const wantsHtml = String(req.headers.accept || "").includes("text/html");
+  if (!token || !newPassword || !confirmPassword) {
+    const message = "Заполните все поля";
+    return wantsHtml ? res.status(400).send(`<h2>${htmlEscape(message)}</h2>`) : res.status(400).json({ message });
+  }
+  if (newPassword.length < 6) {
+    const message = "Новый пароль должен быть не менее 6 символов";
+    return wantsHtml ? res.status(400).send(`<h2>${htmlEscape(message)}</h2>`) : res.status(400).json({ message });
+  }
+  if (newPassword !== confirmPassword) {
+    const message = "Пароли не совпадают";
+    return wantsHtml ? res.status(400).send(`<h2>${htmlEscape(message)}</h2>`) : res.status(400).json({ message });
+  }
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (payload.action !== "reset_password" || !payload.userId || !payload.email || !payload.pwdSig) {
+      throw new Error("bad token");
+    }
+    const user = findUserById(payload.userId);
+    if (!user || String(user.email).toLowerCase() !== String(payload.email).toLowerCase()) {
+      throw new Error("user mismatch");
+    }
+    if (payload.pwdSig !== hashPasswordSignature(user.passwordHash)) {
+      throw new Error("stale token");
+    }
+    const newHash = await bcrypt.hash(newPassword, 10);
+    updateUserPasswordHash(user.id, newHash);
+    if (wantsHtml) {
+      return res.send(
+        `<h2>Пароль обновлен</h2><p><a href="${htmlEscape(`${APP_BASE_URL}/#/auth`)}">Перейти ко входу</a></p>`
+      );
+    }
+    return res.json({ ok: true, message: "Пароль обновлен" });
+  } catch {
+    const message = "Ссылка для сброса пароля недействительна или истекла";
+    return wantsHtml ? res.status(400).send(`<h2>${htmlEscape(message)}</h2>`) : res.status(400).json({ message });
+  }
 });
 
 app.get("/api/auth/me", auth, (req, res) => {
@@ -576,29 +898,93 @@ app.get("/api/auth/me", auth, (req, res) => {
   return res.json(publicUser(user));
 });
 
-app.post("/api/auth/change-password", auth, async (req, res) => {
-  const { oldPassword, newPassword, confirmPassword } = req.body || {};
-  if (!oldPassword || !newPassword || !confirmPassword) {
-    return res.status(400).json({ message: "Заполните все поля смены пароля" });
+/** Смена пароля только по ссылке из письма (forgot-password / reset), не по старому паролю в приложении. */
+app.post("/api/auth/change-password", auth, (_req, res) => {
+  return res.status(403).json({
+    message:
+      "Смена пароля только по ссылке из письма: на экране входа нажмите «Забыли пароль?» — мы отправим письмо на ваш email."
+  });
+});
+
+app.patch("/api/me/profile", auth, (req, res) => {
+  const body = req.body || {};
+  const firstName = String(body.firstName || "").trim();
+  const lastName = String(body.lastName || "").trim();
+  const phone = String(body.phone || "").trim();
+  const agency = String(body.agency || "").trim();
+  const inn = String(body.inn || "").trim();
+  const telegram = String(body.telegram || "").trim();
+  const whatsapp = String(body.whatsapp || "").trim();
+  const vk = String(body.vk || "").trim();
+  const max = String(body.max || "").trim();
+  const marketingConsent = Boolean(body.marketingConsent);
+  if (!firstName || !lastName) {
+    return res.status(400).json({ message: "Укажите имя и фамилию" });
   }
-  if (String(newPassword).length < 6) {
-    return res.status(400).json({ message: "Новый пароль должен быть не менее 6 символов" });
+  if (!/^\+7\d{10}$/.test(phone)) {
+    return res.status(400).json({ message: "Телефон должен быть в формате +7 и 10 цифр" });
   }
-  if (newPassword !== confirmPassword) {
-    return res.status(400).json({ message: "Новый пароль и подтверждение не совпадают" });
+  if (!agency) {
+    return res.status(400).json({ message: "Укажите название агентства или ФИО ИП/самозанятого" });
   }
   const user = findUserById(req.userId);
   if (!user) {
     return res.status(404).json({ message: "Пользователь не найден" });
   }
-  const ok = await bcrypt.compare(String(oldPassword), user.passwordHash);
+  const name = `${firstName} ${lastName}`.trim();
+  const ok = updateUserProfile(user.id, {
+    firstName,
+    lastName,
+    name,
+    phone,
+    agency,
+    inn,
+    telegram,
+    whatsapp,
+    vk,
+    max,
+    marketingConsent
+  });
   if (!ok) {
-    return res.status(400).json({ message: "Старый пароль введен неверно" });
+    return res.status(500).json({ message: "Не удалось сохранить профиль" });
   }
-  const newHash = await bcrypt.hash(String(newPassword), 10);
-  if (!updateUserPasswordHash(user.id, newHash)) {
-    return res.status(500).json({ message: "Не удалось сохранить новый пароль" });
+  const updated = findUserById(req.userId);
+  return res.json({ user: publicUser(updated) });
+});
+
+app.delete("/api/me", auth, (req, res) => {
+  const user = findUserById(req.userId);
+  if (!user) {
+    return res.status(404).json({ message: "Пользователь не найден" });
   }
+  if (user.role === "admin") {
+    return res.status(400).json({ message: "Удаление администратора через приложение недоступно." });
+  }
+  if (user.accountType === "agency_owner") {
+    const n = countBrokersByAgencyOwner(user.id);
+    if (n > 0) {
+      return res.status(400).json({
+        message: "Сначала удалите всех брокеров агентства в панели агентства, затем повторите удаление профиля."
+      });
+    }
+  }
+  const purgeOwned = () => {
+    const owned = listPropertiesByOwner(user.id);
+    for (const property of owned) {
+      deletePropertyFilesOnDisk(property);
+    }
+    deletePropertiesByOwner(user.id);
+    return owned.length;
+  };
+  if (user.agencyOwnerId && user.accountType === "broker") {
+    reassignPropertiesToOwner(user.id, user.agencyOwnerId);
+  } else {
+    purgeOwned();
+  }
+  if (!deleteUserById(user.id)) {
+    return res.status(500).json({ message: "Не удалось удалить аккаунт" });
+  }
+  clearAuthCookie(res);
   return res.json({ success: true });
 });
 
@@ -607,7 +993,8 @@ app.get("/api/properties", auth, (req, res) => {
   const minPrice = Number(req.query.minPrice || 0);
   const maxPrice = Number(req.query.maxPrice || Number.MAX_SAFE_INTEGER);
   const bedrooms = req.query.bedrooms ? Number(req.query.bedrooms) : null;
-  const list = listPropertyRowsFiltered(minPrice, maxPrice, bedrooms);
+  const partnerCommissionMin = Number(req.query.partnerCommissionMin || 0);
+  const list = listPropertyRowsFiltered(minPrice, maxPrice, bedrooms, partnerCommissionMin);
   return res.json(list.map((p) => stripContacts(p)));
 });
 
@@ -785,13 +1172,14 @@ app.patch("/api/agency/properties/:id/owner", auth, requireAgencyOwner, (req, re
   if (!targetOwnerId) {
     return res.status(400).json({ message: "ownerId обязателен" });
   }
-  const brokers = listBrokersByAgencyOwner(req.userId);
-  const allowedOwnerIds = new Set([req.userId, ...brokers.map((b) => b.id)]);
+  const allowedOwnerIds = new Set([req.userId, ...agencyAssignableBrokerIds(req.userId)]);
   if (!allowedOwnerIds.has(property.ownerId)) {
     return res.status(403).json({ message: "Этот объект не относится к вашему агентству" });
   }
   if (!allowedOwnerIds.has(targetOwnerId)) {
-    return res.status(400).json({ message: "Можно назначить только брокера вашего агентства или само агентство" });
+    return res.status(400).json({
+      message: "Можно назначить только зарегистрированного брокера вашего агентства или само агентство"
+    });
   }
   if (!reassignPropertyOwner(property.id, targetOwnerId)) {
     return res.status(500).json({ message: "Не удалось обновить ответственного брокера" });
@@ -804,8 +1192,7 @@ app.delete("/api/agency/properties/:id", auth, requireAgencyOwner, (req, res) =>
   if (!property) {
     return res.status(404).json({ message: "Объект не найден" });
   }
-  const brokers = listBrokersByAgencyOwner(req.userId);
-  const allowedOwnerIds = new Set([req.userId, ...brokers.map((b) => b.id)]);
+  const allowedOwnerIds = new Set([req.userId, ...agencyAssignableBrokerIds(req.userId)]);
   if (!allowedOwnerIds.has(property.ownerId)) {
     return res.status(403).json({ message: "Этот объект не относится к вашему агентству" });
   }
@@ -817,17 +1204,11 @@ app.delete("/api/agency/properties/:id", auth, requireAgencyOwner, (req, res) =>
 });
 
 app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
-  const { firstName, lastName, email, password, phone } = req.body;
-  if (!firstName || !lastName || !email || !password || !phone) {
-    return res.status(400).json({ message: "Заполните все поля брокера" });
+  const emailRaw = String(req.body?.email || "").trim().toLowerCase();
+  if (!emailRaw || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(emailRaw)) {
+    return res.status(400).json({ message: "Укажите корректный email сотрудника" });
   }
-  if (!/^\+7\d{10}$/.test(String(phone))) {
-    return res.status(400).json({ message: "Телефон брокера должен быть в формате +7 и 10 цифр" });
-  }
-  if (String(password).length < 6) {
-    return res.status(400).json({ message: "Пароль брокера должен быть не менее 6 символов" });
-  }
-  if (findUserByEmail(email)) {
+  if (findUserByEmail(emailRaw)) {
     return res.status(409).json({ message: "Пользователь с таким email уже есть" });
   }
   const owner = req.currentUser || findUserById(req.userId);
@@ -836,17 +1217,18 @@ app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
   if (brokerLimit > 0 && currentBrokerCount >= brokerLimit) {
     return res.status(400).json({ message: `Достигнут лимит брокеров для агентства (${brokerLimit}).` });
   }
-  const passwordHash = await bcrypt.hash(password, 10);
+  const randomGate = crypto.randomBytes(48).toString("hex");
+  const passwordHash = await bcrypt.hash(randomGate, 10);
   const broker = {
     id: `u-${Date.now()}-${Math.round(Math.random() * 1e5)}`,
-    name: `${String(firstName).trim()} ${String(lastName).trim()}`.trim(),
-    email: String(email).trim(),
+    name: "Ожидает регистрации",
+    email: emailRaw,
     passwordHash,
-    firstName: String(firstName).trim(),
-    lastName: String(lastName).trim(),
+    firstName: "",
+    lastName: "",
     agency: owner?.agency || "",
     inn: owner?.inn || "",
-    phone: String(phone).trim(),
+    phone: "",
     marketingConsent: false,
     telegram: "",
     whatsapp: "",
@@ -855,15 +1237,42 @@ app.post("/api/agency/brokers", auth, requireAgencyOwner, async (req, res) => {
     role: "user",
     accountType: "broker",
     agencyOwnerId: req.userId,
+    brokerLimit: 0,
+    emailVerified: false,
+    agencyInvitePending: true,
     createdAt: new Date().toISOString()
   };
   createUserRecord(broker);
+  const agencyLabel = (owner?.agency || owner?.name || "агентства").trim() || "агентства";
+  const inviteToken = signActionToken(
+    { action: "agency_broker_invite", userId: broker.id, email: broker.email },
+    "14d"
+  );
+  const inviteUrl = `${APP_BASE_URL}/#/auth-agency-invite/${encodeURIComponent(inviteToken)}`;
+  try {
+    await sendEmail({
+      to: broker.email,
+      subject: `${agencyLabel} — приглашение в BrokerMap`,
+      text: `Здравствуйте.\n\n${agencyLabel} приглашает вас присоединиться к платформе BrokerMap как сотрудника агентства (брокер).\n\nПерейдите по ссылке, чтобы указать телефон, ФИО и пароль и принять условия: ${inviteUrl}\n\nСсылка действительна 14 дней.`,
+      html: `<p>Здравствуйте.</p><p><strong>${htmlEscape(agencyLabel)}</strong> приглашает вас в платформу <strong>BrokerMap</strong> как сотрудника агентства (брокер).</p><p>Чтобы завершить регистрацию — укажите телефон, имя, фамилию и пароль и примите условия обработки данных, перейдите по ссылке:</p><p><a href="${htmlEscape(
+        inviteUrl
+      )}">Принять приглашение</a></p><p style="color:#64748b;font-size:13px;">Ссылка действительна 14 дней.</p>`
+    });
+  } catch (error) {
+    deleteUserById(broker.id);
+    console.error("[mail] agency broker invite failed:", error?.message || error);
+    return res.status(502).json({
+      message:
+        "Не удалось отправить приглашение на почту. Проверьте настройки SMTP и попробуйте снова."
+    });
+  }
   return res.status(201).json({
     id: broker.id,
     email: broker.email,
     name: broker.name,
     phone: broker.phone,
     agency: broker.agency,
+    invitePending: true,
     createdAt: broker.createdAt
   });
 });
@@ -918,6 +1327,7 @@ app.post(
       return res.status(400).json({ message: "Заполните все обязательные поля объекта, включая фото." });
     }
 
+    const publishedAt = new Date().toISOString();
     const property = {
       id: createPropertyId(),
       ownerId: req.userId,
@@ -933,12 +1343,15 @@ app.post(
       ceilingHeight: toOptionalNumber(req.body.ceilingHeight),
       finishing: normalizeFinishing(req.body.finishing),
       readiness: normalizeReadiness(req.body.readiness),
+      housingStatus: normalizeHousingStatus(req.body.housingStatus),
+      metroWalkMinutes: toOptionalNumber(req.body.metroWalkMinutes),
       description: req.body.description || "",
       photos,
       pdfUrl: presentation,
       commissionTotal: Number(req.body.commissionTotal),
       commissionPartner: Number(req.body.commissionPartner),
-      createdAt: new Date().toISOString(),
+      publishedAt,
+      createdAt: publishedAt,
       contacts: {
         phone: req.body.phone || "",
         telegram: req.body.telegram || "",
@@ -1012,6 +1425,9 @@ app.put(
         ceilingHeight: toOptionalNumber(req.body.ceilingHeight ?? property.ceilingHeight),
         finishing: req.body.finishing === undefined ? property.finishing : normalizeFinishing(req.body.finishing),
         readiness: req.body.readiness === undefined ? property.readiness : normalizeReadiness(req.body.readiness),
+        housingStatus: req.body.housingStatus === undefined ? property.housingStatus : normalizeHousingStatus(req.body.housingStatus),
+        metroWalkMinutes:
+          req.body.metroWalkMinutes === undefined ? property.metroWalkMinutes : toOptionalNumber(req.body.metroWalkMinutes),
         description: req.body.description ?? property.description,
         id: property.id
       });
@@ -1029,6 +1445,10 @@ app.put(
     property.ceilingHeight = toOptionalNumber(req.body.ceilingHeight ?? property.ceilingHeight);
     property.finishing = req.body.finishing === undefined ? property.finishing : normalizeFinishing(req.body.finishing);
     property.readiness = req.body.readiness === undefined ? property.readiness : normalizeReadiness(req.body.readiness);
+    property.housingStatus =
+      req.body.housingStatus === undefined ? property.housingStatus : normalizeHousingStatus(req.body.housingStatus);
+    property.metroWalkMinutes =
+      req.body.metroWalkMinutes === undefined ? property.metroWalkMinutes : toOptionalNumber(req.body.metroWalkMinutes);
     property.description = req.body.description ?? property.description;
     property.commissionTotal = Number(req.body.commissionTotal ?? property.commissionTotal);
     property.commissionPartner = Number(req.body.commissionPartner ?? property.commissionPartner);

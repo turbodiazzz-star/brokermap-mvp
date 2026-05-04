@@ -8,6 +8,7 @@ const state = {
   panelCollapsed: false,
   /** моб.: последний translateY трека (может быть < 0 при длинной ленте); null — взять по умолч. */
   panelSheetT: null,
+  panelSheetInitialized: false,
   panelCollapsedBeforeCabinet: null,
   panelSheetTBeforeCabinet: null,
   areaPolygonCoords: null,
@@ -19,6 +20,14 @@ const state = {
   areaDrawCanvas: null,
   mapView: null,
   viewportUpdateTimer: null,
+  /** Не пересобирать панель при boundschange, если список тот же — иначе рвётся жест шторки */
+  mapViewportListSig: "",
+  demoViewportListSig: "",
+  mapAreaListSig: "",
+  demoAreaListSig: "",
+  /** Не перерисовывать лист по boundschange, пока открыт список группы метки (иначе DOM и transform сбрасываются). */
+  mapLeftPanelMode: null,
+  demoLeftPanelMode: null,
   filters: {
     minPrice: "",
     maxPrice: "",
@@ -29,15 +38,46 @@ const state = {
     totalFloorsMax: "",
     ceilingHeightMin: "",
     finishing: "",
-    readiness: ""
+    readiness: "",
+    partnerCommissionMinPct: "",
+    partnerCommissionMinRub: "",
+    minArea: "",
+    maxArea: "",
+    housingStatus: "",
+    publishedFrom: "",
+    metroWalkMax: ""
   },
   /** Фиксированный набор демо-объектов на сессию (фильтры не меняют «источник») */
   demoAllProperties: null,
   /** увеличивать, чтобы сбросить кэш демо после смены логики точек/адресов */
-  demoDataVersion: 0
+  demoDataVersion: 0,
+  /** При входе/регистрации с демо-карты или карточки демо — куда вернуться после закрытия оверлея */
+  authOverlayReturnHash: null
 };
 
-const CURRENT_DEMO_DATA_VERSION = 5;
+function emptyFilters() {
+  return {
+    minPrice: "",
+    maxPrice: "",
+    bedrooms: "",
+    floorMin: "",
+    floorMax: "",
+    totalFloorsMin: "",
+    totalFloorsMax: "",
+    ceilingHeightMin: "",
+    finishing: "",
+    readiness: "",
+    partnerCommissionMinPct: "",
+    partnerCommissionMinRub: "",
+    minArea: "",
+    maxArea: "",
+    housingStatus: "",
+    publishedFrom: "",
+    metroWalkMax: ""
+  };
+}
+
+const CURRENT_DEMO_DATA_VERSION = 7;
 
 let didSyncUserFromServer = false;
 
@@ -119,6 +159,137 @@ function readinessLabel(value) {
   return map[value] || "-";
 }
 
+function housingStatusLabel(value) {
+  const map = { flat: "Квартира", apartments: "Апартаменты" };
+  return map[value] || map.flat;
+}
+
+function formatPublishedDateRu(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+}
+
+function publishedAtTimeMs(item) {
+  const s = item.publishedAt || item.createdAt;
+  const t = Date.parse(String(s || ""));
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function propertyRoomsShortLabel(bedrooms) {
+  const b = Number(bedrooms || 0);
+  if (!b) return "Квартира";
+  if (b >= 5) return "5+-комн. кв.";
+  return `${b}-комн. кв.`;
+}
+
+function propertySpecSummaryLine(property) {
+  const parts = [
+    propertyRoomsShortLabel(property.bedrooms),
+    property.area ? `${Number(property.area)} м²` : "",
+    property.floor && property.totalFloors
+      ? `${Number(property.floor)}/${Number(property.totalFloors)} этаж`
+      : property.floor
+        ? `${Number(property.floor)} этаж`
+        : ""
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toR = (d) => (d * Math.PI) / 180;
+  const dLat = toR(lat2 - lat1);
+  const dLon = toR(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function getMoscowMetroStationList() {
+  const g = typeof globalThis !== "undefined" ? globalThis : null;
+  if (g && Array.isArray(g.MOSCOW_METRO_STATIONS) && g.MOSCOW_METRO_STATIONS.length) {
+    return g.MOSCOW_METRO_STATIONS;
+  }
+  return [];
+}
+
+/** Ближайшая станция метро по координатам (данные OSM, см. moscowMetroStations.js). */
+function nearestMoscowMetroName(lat, lon) {
+  const stations = getMoscowMetroStationList();
+  if (!stations.length || !Number.isFinite(lat) || !Number.isFinite(lon)) return "";
+  let best = null;
+  let bestD = Infinity;
+  for (const s of stations) {
+    const d = haversineMeters(lat, lon, s.lat, s.lon);
+    if (d < bestD) {
+      bestD = d;
+      best = s;
+    }
+  }
+  return best?.name ? String(best.name) : "";
+}
+
+function propertyMetroLabel(property) {
+  const explicit = String(property?.metro || "").trim();
+  if (explicit) return explicit;
+  const lat = Number(property?.lat);
+  const lon = Number(property?.lon);
+  return nearestMoscowMetroName(lat, lon);
+}
+
+function propertyMetroHtml(property) {
+  const metro = propertyMetroLabel(property).trim();
+  const walk =
+    property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+      ? `${Number(property.metroWalkMinutes)} мин пешком`
+      : "";
+  if (!metro && !walk) return "";
+  const line = [metro, walk].filter(Boolean).join(" · ");
+  return `<div class="card-metro"><span class="card-metro__dot" aria-hidden="true"></span><span class="card-metro__name">${escapeHtml(
+    line
+  )}</span></div>`;
+}
+
+function propertyFeedPhotoDots(property) {
+  const photos = Array.isArray(property.photos) ? property.photos : [];
+  if (photos.length <= 1) return "";
+  return `<div class="card-photo-dots" aria-hidden="true">${photos
+    .map((_, i) => `<span class="card-photo-dot${i === 0 ? " card-photo-dot--active" : ""}"></span>`)
+    .join("")}</div>`;
+}
+
+function downloadBlobAsFile(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "file.pdf";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function canOwnerRegeneratePropertyPdf(property) {
+  return Boolean(state.user && property?.ownerId && property.ownerId === state.user.id);
+}
+
+async function fetchPropertyPresentationBlob(property, id) {
+  let pdfUrl = property.pdfUrl;
+  if (!pdfUrl) {
+    if (!canOwnerRegeneratePropertyPdf(property)) {
+      throw new Error("Презентация PDF ещё не сформирована. Попросите владельца объекта сгенерировать её в карточке.");
+    }
+    const data = await api(`/api/my/properties/${id}/generate-pdf`, { method: "POST" });
+    pdfUrl = data.pdfUrl;
+  }
+  const absoluteUrl = new URL(pdfUrl, window.location.origin).toString();
+  return fetchPdfBlobWithAuth(absoluteUrl);
+}
+
 function formatRussianPhoneMasked(value) {
   const digits = String(value || "").replace(/\D/g, "").slice(0, 10);
   if (!digits) return "";
@@ -146,12 +317,78 @@ const PLACEHOLDER_IMAGE_URL = `data:image/svg+xml,${encodeURIComponent(
   </svg>`
 )}`;
 
-function photoUrlWithFallback(url) {
-  return escapeHtml(url || PLACEHOLDER_IMAGE_URL);
+/** Сжатие превью для карточек (меньше трафика на мобильных). */
+function optimizePhotoSrc(url, mode = "card") {
+  const u = String(url || "").trim();
+  if (!u || u.startsWith("data:") || u === PLACEHOLDER_IMAGE_URL) return u || PLACEHOLDER_IMAGE_URL;
+  try {
+    const parsed = new URL(u, typeof location !== "undefined" ? location.origin : undefined);
+    if (/images\.unsplash\.com$/i.test(parsed.hostname)) {
+      const w = mode === "gallery" ? "1200" : "720";
+      parsed.search = "";
+      parsed.searchParams.set("w", w);
+      parsed.searchParams.set("q", "80");
+      parsed.searchParams.set("auto", "format");
+      parsed.searchParams.set("fit", "max");
+      return parsed.toString();
+    }
+  } catch (_e) {
+    /* ignore */
+  }
+  return u;
+}
+
+/** Абсолютный URL превью — на части клиентов относительный путь внутри ленты резолвился неверно. */
+function absoluteMediaUrl(url) {
+  const u = String(url || "").trim();
+  if (!u || u.startsWith("data:")) return u;
+  try {
+    if (typeof location === "undefined") return u;
+    return new URL(u, location.href).href;
+  } catch {
+    return u;
+  }
+}
+
+function photoUrlWithFallback(url, opts = {}) {
+  const mode = opts.gallery ? "gallery" : "card";
+  const raw = url || PLACEHOLDER_IMAGE_URL;
+  let src = optimizePhotoSrc(raw === PLACEHOLDER_IMAGE_URL ? raw : raw, mode);
+  if (raw !== PLACEHOLDER_IMAGE_URL && !src.startsWith("data:")) {
+    src = absoluteMediaUrl(src);
+  }
+  return escapeHtml(src);
+}
+
+function imgLazyAttrs(extra = {}) {
+  const eager = extra.priority === "high" || extra.feedCard === true;
+  const loading = eager ? 'loading="eager"' : 'loading="lazy"';
+  const fetchPr = extra.priority === "high" ? ' fetchpriority="high"' : "";
+  return `${loading} decoding="async"${fetchPr}`;
 }
 
 function photoOnErrorAttr() {
   return `this.onerror=null;this.src='${PLACEHOLDER_IMAGE_URL}';`;
+}
+
+function getPropertyPreviewPhoto(property) {
+  if (!property || typeof property !== "object") return "";
+  if (Array.isArray(property.photos) && property.photos[0]) return property.photos[0];
+  if (typeof property.photo === "string" && property.photo) return property.photo;
+  if (typeof property.photoUrl === "string" && property.photoUrl) return property.photoUrl;
+  return "";
+}
+
+async function fetchPdfBlobWithAuth(url) {
+  const headers = {};
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  const res = await fetch(url, {
+    method: "GET",
+    credentials: "include",
+    headers
+  });
+  if (!res.ok) throw new Error("Не удалось загрузить PDF");
+  return res.blob();
 }
 
 async function api(url, options = {}) {
@@ -167,6 +404,8 @@ async function api(url, options = {}) {
   if (!response.ok) {
     if (response.status === 401 && state.token) {
       logout();
+      state.authOverlayReturnHash = null;
+      removeAuthDemoOverlay();
       location.hash = "#/auth";
     }
     if (response.status === 403) {
@@ -187,11 +426,72 @@ const agencyButtonHtml = () =>
     ? `<button type="button" class="top-action" id="agencyBtn">Агентство</button>`
     : "";
 
+const SUPPORT_EMAIL = "support@brokermap.ru";
+
+function bindFiltersModalNumericFormatting() {
+  const wireInt = (id) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.spacedBound === "1") return;
+    el.dataset.spacedBound = "1";
+    el.addEventListener("input", (e) => {
+      const raw = toRawNumberString(e.target.value);
+      e.target.value = formatSpacedNumber(raw);
+    });
+  };
+  [
+    "filterFloorMin",
+    "filterFloorMax",
+    "filterTotalFloorsMin",
+    "filterTotalFloorsMax",
+    "filterPartnerRub",
+    "filterMetroWalkMax"
+  ].forEach(wireInt);
+  const pct = document.getElementById("filterPartnerPct");
+  if (pct && pct.dataset.decBound !== "1") {
+    pct.dataset.decBound = "1";
+    pct.addEventListener("input", (e) => {
+      e.target.value = normalizeDecimalInput(e.target.value);
+    });
+  }
+  const ceil = document.getElementById("filterCeilingMin");
+  if (ceil && ceil.dataset.ceilBound !== "1") {
+    ceil.dataset.ceilBound = "1";
+    ceil.addEventListener("input", (e) => {
+      const cleaned = String(e.target.value || "")
+        .replace(",", ".")
+        .replace(/[^\d.]/g, "");
+      const [integerPart, ...rest] = cleaned.split(".");
+      const decimalPart = rest.join("").slice(0, 2);
+      const formattedInteger = formatSpacedNumber(integerPart);
+      e.target.value = decimalPart ? `${formattedInteger},${decimalPart}` : formattedInteger;
+    });
+  }
+  const bindAreaFilterInput = (id) => {
+    const el = document.getElementById(id);
+    if (!el || el.dataset.areaFilterBound === "1") return;
+    el.dataset.areaFilterBound = "1";
+    el.addEventListener("input", (e) => {
+      const cleaned = String(e.target.value || "")
+        .replace(",", ".")
+        .replace(/[^\d.]/g, "");
+      const [integerPart, ...rest] = cleaned.split(".");
+      const decimalPart = rest.join("").slice(0, 2);
+      const formattedInteger = formatSpacedNumber(integerPart);
+      e.target.value = decimalPart ? `${formattedInteger},${decimalPart}` : formattedInteger;
+    });
+  };
+  bindAreaFilterInput("filterAreaMin");
+  bindAreaFilterInput("filterAreaMax");
+}
+
 function moreFiltersModalHtml() {
   return `
     <div class="modal" id="filtersModal">
-      <div class="modal-card">
-        <h3>Дополнительные фильтры</h3>
+      <div class="modal-card filters-modal-card">
+        <div class="panel-head">
+          <h3>Дополнительные фильтры</h3>
+          <button class="close-panel-action" id="closeFiltersXBtn" type="button" aria-label="Закрыть">×</button>
+        </div>
         <div class="form-grid">
           <div class="field-block">
             <label class="field-label" for="modalMinPrice">Цена от</label>
@@ -213,23 +513,35 @@ function moreFiltersModalHtml() {
           </div>
           <div class="field-block">
             <label class="field-label" for="filterFloorMin">Этаж от</label>
-            <input id="filterFloorMin" type="number" min="1" value="${escapeHtml(state.filters.floorMin)}" />
+            <input id="filterFloorMin" type="text" inputmode="numeric" value="${formatSpacedNumber(state.filters.floorMin)}" />
           </div>
           <div class="field-block">
             <label class="field-label" for="filterFloorMax">Этаж до</label>
-            <input id="filterFloorMax" type="number" min="1" value="${escapeHtml(state.filters.floorMax)}" />
+            <input id="filterFloorMax" type="text" inputmode="numeric" value="${formatSpacedNumber(state.filters.floorMax)}" />
           </div>
           <div class="field-block">
             <label class="field-label" for="filterTotalFloorsMin">Этажей в доме от</label>
-            <input id="filterTotalFloorsMin" type="number" min="1" value="${escapeHtml(state.filters.totalFloorsMin)}" />
+            <input id="filterTotalFloorsMin" type="text" inputmode="numeric" value="${formatSpacedNumber(state.filters.totalFloorsMin)}" />
           </div>
           <div class="field-block">
             <label class="field-label" for="filterTotalFloorsMax">Этажей в доме до</label>
-            <input id="filterTotalFloorsMax" type="number" min="1" value="${escapeHtml(state.filters.totalFloorsMax)}" />
+            <input id="filterTotalFloorsMax" type="text" inputmode="numeric" value="${formatSpacedNumber(state.filters.totalFloorsMax)}" />
           </div>
           <div class="field-block">
             <label class="field-label" for="filterCeilingMin">Потолки от (м)</label>
-            <input id="filterCeilingMin" type="number" step="0.1" min="0" value="${escapeHtml(state.filters.ceilingHeightMin)}" />
+            <input id="filterCeilingMin" type="text" inputmode="decimal" value="${escapeHtml(
+              String(state.filters.ceilingHeightMin || "").replace(".", ",")
+            )}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterPartnerPct">Комиссия партнёру от (%)</label>
+            <input id="filterPartnerPct" type="text" inputmode="decimal" value="${escapeHtml(state.filters.partnerCommissionMinPct)}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterPartnerRub">Комиссия партнёру от (₽)</label>
+            <input id="filterPartnerRub" type="text" inputmode="numeric" value="${formatSpacedNumber(
+              state.filters.partnerCommissionMinRub
+            )}" />
           </div>
           <div class="field-block">
             <label class="field-label" for="filterFinishing">Отделка</label>
@@ -248,11 +560,40 @@ function moreFiltersModalHtml() {
               <option value="assignment" ${state.filters.readiness === "assignment" ? "selected" : ""}>Переуступка</option>
             </select>
           </div>
+          <div class="field-block">
+            <label class="field-label" for="filterAreaMin">Площадь от (м²)</label>
+            <input id="filterAreaMin" type="text" inputmode="decimal" value="${escapeHtml(
+              String(state.filters.minArea || "").replace(".", ",")
+            )}" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="filterAreaMax">Площадь до (м²)</label>
+            <input id="filterAreaMax" type="text" inputmode="decimal" value="${escapeHtml(
+              String(state.filters.maxArea || "").replace(".", ",")
+            )}" />
+          </div>
+          <div class="field-block field-span-2">
+            <label class="field-label" for="filterHousingStatus">Статус жилья</label>
+            <select id="filterHousingStatus">
+              <option value="">Любой</option>
+              <option value="flat" ${state.filters.housingStatus === "flat" ? "selected" : ""}>Квартира</option>
+              <option value="apartments" ${state.filters.housingStatus === "apartments" ? "selected" : ""}>Апартаменты</option>
+            </select>
+          </div>
+          <div class="field-block field-span-2">
+            <label class="field-label" for="filterPublishedFrom">Дата публикации от</label>
+            <input id="filterPublishedFrom" type="date" value="${escapeHtml(state.filters.publishedFrom || "")}" />
+          </div>
+          <div class="field-block field-span-2">
+            <label class="field-label" for="filterMetroWalkMax">До метро пешком, не более (мин)</label>
+            <input id="filterMetroWalkMax" type="text" inputmode="numeric" value="${formatSpacedNumber(
+              state.filters.metroWalkMax
+            )}" />
+          </div>
         </div>
         <p>
           <button class="btn primary" id="applyMoreFilters" type="button">Применить</button>
           <button class="btn" id="resetMoreFilters" type="button">Сбросить доп. фильтры</button>
-          <button class="btn" id="closeModal" type="button">Закрыть</button>
         </p>
       </div>
     </div>
@@ -314,8 +655,9 @@ function topbar(options = {}) {
       </div>
     </header>`;
   }
+  const hideFilters = Boolean(options.hideFilters);
   return `
-    <header class="topbar">
+    <header class="topbar ${hideFilters ? "topbar--no-filters" : ""}">
       <button type="button" class="brand brand-home-btn" id="brandHomeBtn">BrokerMap</button>
       <div class="filters">
         <input
@@ -362,20 +704,49 @@ function mobileMapChromeHtml(isDemo) {
       <button type="button" class="btn" id="${isDemo ? "demoMobileFiltersBtn" : "mapMobileFiltersBtn"}">Фильтры</button>
     </div>
     ${isDemo ? `<div class="mobile-map-title">Демо</div>` : ""}
+    ${mobileBottomNavHtml("search")}
+  `;
+}
+
+function mobileBottomNavHtml(activeTab = "search") {
+  return `
     <nav class="mobile-map-bottom-nav" aria-label="Навигация">
-      <button type="button" class="mobile-map-bottom-nav__btn active" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}">Поиск</button>
-      <button type="button" class="mobile-map-bottom-nav__btn" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}">Личный кабинет</button>
+      <button type="button" class="mobile-map-bottom-nav__btn ${activeTab === "search" ? "active" : ""}" id="mobileNavSearchBtn">Поиск</button>
+      <button type="button" class="mobile-map-bottom-nav__btn ${activeTab === "cabinet" ? "active" : ""}" id="mobileNavCabinetBtn">Личный кабинет</button>
     </nav>
   `;
 }
 
-function mobileBottomNavHtml(isDemo) {
-  return `
-    <nav class="mobile-map-bottom-nav" aria-label="Навигация">
-      <button type="button" class="mobile-map-bottom-nav__btn ${isDemo ? "active" : ""}" id="${isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn"}">Поиск</button>
-      <button type="button" class="mobile-map-bottom-nav__btn ${isDemo ? "" : "active"}" id="${isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn"}">Личный кабинет</button>
-    </nav>
-  `;
+function getActiveMobileNavTab() {
+  const hash = location.hash || "#/";
+  if (
+    hash.startsWith("#/cabinet") ||
+    (hash.startsWith("#/auth") && !hash.startsWith("#/auth-agency-invite")) ||
+    hash.startsWith("#/admin") ||
+    hash.startsWith("#/agency")
+  ) {
+    return "cabinet";
+  }
+  return "search";
+}
+
+function mapDrawToolsHtml() {
+  return `<div class="map-draw-tools">
+    <button class="map-draw-btn" type="button" id="mapDrawAreaBtn" title="Выделить область на карте" aria-label="Выделить область на карте"><span class="map-draw-btn__icon" aria-hidden="true">✍</span></button>
+    <div class="map-draw-hint" id="mapDrawHint">
+      <button type="button" class="map-draw-hint__close" id="mapDrawHintCloseBtn" aria-label="Скрыть подсказку">×</button>
+      Выделите кистью район на карте, чтобы показать объекты только в этой зоне.
+    </div>
+  </div>`;
+}
+
+function updateMobileNavMetrics() {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  const nav = document.querySelector(".mobile-map-bottom-nav");
+  if (nav) {
+    document.documentElement.style.setProperty("--mobile-bottom-nav-height", `${Math.round(nav.offsetHeight)}px`);
+  }
+  refreshMobileSheetLayoutVars(null);
 }
 
 function bindBrandHomeButton() {
@@ -387,11 +758,12 @@ function bindBrandHomeButton() {
 function ensureMapDrawControls() {
   const mapWrap = document.querySelector(".map-wrap");
   if (!mapWrap) return;
+  const toolsParent = mapWrap.querySelector(".map-stage") || mapWrap;
   let tools = mapWrap.querySelector(".map-draw-tools");
   if (!tools) {
     tools = document.createElement("div");
     tools.className = "map-draw-tools";
-    mapWrap.appendChild(tools);
+    toolsParent.appendChild(tools);
   }
   let drawBtn = document.getElementById("mapDrawAreaBtn");
   if (!drawBtn) {
@@ -399,25 +771,61 @@ function ensureMapDrawControls() {
     drawBtn.id = "mapDrawAreaBtn";
     drawBtn.className = "map-draw-btn";
     drawBtn.title = "Рисовать область";
-    drawBtn.textContent = "✍";
+    drawBtn.innerHTML = `<span class="map-draw-btn__icon" aria-hidden="true">✍</span>`;
     tools.appendChild(drawBtn);
     drawBtn.addEventListener("click", startAreaDrawing);
   }
+  let hint = tools.querySelector(".map-draw-hint");
+  if (!hint) {
+    hint = document.createElement("div");
+    hint.className = "map-draw-hint";
+    hint.id = "mapDrawHint";
+    hint.innerHTML = `
+      <button type="button" class="map-draw-hint__close" id="mapDrawHintCloseBtn" aria-label="Скрыть подсказку">×</button>
+      Выделите кистью район на карте, чтобы показать объекты только в этой зоне.
+    `;
+    tools.appendChild(hint);
+  }
   tools.style.display = "flex";
   drawBtn.style.display = "inline-flex";
+  bindMapDrawHint();
   syncDrawButtons();
 }
 
+function bindMapDrawHint() {
+  const hint = document.getElementById("mapDrawHint");
+  const closeBtn = document.getElementById("mapDrawHintCloseBtn");
+  if (!hint || !closeBtn) return;
+  const hidden = localStorage.getItem("mapDrawHintDismissed") === "1";
+  hint.classList.toggle("hidden", hidden);
+  closeBtn.onclick = () => {
+    hint.classList.add("hidden");
+    localStorage.setItem("mapDrawHintDismissed", "1");
+  };
+}
+
 function cardMarkup(property) {
+  const pct = Number(property.commissionPartner || 0);
+  const commissionRub = (Number(property.price || 0) * pct) / 100;
+  const premium = property.commissionPartner >= 4;
   return `
-    <article class="card ${property.commissionPartner >= 4 ? "premium" : ""}">
-      <img src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="Объект" />
+    <article class="card card--feed ${premium ? "premium" : ""}">
+      <div class="card-media">
+        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
+        ${propertyFeedPhotoDots(property)}
+      </div>
+      <div class="card-badges">
+        <span class="card-badge card-badge--partner">Партнёру ${escapeHtml(String(pct))}%</span>
+        <span class="card-badge card-badge--amount">${money(commissionRub)} ₽ партнёру</span>
+      </div>
       <div class="card-body">
-        <div class="price">${money(property.price)} ₽</div>
-        <div>${property.address}</div>
-        <div class="muted">Комиссия партнеру: <strong>${property.commissionPartner}%</strong></div>
-        <div class="muted">Сумма: ${money((property.price * property.commissionPartner) / 100)} ₽</div>
-        <p><button class="btn primary open-object" data-id="${property.id}">Перейти к объекту</button></p>
+        <div class="card-price">${money(property.price)} ₽</div>
+        <div class="card-spec">${escapeHtml(propertySpecSummaryLine(property))}</div>
+        <div class="card-address muted">${escapeHtml(property.address || "")}</div>
+        ${propertyMetroHtml(property)}
+        <p class="card-actions"><button class="btn primary full open-object" type="button" data-id="${escapeHtml(
+          property.id
+        )}">Подробнее</button></p>
       </div>
     </article>
   `;
@@ -496,12 +904,17 @@ function createDemoProperties(count = 100) {
   for (let i = 0; i < count; i++) {
     const { lat, lon, address } = slots[i] || slots[0];
     const priceBase = priceRoundedThousands(12_000_000 + (i * 601_001) % 59_000_000);
+    const partnerPct = Number((1 + (i % 8) * 0.5).toFixed(1));
+    const daysAgo = 1 + (i % 120);
+    const pub = new Date();
+    pub.setDate(pub.getDate() - daysAgo);
     demo.push({
       id: `demo-${i + 1}`,
       title: `Квартира в Москве #${i + 1}`,
       address,
       lat,
       lon,
+      metro: nearestMoscowMetroName(lat, lon),
       price: priceBase,
       area: 28 + (i % 9) * 6,
       bedrooms: (i % 4) + 1,
@@ -510,8 +923,11 @@ function createDemoProperties(count = 100) {
       ceilingHeight: Math.round((2.6 + (i % 5) * 0.1) * 10) / 10,
       finishing: finishingOptions[i % finishingOptions.length],
       readiness: readinessOptions[i % readinessOptions.length],
+      housingStatus: i % 4 === 0 ? "apartments" : "flat",
+      publishedAt: pub.toISOString(),
+      metroWalkMinutes: 3 + (i % 22),
       commissionTotal: 3,
-      commissionPartner: 1.5,
+      commissionPartner: partnerPct,
       contacts: {
         phone: "+7 (9••) •••-••-••",
         telegram: "@••••••••"
@@ -525,18 +941,28 @@ function createDemoProperties(count = 100) {
 }
 
 function demoCardMarkup(item) {
+  const pct = Number(item.commissionPartner || 0);
+  const commissionRub = (Number(item.price || 0) * pct) / 100;
+  const premium = item.commissionPartner >= 4;
   return `
-    <article class="card">
-      <img src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="Демо объект">
+    <article class="card card--feed ${premium ? "premium" : ""}">
+      <div class="card-media">
+        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
+        ${propertyFeedPhotoDots(item)}
+      </div>
+      <div class="card-badges">
+        <span class="card-badge card-badge--partner">Партнёру ${escapeHtml(String(pct))}%</span>
+        <span class="card-badge card-badge--amount">${money(commissionRub)} ₽ партнёру</span>
+      </div>
       <div class="card-body">
-        <div class="price">${money(item.price)} ₽</div>
-        <div>${item.address}</div>
-        <div class="muted">${item.area} м² · ${item.bedrooms} спальни</div>
-        <div class="muted">Общая комиссия: <strong>${item.commissionTotal}%</strong></div>
-        <div class="muted">Комиссия партнера: <strong>${item.commissionPartner}%</strong></div>
-        <div class="demo-blur-line">Телефон: ${item.contacts.phone}</div>
-        <div class="demo-blur-line">Telegram: ${item.contacts.telegram}</div>
-        <p><button class="btn primary open-demo-object" data-id="${item.id}">Открыть объект</button></p>
+        <div class="card-price">${money(item.price)} ₽</div>
+        <div class="card-spec">${escapeHtml(propertySpecSummaryLine(item))}</div>
+        <div class="card-address muted">${escapeHtml(item.address || "")}</div>
+        ${propertyMetroHtml(item)}
+        <p class="card-actions card-actions--split">
+          <button class="btn full open-demo-contacts" type="button">Открыть контакты</button>
+          <button class="btn primary full open-demo-object" type="button" data-id="${escapeHtml(item.id)}">Подробнее</button>
+        </p>
       </div>
     </article>
   `;
@@ -546,6 +972,11 @@ function bindDemoCardButtons(root = document) {
   root.querySelectorAll(".open-demo-object").forEach((btn) => {
     btn.addEventListener("click", () => {
       location.hash = `#/demo/property/${encodeURIComponent(btn.dataset.id)}`;
+    });
+  });
+  root.querySelectorAll(".open-demo-contacts").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      goToAuthFromGuestDemo("#/auth-register");
     });
   });
 }
@@ -562,7 +993,12 @@ function leftPanelTrackWrap(innerHtml) {
 }
 
 function leftPanelMobileBlock(handleAreaId, headHtml, bodyHtml) {
-  return leftPanelTrackWrap(leftPanelHandleHtml(handleAreaId) + headHtml + bodyHtml);
+  const body = bodyHtml ? `<div class="left-panel-scroll" data-sheet-scroll>${bodyHtml}</div>` : "";
+  return leftPanelTrackWrap(leftPanelHandleHtml(handleAreaId) + headHtml + body);
+}
+
+function sheetObjectsListFooterHtml() {
+  return `<div class="left-panel-list-footer"><p class="muted">${escapeHtml("Сейчас это все объекты по вашему поиску")}</p></div>`;
 }
 
 /** Узел с transform: внутр. трек (контент), не внешний clip — тогда «окно» стоит, едет лента */
@@ -598,7 +1034,7 @@ function setPanelTranslateY(el, y, withTransition, durationMs) {
     el.classList.add("left-panel--sheet-anim");
     if (durationMs != null) {
       const ms = Math.max(120, Math.round(durationMs));
-      el.style.transition = `transform ${ms}ms cubic-bezier(0.22, 0.9, 0.22, 1)`;
+      el.style.transition = `transform ${ms}ms cubic-bezier(0.32, 0.72, 0, 1)`;
     } else {
       el.style.removeProperty("transition");
     }
@@ -609,54 +1045,121 @@ function setPanelTranslateY(el, y, withTransition, durationMs) {
   el.style.transform = `translate3d(0, ${y}px, 0)`;
 }
 
-function mobileViewportHeight() {
+/** Видимая высота (iOS Safari URL bar / клавиатура) — стабильнее, чем innerHeight. */
+function mobileViewportInnerHeight() {
   const vv = window.visualViewport;
-  if (vv && vv.height > 40) return Math.round(vv.height);
+  if (vv && vv.height > 32) return Math.round(vv.height);
   return Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
 }
 
+function ensureMobileSheetVisualViewportReflow() {
+  if (typeof window === "undefined" || window.__bmVVSheetBound === "1") return;
+  const vv = window.visualViewport;
+  if (!vv) return;
+  window.__bmVVSheetBound = "1";
+  let resizeTimer = null;
+  vv.addEventListener(
+    "resize",
+    () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        if (!window.matchMedia("(max-width: 900px)").matches) return;
+        const settle = (panel, layout) => {
+          if (!panel || !layout || !layout.classList.contains("map-layout--app-sheet")) return;
+          const node = getSheetNode(panel);
+          if (!node?.querySelector(".left-panel-head") || node.classList.contains("left-panel--sheet-live")) return;
+          mobileSheetSettleAfterRender(panel, layout);
+        };
+        settle(document.getElementById("leftPanel"), document.getElementById("mapLayout"));
+        settle(document.getElementById("demoLeftPanel"), document.getElementById("demoMapLayout"));
+      }, 100);
+    },
+    { passive: true }
+  );
+}
+
+function refreshMobileSheetLayoutVars(panel) {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  const root = document.documentElement;
+  const navEl = document.querySelector(".mobile-map-bottom-nav");
+  const navH = navEl
+    ? Math.max(48, Math.round(navEl.getBoundingClientRect().height || navEl.offsetHeight || 56))
+    : 56;
+  root.style.setProperty("--mobile-bottom-nav-height", `${navH}px`);
+
+  let topGap = 104;
+  if ((panel && panel.closest(".demo-page")) || document.querySelector("#demoLeftPanel")) {
+    const strip = document.getElementById("demoTopStrip");
+    const mobTop = document.querySelector(".demo-page .mobile-map-top");
+    const topbarDemo = document.querySelector(".demo-page .topbar");
+    const stripH = strip ? strip.getBoundingClientRect().height : 0;
+    const mobH = mobTop ? mobTop.getBoundingClientRect().height : 0;
+    const tbH = topbarDemo ? topbarDemo.getBoundingClientRect().height : 0;
+    topGap = Math.ceil(stripH + mobH + tbH + 14);
+    if (topGap < 108) topGap = 120;
+    if (topGap > 220) topGap = 220;
+  } else if (document.querySelector(".map-page")) {
+    const tb = document.querySelector(".map-page .topbar");
+    const mobTop = document.querySelector(".map-page .mobile-map-top");
+    topGap = Math.ceil((tb?.getBoundingClientRect().height || 76) + (mobTop?.getBoundingClientRect().height || 44) + 12);
+    if (topGap < 92) topGap = 100;
+    if (topGap > 200) topGap = 200;
+  }
+  root.style.setProperty("--mobile-sheet-top-gap", `${topGap}px`);
+}
+
 /**
- * Геометрия нижней шторки: положительный translateY сдвигает трек вниз (к свёртке).
- * yMin — развернуть список; yMax (yPeek) — только полоска со счётчиком; yMid — старт ~половина хода.
+ * Рулон снизу. Важно: не привязывать yMin к полному scrollHeight ленты (100+ карточек) — иначе диапазон
+ * translate тысячи px, шторка «улетает» / пружинит. Ход считаем от usable и cap, контентная высота H — для коротких листов.
  */
 function getSheetGeometry(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return null;
-  const vh = mobileViewportHeight();
-  const bottomNav = document.querySelector(".mobile-map-bottom-nav");
-  const navH = bottomNav ? Math.max(52, Math.round(bottomNav.getBoundingClientRect().height || bottomNav.offsetHeight || 56)) : 56;
-  const usable = Math.max(120, vh - navH);
-
+  refreshMobileSheetLayoutVars(panel);
+  const vh = mobileViewportInnerHeight();
   const track = panel.querySelector("[data-sheet-track]");
-  let H = track
-    ? Math.round(Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height || 0))
-    : Math.round(usable * 0.48);
-  if (!Number.isFinite(H) || H < 88) H = Math.round(usable * 0.48);
-  H = Math.max(96, H);
-
+  const wrap = panel.closest(".map-wrap");
+  const bottomNav = document.querySelector(".mobile-map-bottom-nav");
+  const navH = bottomNav
+    ? Math.max(56, Math.round(bottomNav.getBoundingClientRect().height || bottomNav.offsetHeight || 56))
+    : 56;
+  /** Высота области карты (контейнер шторки), а не весь viewport — иначе на iOS ломается flex и шторка «уезжает». */
+  let usable = Math.max(120, vh - navH);
+  if (wrap) {
+    const rh = wrap.getBoundingClientRect().height;
+    if (rh > 80) usable = Math.max(120, Math.round(rh));
+  }
+  let H =
+    track && Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height)
+      ? Math.round(Math.max(track.scrollHeight, track.offsetHeight, track.getBoundingClientRect().height))
+      : 0;
+  if (!Number.isFinite(H) || H < 88) {
+    H = Math.round(Math.min(vh, usable) * 0.52);
+  }
+  H = Math.max(92, H);
   const handleWrap = track?.querySelector(".left-panel-handle-wrap");
   const head = track?.querySelector(".left-panel-head");
-  const peekVisible = Math.max(100, Math.min(240, (handleWrap?.offsetHeight || 26) + (head?.offsetHeight || 52) + 24));
-
+  const handleH = handleWrap ? Math.round(handleWrap.offsetHeight) : 24;
+  const headH = head ? Math.round(head.offsetHeight) : 52;
+  const peekVisible = Math.max(124, Math.min(276, Math.round(handleH + headH + 28)));
   let yPeek = Math.round(usable - peekVisible);
   const yShort = Math.round(usable - H);
-  if (H < usable + peekVisible - 20) {
+  if (H < usable + peekVisible - 24) {
     yPeek = Math.max(yShort, yPeek);
   }
-  yPeek = Math.max(0, yPeek);
-
+  const tabClear = Math.max(96, Math.round(navH + 48));
   const maxPullRaw = Math.max(0, H - peekVisible);
-  const maxPullCap = Math.round(usable * 0.9);
+  const maxPullCap = Math.round(usable * 8 + tabClear + navH);
   const maxPull = Math.min(maxPullRaw, maxPullCap);
-  const yLiftExtra = Math.min(72, Math.max(28, Math.round(vh * 0.035)));
-
+  const yLiftExtra = Math.min(100, Math.max(44, Math.round(vh * 0.045)));
   let yMin = Math.round(yPeek - maxPull - yLiftExtra);
-  if (yMin > yPeek) yMin = yPeek;
-  const yMax = yPeek;
-  const span = Math.max(0, yMax - yMin);
-  const yMid = span > 2 ? Math.round(yMin + span * 0.46) : Math.round((yMin + yMax) / 2);
-  const yFirst = yMid;
-
-  return { h: H, yMin, yMax, yPeek: yMax, yMid, yFirst, vh, navH, peekVisible, usable };
+  let yMax = yPeek;
+  if (!Number.isFinite(yMax)) yMax = Math.round(usable - peekVisible);
+  if (yMax < yMin) yMax = yMin;
+  yPeek = yMax;
+  const span = Math.max(0, yPeek - yMin);
+  let yHalf = span > 1 ? Math.round(yMin + span * 0.48) : Math.round(yPeek - 24);
+  yHalf = Math.min(yPeek - 10, Math.max(yMin + 16, yHalf));
+  return { h: H, yMin, yMax: yPeek, yPeek, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible };
 }
 
 function bindSheetReflowOnImages(panel, layoutId) {
@@ -676,11 +1179,7 @@ function bindSheetReflowOnImages(panel, layoutId) {
 
 function sheetRubber(t, g) {
   if (!g) return t;
-  if (t < g.yMin) {
-    const overshoot = g.yMin - t;
-    const softened = Math.min(56, overshoot * 0.22);
-    return g.yMin - softened;
-  }
+  if (t < g.yMin) return g.yMin;
   if (t > g.yMax) return g.yMax;
   return t;
 }
@@ -694,6 +1193,7 @@ function rememberSheetPosition(panel) {
   if (!panel) return;
   if (!window.matchMedia("(max-width: 900px)").matches) return;
   if (state.panelCollapsed) return;
+  if (!state.panelSheetInitialized) return;
   const s = getSheetNode(panel);
   if (!s) return;
   const y = getPanelTranslateY(s);
@@ -702,37 +1202,79 @@ function rememberSheetPosition(panel) {
   }
 }
 
+/** Старт / возврат на карту или демо: всегда применяем «пол-экрана», не тянем старый translate с пустой панели. */
+function resetMobileSheetLandingState() {
+  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  state.panelSheetInitialized = false;
+  state.panelSheetT = null;
+  state.panelCollapsed = false;
+  state.mapViewportListSig = "";
+  state.demoViewportListSig = "";
+  state.mapAreaListSig = "";
+  state.demoAreaListSig = "";
+  state.mapLeftPanelMode = null;
+  state.demoLeftPanelMode = null;
+}
+
+/** Лёгкое «резиновое» сопротивление у краёв жеста (как шторки iOS). */
+function sheetDragRubberTranslate(t, g) {
+  if (!g) return t;
+  const k = 0.32;
+  if (t < g.yMin) return g.yMin + (t - g.yMin) * k;
+  if (t > g.yMax) return g.yMax + (t - g.yMax) * k;
+  return t;
+}
+
 /**
- * Моб. нижний лист: один transform на весь блок (трек внутри clip), без внутр. scroll — блок едет с пальцем 1:1.
+ * Два упора: развернуто (yMin) и свёрнуто до счётчика (yPeek).
+ * Нельзя сравнивать rawY с (yMin+yPeek)/2 при сильно отрицательном yMin — rawY всегда > mid, получалось
+ * «всегда yPeek» или хаос из-за ветки |vy|>0.1 при единицах px/ms.
+ */
+function pickMobileSheetSnapY(rawY, vy, g) {
+  if (!g) return rawY;
+  const span = g.yPeek - g.yMin;
+  if (!(span > 0.5)) return g.yPeek;
+  const fling = 0.55;
+  if (vy > fling) return g.yPeek;
+  if (vy < -fling) return g.yMin;
+  const u = (rawY - g.yMin) / span;
+  return u <= 0.5 ? g.yMin : g.yPeek;
+}
+
+function sheetSnapAnimate(s, targetY, g, commit) {
+  if (!s || !g) return;
+  s.classList.remove("left-panel--sheet-live");
+  const ty = clampSheetT(targetY, g);
+  setPanelTranslateY(s, ty, true, 440);
+  commit(ty, g);
+  state.panelSheetT = ty;
+}
+
+/**
+ * Моб. нижний лист: шторка и карточки — один блок без внутреннего скролла списка.
+ * Двигается только transform всего трека; жест с любой точки трека (кроме ссылок/полей).
  */
 function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   const panel = document.getElementById(panelId);
   if (!panel || panel.dataset.mobileSheetBound === "1") return;
   const layout = () => document.getElementById(layoutId);
-  const sheetEl = () => getSheetNode(panel);
+  const sheetNode = () => getSheetNode(panel);
   const mq = () => window.matchMedia("(max-width: 900px)").matches;
 
   let startY = 0;
-  let startT = 0;
+  let startSheetT = 0;
   let mode = "idle";
   let activeId = null;
-  let fromOpenBtn = false;
   let lastMoveY = 0;
   let lastMoveTs = 0;
   let velocityY = 0;
-  let rafId = 0;
   let gestureGeometry = null;
   let lastCollapsedUi = state.panelCollapsed;
-
-  const stopMotion = () => {
-    if (rafId) {
-      cancelAnimationFrame(rafId);
-      rafId = 0;
-    }
-  };
+  let dragMaxAbsDy = 0;
+  let capturingTrack = null;
 
   const commitSheetState = (y, g) => {
-    const atPeek = Math.abs(y - g.yPeek) < 8;
+    const atPeek = Math.abs(y - g.yPeek) < 10;
     state.panelCollapsed = atPeek;
     if (!atPeek) {
       state.panelSheetT = y;
@@ -744,289 +1286,162 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     }
     if (lastCollapsedUi !== atPeek) {
       lastCollapsedUi = atPeek;
-      if (isDemo) {
-        updateDemoOpenPanelButton();
-      } else {
-        updateMapOpenPanelButton();
-      }
     }
   };
 
-  const animateSpringTo = (targetY, initialV = 0) => {
-    const s = sheetEl();
-    if (!s) return;
-    stopMotion();
-    s.classList.add("left-panel--sheet-live");
-    s.classList.remove("left-panel--sheet-anim");
-    let y = getPanelTranslateY(s);
-    let v = initialV;
-    let lastTs = performance.now();
-
-    const tick = (ts) => {
-      const dt = Math.min(34, Math.max(8, ts - lastTs));
-      lastTs = ts;
-      const g = getSheetGeometry(panel);
-      if (!g) {
-        stopMotion();
-        s.classList.remove("left-panel--sheet-live");
-        return;
-      }
-      const to = clampSheetT(targetY, g);
-      const dx = to - y;
-      v += dx * 0.0024 * dt;
-      v *= Math.exp(-0.03 * dt);
-      y += v * dt;
-      setPanelTranslateY(s, y, false);
-
-      if (Math.abs(dx) < 0.6 && Math.abs(v) < 0.02) {
-        const snap = clampSheetT(to, g);
-        setPanelTranslateY(s, snap, false);
-        commitSheetState(snap, g);
-        s.classList.remove("left-panel--sheet-live");
-        stopMotion();
-        return;
-      }
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-  };
-
-  const animateInertia = (v0) => {
-    const s = sheetEl();
-    if (!s) return;
-    stopMotion();
-    s.classList.add("left-panel--sheet-live");
-    s.classList.remove("left-panel--sheet-anim");
-    let y = getPanelTranslateY(s);
-    let v = v0;
-    let lastTs = performance.now();
-
-    const tick = (ts) => {
-      const dt = Math.min(34, Math.max(8, ts - lastTs));
-      lastTs = ts;
-      const g = getSheetGeometry(panel);
-      if (!g) {
-        stopMotion();
-        s.classList.remove("left-panel--sheet-live");
-        return;
-      }
-
-      v *= Math.exp(-0.0032 * dt);
-      y += v * dt;
-
-      if (y > g.yMax && v >= 0) {
-        y = g.yMax;
-        v = 0;
-        setPanelTranslateY(s, y, false);
-        commitSheetState(y, g);
-        s.classList.remove("left-panel--sheet-live");
-        stopMotion();
-        return;
-      }
-
-      if (y < g.yMin || y > g.yMax) {
-        const bound = y < g.yMin ? g.yMin : g.yMax;
-        const overshoot = y - bound;
-        if (y < g.yMin) {
-          v += (-overshoot * 0.004 - v * 0.038) * dt;
-          if (y < g.yMin - 72) {
-            y = g.yMin - 72;
-            if (v < 0) v *= 0.35;
-          }
-        } else {
-          v += (-overshoot * 0.0062 - v * 0.022) * dt;
-        }
-      }
-
-      setPanelTranslateY(s, y, false);
-
-      const inRange = y >= g.yMin - 0.6 && y <= g.yMax + 0.6;
-      if (Math.abs(v) < 0.012 && inRange) {
-        const snap = clampSheetT(y, g);
-        setPanelTranslateY(s, snap, false);
-        commitSheetState(snap, g);
-        s.classList.remove("left-panel--sheet-live");
-        stopMotion();
-        return;
-      }
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
-  };
-
-  const isInteractiveOpen = (el) =>
-    el && (el.closest(".open-object") || el.closest(".open-demo-object") || el.closest("a[href]"));
-
   const onPointerDown = (e) => {
     if (!mq() || e.button !== 0) return;
-    const L = layout();
-    if (!L) return;
+    const track = panel.querySelector("[data-sheet-track]");
+    if (!track || !track.contains(e.target)) return;
     if (e.target.closest("button.close-left-panel")) return;
-    const s = sheetEl();
+    if (e.target.closest("a[href], input, textarea, select, label")) return;
+
+    const s = sheetNode();
     if (!s) return;
-    stopMotion();
+    capturingTrack = track;
+
+    s.classList.remove("left-panel--sheet-anim");
+    gestureGeometry = getSheetGeometry(panel);
     const frozen = getPanelTranslateY(s);
     setPanelTranslateY(s, frozen, false);
     startY = e.clientY;
-    startT = frozen;
+    startSheetT = frozen;
     lastMoveY = e.clientY;
     lastMoveTs = performance.now();
     velocityY = 0;
-    gestureGeometry = getSheetGeometry(panel);
+    dragMaxAbsDy = 0;
     mode = "decide";
     activeId = e.pointerId;
-    fromOpenBtn = Boolean(e.target.closest(".open-left-panel-btn--sheet, #openLeftPanelBtn, #openDemoLeftPanelBtn"));
   };
 
   const onPointerMove = (e) => {
     if (mode === "idle") return;
     if (e.pointerId != null && e.pointerId !== activeId) return;
     if (!mq()) return;
-    const rawDy = e.clientY - startY;
-    if (mode === "decide" && Math.abs(rawDy) < 5) return;
+
+    const dy = e.clientY - startY;
+    if (mode === "decide" && Math.abs(dy) < 8) return;
 
     if (mode === "decide") {
-      if (isInteractiveOpen(e.target) && !fromOpenBtn && Math.abs(rawDy) < 18) {
-        return;
-      }
-    }
-    if (mode === "decide") {
-      mode = "sheet";
+      mode = "drag";
       e.preventDefault();
       try {
-        panel.setPointerCapture(e.pointerId);
+        capturingTrack?.setPointerCapture(e.pointerId);
       } catch (_) {
-        /* */
+        /* Safari: capture на треке, у aside pointer-events:none */
       }
-      const s0 = sheetEl();
-      s0?.classList.add("left-panel--sheet-live");
+      sheetNode()?.classList.add("left-panel--sheet-live");
     }
-    if (mode !== "sheet") return;
-    const s = sheetEl();
-    if (!s) return;
+
+    if (mode !== "drag") return;
+    const s = sheetNode();
     const g = gestureGeometry || getSheetGeometry(panel);
-    if (!g) return;
-    const t = sheetRubber(startT + (e.clientY - startY), g);
-    setPanelTranslateY(s, t, false);
-    const unclamped = clampSheetT(t, g);
-    state.panelSheetT = unclamped;
-    if (unclamped < g.yPeek - 2) {
+    if (!s || !g) return;
+
+    dragMaxAbsDy = Math.max(dragMaxAbsDy, Math.abs(e.clientY - startY));
+    e.preventDefault();
+    const tRaw = startSheetT + (e.clientY - startY);
+    const tRub = sheetDragRubberTranslate(tRaw, g);
+    setPanelTranslateY(s, tRub, false);
+
+    const snappedInner = clampSheetT(tRub, g);
+    state.panelSheetT = snappedInner;
+    if (snappedInner < g.yPeek - 4) {
       state.panelCollapsed = false;
       const lay = layout();
       lay?.classList.remove("collapsed");
-      if (lastCollapsedUi) {
-        lastCollapsedUi = false;
-        if (isDemo) updateDemoOpenPanelButton();
-        else updateMapOpenPanelButton();
-      }
+      if (lastCollapsedUi) lastCollapsedUi = false;
     }
+
     const now = performance.now();
     const dt = Math.max(1, now - lastMoveTs);
     const vy = (e.clientY - lastMoveY) / dt;
-    velocityY = velocityY * 0.35 + vy * 0.65;
+    velocityY = velocityY * 0.25 + vy * 0.75;
     lastMoveY = e.clientY;
     lastMoveTs = now;
   };
 
   const onPointerUp = (e) => {
     const L = layout();
+    const s = sheetNode();
+    const g = gestureGeometry || getSheetGeometry(panel);
 
     if (
       mode === "decide" &&
       e.pointerId === activeId &&
       L?.classList.contains("collapsed") &&
-      Math.abs(e.clientY - startY) < 10
+      Math.abs(e.clientY - startY) < 12
     ) {
-      const g0 = gestureGeometry || getSheetGeometry(panel);
-      if (g0) {
-        state.panelCollapsed = false;
+      if (g) {
         L.classList.remove("collapsed");
-        const tOpen =
-          state.panelSheetT != null
-            ? clampSheetT(state.panelSheetT, g0)
-            : g0.yMid;
+        const tOpen = state.panelSheetT != null ? clampSheetT(state.panelSheetT, g) : g.yHalf;
         const s0 = getSheetNode(panel);
         if (s0) {
-          setPanelTranslateY(s0, tOpen, true, 340);
-        }
-        state.panelSheetT = tOpen;
-        if (isDemo) {
-          updateDemoOpenPanelButton();
-        } else {
-          updateMapOpenPanelButton();
+          setPanelTranslateY(s0, tOpen, true, 460);
+          commitSheetState(tOpen, g);
+          state.panelSheetT = tOpen;
         }
       }
-      activeId = null;
-      mode = "idle";
-      fromOpenBtn = false;
+      finishPointer(e.pointerId);
       return;
     }
 
-    if (mode === "sheet") {
+    if (mode === "drag" && s && g) {
       e.preventDefault();
-      const s = sheetEl();
-      if (!s) {
-        activeId = null;
-        mode = "idle";
-        fromOpenBtn = false;
-        return;
-      }
       const rawT = getPanelTranslateY(s);
-      const g = gestureGeometry || getSheetGeometry(panel);
-      if (g) {
-        if (rawT >= g.yPeek - 36) {
-          const snap = g.yPeek;
-          setPanelTranslateY(s, snap, false);
-          commitSheetState(snap, g);
-          s.classList.remove("left-panel--sheet-live");
-        } else if (state.panelCollapsed && velocityY < -0.06) {
-          animateSpringTo(g.yFirst, velocityY);
-        } else if (Math.abs(velocityY) > 0.018) {
-          animateInertia(velocityY);
-        } else {
-          const snap = clampSheetT(rawT, g);
-          const wasRubbered = Math.abs(rawT - snap) > 0.2;
-          if (wasRubbered) {
-            animateSpringTo(snap, velocityY);
-          } else {
-            setPanelTranslateY(s, snap, false);
-            commitSheetState(snap, g);
-            s.classList.remove("left-panel--sheet-live");
-          }
-        }
-      }
+      const normalizedT = clampSheetT(rawT, g);
+      const snapY = pickMobileSheetSnapY(normalizedT, velocityY, g);
+      sheetSnapAnimate(s, snapY, g, commitSheetState);
     }
-    if (e.pointerId === activeId) {
+
+    finishPointer(e.pointerId);
+  };
+
+  const finishPointer = (pointerId) => {
+    if (dragMaxAbsDy > 14) {
+      panel.dataset.sheetJustDragged = "1";
+      window.setTimeout(() => panel.removeAttribute("data-sheet-just-dragged"), 380);
+    }
+    dragMaxAbsDy = 0;
+    if (pointerId === activeId && activeId != null) {
       try {
-        if (mode === "sheet") {
-          panel.releasePointerCapture(e.pointerId);
-        }
+        capturingTrack?.releasePointerCapture(pointerId);
       } catch (_) {
         /* */
       }
     }
+    capturingTrack = null;
     activeId = null;
     mode = "idle";
     gestureGeometry = null;
-    fromOpenBtn = false;
-    if (!rafId) {
-      sheetEl()?.classList.remove("left-panel--sheet-live");
-    }
+    sheetNode()?.classList.remove("left-panel--sheet-live");
   };
 
+  panel.addEventListener(
+    "click",
+    (ev) => {
+      if (panel.dataset.sheetJustDragged !== "1") return;
+      if (ev.target.closest(".open-object, .open-demo-object")) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    },
+    true
+  );
+
   const onPointerCancel = (e) => {
-    if (e.pointerId === activeId) {
-      if (mode === "sheet") {
-        onPointerUp(e);
-        return;
+    const pid = activeId;
+    if (mode === "drag" && e.pointerId === pid) {
+      const s = sheetNode();
+      const g = gestureGeometry || getSheetGeometry(panel);
+      if (s && g) {
+        const rawT = getPanelTranslateY(s);
+        const normalizedT = clampSheetT(rawT, g);
+        const snapY = pickMobileSheetSnapY(normalizedT, velocityY, g);
+        sheetSnapAnimate(s, snapY, g, commitSheetState);
       }
     }
-    mode = "idle";
-    gestureGeometry = null;
-    fromOpenBtn = false;
-    activeId = null;
+    finishPointer(e.pointerId);
   };
 
   panel.addEventListener("pointerdown", onPointerDown);
@@ -1034,6 +1449,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   panel.addEventListener("pointerup", onPointerUp);
   panel.addEventListener("pointercancel", onPointerCancel);
   panel.dataset.mobileSheetBound = "1";
+  ensureMobileSheetVisualViewportReflow();
 }
 
 function snapSheetToPeek(panelId, layoutId, isDemo) {
@@ -1054,6 +1470,7 @@ function snapSheetToPeek(panelId, layoutId, isDemo) {
 function updateDemoOpenPanelButton() {
   const btn = document.getElementById("openDemoLeftPanelBtn");
   if (!btn) return;
+  if (window.matchMedia("(max-width: 900px)").matches) return;
   if (state.panelCollapsed) {
     btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("aria-hidden", "false");
@@ -1066,6 +1483,7 @@ function updateDemoOpenPanelButton() {
 function updateMapOpenPanelButton() {
   const btn = document.getElementById("openLeftPanelBtn");
   if (!btn) return;
+  if (window.matchMedia("(max-width: 900px)").matches) return;
   if (state.panelCollapsed) {
     btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("aria-hidden", "false");
@@ -1088,15 +1506,32 @@ function bindMapZoomGuards() {
   }
 }
 
-function bindMobileBottomNavActions(isDemo) {
-  const searchId = isDemo ? "demoNavSearchBtn" : "mapNavSearchBtn";
-  const cabinetId = isDemo ? "demoNavCabinetBtn" : "mapNavCabinetBtn";
-  const searchBtn = document.getElementById(searchId);
-  const cabinetBtn = document.getElementById(cabinetId);
+function bindMobileBottomNavActions() {
+  const searchBtn = document.getElementById("mobileNavSearchBtn");
+  const cabinetBtn = document.getElementById("mobileNavCabinetBtn");
+  const setActive = (tab) => {
+    searchBtn?.classList.toggle("active", tab === "search");
+    cabinetBtn?.classList.toggle("active", tab === "cabinet");
+  };
+  setActive(getActiveMobileNavTab());
   if (searchBtn) {
     const onSearch = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      setActive("search");
+      const fromCabinetArea =
+        location.hash.startsWith("#/cabinet") ||
+        location.hash.startsWith("#/auth") ||
+        location.hash.startsWith("#/admin") ||
+        location.hash.startsWith("#/agency");
+      if (fromCabinetArea) {
+        // Return to map/search with default half-open sheet position.
+        state.panelCollapsed = false;
+        state.panelSheetT = null;
+        state.panelSheetInitialized = false;
+        state.panelCollapsedBeforeCabinet = null;
+        state.panelSheetTBeforeCabinet = null;
+      }
       if (
         state.panelCollapsedBeforeCabinet != null ||
         state.panelSheetTBeforeCabinet != null
@@ -1107,11 +1542,13 @@ function bindMobileBottomNavActions(isDemo) {
         state.panelSheetTBeforeCabinet = null;
       }
       if (!state.token) {
+        if (document.getElementById("authDemoOverlay")) {
+          dismissDemoAuthOverlay();
+          return;
+        }
         if (location.hash !== "#/") location.hash = "#/";
-      } else if (!isDemo && location.hash !== "#/map") {
+      } else if (location.hash !== "#/map") {
         location.hash = "#/map";
-      } else if (isDemo && location.hash !== "#/") {
-        location.hash = "#/";
       }
     };
     searchBtn.onclick = onSearch;
@@ -1121,9 +1558,16 @@ function bindMobileBottomNavActions(isDemo) {
     const onCabinet = (e) => {
       e.preventDefault();
       e.stopPropagation();
+      setActive("cabinet");
       state.panelCollapsedBeforeCabinet = state.panelCollapsed;
       state.panelSheetTBeforeCabinet = state.panelSheetT;
-      location.hash = state.token ? "#/cabinet" : "#/auth";
+      if (state.token) {
+        location.hash = "#/cabinet";
+      } else if (location.hash === "#/" || location.hash.startsWith("#/demo/property/")) {
+        goToAuthFromGuestDemo("#/auth");
+      } else {
+        location.hash = "#/auth";
+      }
     };
     cabinetBtn.onclick = onCabinet;
     cabinetBtn.onpointerup = onCabinet;
@@ -1145,18 +1589,40 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
       const g = getSheetGeometry(panel);
       if (!g) return;
       let t;
-      if (state.panelCollapsed) t = g.yPeek;
+      if (!state.panelSheetInitialized) {
+        t = clampSheetT(g.yHalf, g);
+        state.panelSheetT = t;
+        state.panelCollapsed = false;
+        state.panelSheetInitialized = true;
+      } else if (state.panelCollapsed) t = g.yPeek;
       else if (state.panelSheetT != null) t = clampSheetT(state.panelSheetT, g);
-      else {
-        const cur = getPanelTranslateY(s);
-        t = Number.isFinite(cur) && Math.abs(cur) > 0.5 ? clampSheetT(cur, g) : g.yMid;
-      }
-      setPanelTranslateY(s, t, animate, animate ? 320 : undefined);
+      else t = clampSheetT(g.yHalf, g);
+      setPanelTranslateY(s, t, animate, animate ? 480 : undefined);
     });
   });
 }
 
 function mapCollapseLeftPanel() {
+  if (state.mapLeftPanelMode === "group") {
+    state.mapLeftPanelMode = null;
+    state.mapViewportListSig = "";
+    state.mapAreaListSig = "";
+    state.panelCollapsed = true;
+    state.panelSheetT = null;
+    const layout = document.getElementById("mapLayout");
+    layout?.classList.add("collapsed");
+    const p0 = document.getElementById("leftPanel");
+    if (p0) getSheetNode(p0)?.classList.remove("left-panel--sheet-live");
+    if (state.areaPolygonCoords?.length) {
+      renderAreaSelectionPanel(getAreaFilteredProperties());
+    } else {
+      renderViewportPanel();
+    }
+    updateMapOpenPanelButton();
+    ensureMapDrawControls();
+    refreshMapViewport();
+    return;
+  }
   state.panelCollapsed = true;
   const layout = document.getElementById("mapLayout");
   const p = document.getElementById("leftPanel");
@@ -1167,7 +1633,7 @@ function mapCollapseLeftPanel() {
     if (g) {
       const s = getSheetNode(p);
       if (s) {
-        setPanelTranslateY(s, g.yPeek, true, 300);
+        setPanelTranslateY(s, g.yPeek, true, 460);
       }
     }
   }
@@ -1179,6 +1645,9 @@ function mapCollapseLeftPanel() {
 function openMapLeftPanel() {
   state.panelCollapsed = false;
   state.panelSheetT = null;
+  state.mapLeftPanelMode = null;
+  state.mapViewportListSig = "";
+  state.mapAreaListSig = "";
   const layout = document.getElementById("mapLayout");
   layout?.classList.remove("collapsed");
   const p = document.getElementById("leftPanel");
@@ -1199,6 +1668,9 @@ function openMapLeftPanel() {
 function setMapDefaultLeftPanel() {
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
+  state.mapViewportListSig = "";
+  state.mapAreaListSig = "";
+  state.mapLeftPanelMode = null;
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head">
@@ -1215,6 +1687,26 @@ function setMapDefaultLeftPanel() {
 }
 
 function demoCollapseLeftPanel() {
+  if (state.demoLeftPanelMode === "group") {
+    state.demoLeftPanelMode = null;
+    state.demoViewportListSig = "";
+    state.demoAreaListSig = "";
+    state.panelCollapsed = true;
+    state.panelSheetT = null;
+    const layout = document.getElementById("demoMapLayout");
+    layout?.classList.add("collapsed");
+    const p0 = document.getElementById("demoLeftPanel");
+    if (p0) getSheetNode(p0)?.classList.remove("left-panel--sheet-live");
+    if (state.areaPolygonCoords?.length) {
+      renderDemoAreaSelectionPanel();
+    } else {
+      renderDemoViewportPanel();
+    }
+    updateDemoOpenPanelButton();
+    ensureMapDrawControls();
+    refreshMapViewport();
+    return;
+  }
   state.panelCollapsed = true;
   const layout = document.getElementById("demoMapLayout");
   const p = document.getElementById("demoLeftPanel");
@@ -1225,7 +1717,7 @@ function demoCollapseLeftPanel() {
     if (g) {
       const s = getSheetNode(p);
       if (s) {
-        setPanelTranslateY(s, g.yPeek, true, 300);
+        setPanelTranslateY(s, g.yPeek, true, 460);
       }
     }
   }
@@ -1234,11 +1726,24 @@ function demoCollapseLeftPanel() {
   refreshMapViewport();
 }
 
-function renderDemoPanel(list, title) {
+/**
+ * Моб. демо — сценарий шторки (спека для поддержки):
+ * Открытие демо: карта + нижний рулон (~половина экрана), заголовок со счётчиком, объекты по видимой области.
+ * Жест: только transform [data-sheet-track], без скролла карточек внутри белого блока.
+ * Тап по метке: другой контент («Объектов в точке») — не подставлять старый translateY после смены DOM (иначе шторка пропадает).
+ * Свёртка: до полосы со счётчиком; карта не должна перекрывать шторку (см. z-index в CSS).
+ */
+function renderDemoPanel(list, title, opts = {}) {
+  const resetSheetPosition = opts.resetSheetPosition === true;
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
-  rememberSheetPosition(panel);
-  const bodyHtml = list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`;
+  if (opts.listKind === "viewport" || opts.listKind === "area" || opts.listKind === "group") {
+    state.demoLeftPanelMode = opts.listKind;
+  }
+  if (!resetSheetPosition) rememberSheetPosition(panel);
+  else state.panelSheetT = null;
+  const cards = list.length ? list.map(demoCardMarkup).join("") : `<p class="muted">Объекты не найдены.</p>`;
+  const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
   panel.innerHTML = leftPanelMobileBlock(
     "demoLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>${title}: ${list.length}</h3><button class="close-left-panel" id="closeDemoLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -1249,7 +1754,7 @@ function renderDemoPanel(list, title) {
   });
   bindDemoCardButtons(panel);
   bindSheetReflowOnImages(panel, "demoMapLayout");
-  mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"), false);
+  mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"), resetSheetPosition);
 }
 
 function getDemoViewportPropertyList() {
@@ -1261,22 +1766,41 @@ function getDemoViewportPropertyList() {
 }
 
 function renderDemoViewportPanel() {
+  if (state.demoLeftPanelMode === "group") return;
+  const panel = document.getElementById("demoLeftPanel");
   const list = getDemoViewportPropertyList().sort((a, b) => b.commissionPartner - a.commissionPartner);
-  renderDemoPanel(list, "Объекты в видимой области");
+  const sig = `dv:${list.map((i) => i.id).join(",")}|n:${list.length}`;
+  const hasTrack = Boolean(panel?.querySelector("[data-sheet-track]"));
+  if (hasTrack && sig === state.demoViewportListSig && state.demoLeftPanelMode === "viewport") return;
+  state.demoViewportListSig = sig;
+  renderDemoPanel(list, "Объекты в видимой области", { listKind: "viewport" });
 }
 
 function renderDemoAreaSelectionPanel() {
+  if (state.demoLeftPanelMode === "group") return;
+  const panel = document.getElementById("demoLeftPanel");
   const list = getAreaFilteredProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
-  renderDemoPanel(list, "В выбранной области");
+  const poly = state.areaPolygonCoords || [];
+  const polyKey = poly.length ? `${poly.length}:${Math.round((poly[0]?.[0] || 0) * 1e5)}` : "0";
+  const sig = `da:${polyKey}:${list.map((i) => i.id).join(",")}|n:${list.length}`;
+  const hasTrack = Boolean(panel?.querySelector("[data-sheet-track]"));
+  if (hasTrack && sig === state.demoAreaListSig && state.demoLeftPanelMode === "area") return;
+  state.demoAreaListSig = sig;
+  renderDemoPanel(list, "Объекты в выделенной области", { listKind: "area" });
 }
 
 function showDemoGroup(properties) {
+  state.demoViewportListSig = "";
+  state.demoAreaListSig = "";
   state.panelCollapsed = false;
   document.getElementById("demoMapLayout")?.classList.remove("collapsed");
   updateDemoOpenPanelButton();
-  refreshMapViewport();
   const sorted = properties.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
-  renderDemoPanel(sorted, "Объектов в точке");
+  const [focusLat, focusLon] = groupCentroid(sorted);
+  renderDemoPanel(sorted, "Объектов в точке", { resetSheetPosition: true, listKind: "group" });
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => focusMapOnPlacemark(focusLat, focusLon, "demoLeftPanel"));
+  });
 }
 
 function applyDemoFilters() {
@@ -1284,6 +1808,9 @@ function applyDemoFilters() {
     state.demoAllProperties = createDemoProperties(100);
   }
   state.properties = filterPropertiesByState(state.demoAllProperties);
+  state.demoViewportListSig = "";
+  state.demoAreaListSig = "";
+  state.demoLeftPanelMode = null;
   if (window.ymaps) {
     ymaps.ready(() => initDemoMap());
   } else {
@@ -1293,8 +1820,7 @@ function applyDemoFilters() {
 
 function renderPublicDemoPage() {
   setMapBodyClass(true);
-  state.panelCollapsed = false;
-  state.panelSheetT = null;
+  resetMobileSheetLandingState();
   if (state.demoDataVersion !== CURRENT_DEMO_DATA_VERSION) {
     state.demoAllProperties = null;
     state.demoDataVersion = CURRENT_DEMO_DATA_VERSION;
@@ -1315,27 +1841,27 @@ function renderPublicDemoPage() {
         <button type="button" class="btn demo-top-strip__open" id="demoAboutOpen">О демо</button>
       </div>
       <main class="map-layout demo-map-layout map-layout--app-sheet ${state.panelCollapsed ? "collapsed" : ""}" id="demoMapLayout">
-        <aside class="left-panel" id="demoLeftPanel"></aside>
         <div class="map-wrap demo-map-wrap">
-          <div id="demoMap" class="map"></div>
-          <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
-          <button
-            class="open-left-panel-btn open-left-panel-btn--sheet"
-            type="button"
-            id="openDemoLeftPanelBtn"
-            aria-label="Открыть список объектов"
-            aria-controls="demoLeftPanel"
-            aria-expanded="false"
-            aria-hidden="true"
-          >
-            <span class="open-left-panel-ico open-left-panel-ico--mob" aria-hidden="true">▲</span>
-            <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
-            <span class="open-left-panel-label">Список</span>
-          </button>
-          <div class="map-draw-tools">
-            <button class="map-draw-btn" type="button" id="mapDrawAreaBtn" title="Рисовать область">✍</button>
+          <aside class="left-panel" id="demoLeftPanel"></aside>
+          <div class="map-stage">
+            <div id="demoMap" class="map"></div>
+            <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
+            <button
+              class="open-left-panel-btn open-left-panel-btn--sheet"
+              type="button"
+              id="openDemoLeftPanelBtn"
+              aria-label="Открыть список объектов"
+              aria-controls="demoLeftPanel"
+              aria-expanded="false"
+              aria-hidden="true"
+            >
+              <span class="open-left-panel-ico open-left-panel-ico--mob" aria-hidden="true">▲</span>
+              <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
+              <span class="open-left-panel-label">Список</span>
+            </button>
+            ${mapDrawToolsHtml()}
+            <div class="map-sheet-left-scrim" id="demoLeftPanelScrim" aria-hidden="true"></div>
           </div>
-          <div class="map-sheet-left-scrim" id="demoLeftPanelScrim" aria-hidden="true"></div>
         </div>
       </main>
       <div class="demo-hero demo-float-desktop">
@@ -1374,15 +1900,22 @@ function renderPublicDemoPage() {
   document.getElementById("demoMobileFiltersBtn")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.add("open");
   });
-  bindMobileBottomNavActions(true);
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
+  bindMapDrawHint();
   ensureMapDrawControls();
 
   document.getElementById("moreFilters")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.add("open");
   });
-  document.getElementById("closeModal")?.addEventListener("click", () => {
+  document.getElementById("closeFiltersXBtn")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.remove("open");
+  });
+  document.getElementById("filtersModal")?.addEventListener("click", (e) => {
+    if (e.target?.id === "filtersModal") {
+      document.getElementById("filtersModal")?.classList.remove("open");
+    }
   });
   const demoAbout = document.getElementById("demoAboutModal");
   const openAbout = () => demoAbout?.classList.add("open");
@@ -1399,27 +1932,31 @@ function renderPublicDemoPage() {
     state.filters.minPrice = toRawNumberString(modalMin);
     state.filters.maxPrice = toRawNumberString(modalMax);
     state.filters.bedrooms = modalBedrooms;
-    state.filters.floorMin = document.getElementById("filterFloorMin")?.value.trim() || "";
-    state.filters.floorMax = document.getElementById("filterFloorMax")?.value.trim() || "";
-    state.filters.totalFloorsMin = document.getElementById("filterTotalFloorsMin")?.value.trim() || "";
-    state.filters.totalFloorsMax = document.getElementById("filterTotalFloorsMax")?.value.trim() || "";
-    state.filters.ceilingHeightMin = document.getElementById("filterCeilingMin")?.value.trim() || "";
+    state.filters.floorMin = toRawNumberString(document.getElementById("filterFloorMin")?.value || "");
+    state.filters.floorMax = toRawNumberString(document.getElementById("filterFloorMax")?.value || "");
+    state.filters.totalFloorsMin = toRawNumberString(document.getElementById("filterTotalFloorsMin")?.value || "");
+    state.filters.totalFloorsMax = toRawNumberString(document.getElementById("filterTotalFloorsMax")?.value || "");
+    state.filters.ceilingHeightMin = normalizeDecimalInput(
+      String(document.getElementById("filterCeilingMin")?.value || "").replace(",", ".")
+    );
+    state.filters.partnerCommissionMinPct = normalizeDecimalInput(document.getElementById("filterPartnerPct")?.value || "");
+    state.filters.partnerCommissionMinRub = toRawNumberString(document.getElementById("filterPartnerRub")?.value || "");
     state.filters.finishing = document.getElementById("filterFinishing")?.value || "";
     state.filters.readiness = document.getElementById("filterReadiness")?.value || "";
+    state.filters.minArea = normalizeDecimalInput(
+      String(document.getElementById("filterAreaMin")?.value || "").replace(",", ".")
+    );
+    state.filters.maxArea = normalizeDecimalInput(
+      String(document.getElementById("filterAreaMax")?.value || "").replace(",", ".")
+    );
+    state.filters.housingStatus = document.getElementById("filterHousingStatus")?.value || "";
+    state.filters.publishedFrom = document.getElementById("filterPublishedFrom")?.value || "";
+    state.filters.metroWalkMax = toRawNumberString(document.getElementById("filterMetroWalkMax")?.value || "");
     document.getElementById("filtersModal")?.classList.remove("open");
     applyDemoFilters();
   });
   document.getElementById("resetMoreFilters")?.addEventListener("click", () => {
-    state.filters.minPrice = "";
-    state.filters.maxPrice = "";
-    state.filters.bedrooms = "";
-    state.filters.floorMin = "";
-    state.filters.floorMax = "";
-    state.filters.totalFloorsMin = "";
-    state.filters.totalFloorsMax = "";
-    state.filters.ceilingHeightMin = "";
-    state.filters.finishing = "";
-    state.filters.readiness = "";
+    state.filters = emptyFilters();
     if (document.getElementById("modalMinPrice")) document.getElementById("modalMinPrice").value = "";
     if (document.getElementById("modalMaxPrice")) document.getElementById("modalMaxPrice").value = "";
     if (document.getElementById("modalBedrooms")) document.getElementById("modalBedrooms").value = "";
@@ -1428,11 +1965,19 @@ function renderPublicDemoPage() {
     document.getElementById("filterTotalFloorsMin").value = "";
     document.getElementById("filterTotalFloorsMax").value = "";
     document.getElementById("filterCeilingMin").value = "";
+    document.getElementById("filterPartnerPct").value = "";
+    document.getElementById("filterPartnerRub").value = "";
     document.getElementById("filterFinishing").value = "";
     document.getElementById("filterReadiness").value = "";
+    if (document.getElementById("filterAreaMin")) document.getElementById("filterAreaMin").value = "";
+    if (document.getElementById("filterAreaMax")) document.getElementById("filterAreaMax").value = "";
+    if (document.getElementById("filterHousingStatus")) document.getElementById("filterHousingStatus").value = "";
+    if (document.getElementById("filterPublishedFrom")) document.getElementById("filterPublishedFrom").value = "";
+    if (document.getElementById("filterMetroWalkMax")) document.getElementById("filterMetroWalkMax").value = "";
     document.getElementById("filtersModal")?.classList.remove("open");
     applyDemoFilters();
   });
+  bindFiltersModalNumericFormatting();
 
   document.getElementById("maxPrice")?.addEventListener("input", (e) => {
     const raw = toRawNumberString(e.target.value);
@@ -1451,18 +1996,7 @@ function renderPublicDemoPage() {
     applyDemoFilters();
   });
   document.getElementById("resetFilters")?.addEventListener("click", () => {
-    state.filters = {
-      minPrice: "",
-      maxPrice: "",
-      bedrooms: "",
-      floorMin: "",
-      floorMax: "",
-      totalFloorsMin: "",
-      totalFloorsMax: "",
-      ceilingHeightMin: "",
-      finishing: "",
-      readiness: ""
-    };
+    state.filters = emptyFilters();
     if (state.demoAllProperties && state.demoAllProperties.length) {
       state.properties = filterPropertiesByState(state.demoAllProperties);
     }
@@ -1476,25 +2010,36 @@ function renderPublicDemoPage() {
       document.getElementById("filterTotalFloorsMin").value = "";
       document.getElementById("filterTotalFloorsMax").value = "";
       document.getElementById("filterCeilingMin").value = "";
+      document.getElementById("filterPartnerPct").value = "";
+      document.getElementById("filterPartnerRub").value = "";
       document.getElementById("filterFinishing").value = "";
       document.getElementById("filterReadiness").value = "";
+      if (document.getElementById("filterAreaMin")) document.getElementById("filterAreaMin").value = "";
+      if (document.getElementById("filterAreaMax")) document.getElementById("filterAreaMax").value = "";
+      if (document.getElementById("filterHousingStatus")) document.getElementById("filterHousingStatus").value = "";
+      if (document.getElementById("filterPublishedFrom")) document.getElementById("filterPublishedFrom").value = "";
+      if (document.getElementById("filterMetroWalkMax")) document.getElementById("filterMetroWalkMax").value = "";
     }
   });
 
   document.getElementById("demoAuthLogin")?.addEventListener("click", () => {
-    location.hash = "#/auth-form";
+    goToAuthFromGuestDemo("#/auth-form");
   });
   document.getElementById("demoAuthRegister")?.addEventListener("click", () => {
-    location.hash = "#/auth-register";
+    goToAuthFromGuestDemo("#/auth-register");
   });
 
   applyDemoFilters();
+  /** Шторка: до готовности карты панель не заполнялась async initDemoMap — на мобилке пустой экран. */
   if (window.matchMedia("(max-width: 900px)").matches) {
     renderDemoViewportPanel();
   }
   function openDemoLeftPanel() {
     state.panelCollapsed = false;
     state.panelSheetT = null;
+    state.demoLeftPanelMode = null;
+    state.demoViewportListSig = "";
+    state.demoAreaListSig = "";
     const layout = document.getElementById("demoMapLayout");
     layout?.classList.remove("collapsed");
     const p = document.getElementById("demoLeftPanel");
@@ -1520,11 +2065,8 @@ function renderPublicDemoPage() {
     }
   });
 
-  const demoP = document.getElementById("demoLeftPanel");
-  const demoLayout = document.getElementById("demoMapLayout");
   updateDemoOpenPanelButton();
   bindMobileBottomSheet({ panelId: "demoLeftPanel", layoutId: "demoMapLayout", isDemo: true });
-  mobileSheetSettleAfterRender(demoP, demoLayout);
   bindMapZoomGuards();
 }
 
@@ -1535,6 +2077,7 @@ function renderDemoPropertyPage(id) {
   }
   const property = state.demoAllProperties.find((item) => item.id === id) || state.demoAllProperties[0];
   const galleryPhotos = (property.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
+  const demoMetroLine = propertyMetroLabel(property);
   app.innerHTML = `
     <section class="page">
       <p><button class="btn" id="backToDemoBtn">← Назад к демо-карте</button></p>
@@ -1543,7 +2086,13 @@ function renderDemoPropertyPage(id) {
           <h2>${property.title}</h2>
           <div class="gallery">
             ${galleryPhotos
-              .map((photo) => `<img src="${photoUrlWithFallback(photo)}" onerror="${photoOnErrorAttr()}" alt="Фото демо-объекта" />`)
+              .map(
+                (photo, gi) =>
+                  `<img class="gallery__img" ${imgLazyAttrs({ priority: gi === 0 ? "high" : undefined })} src="${photoUrlWithFallback(
+                    photo,
+                    { gallery: true }
+                  )}" onerror="${photoOnErrorAttr()}" alt="Фото демо-объекта" />`
+              )
               .join("")}
           </div>
           <p>${property.description || ""}</p>
@@ -1551,62 +2100,76 @@ function renderDemoPropertyPage(id) {
         <aside class="panel">
           <h3>${money(property.price)} ₽</h3>
           <p><strong>Адрес:</strong> ${property.address}</p>
+          ${demoMetroLine ? `<p><strong>Метро:</strong> ${escapeHtml(demoMetroLine)}</p>` : ""}
+          ${
+            property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+              ? `<p><strong>Пешком до метро:</strong> ${Number(property.metroWalkMinutes)} мин</p>`
+              : ""
+          }
+          <p><strong>Статус жилья:</strong> ${housingStatusLabel(property.housingStatus)}</p>
+          <p><strong>Дата публикации:</strong> ${escapeHtml(formatPublishedDateRu(property.publishedAt || property.createdAt))}</p>
           <p><strong>Площадь:</strong> ${property.area} м²</p>
           <p><strong>Спален:</strong> ${property.bedrooms}</p>
           <p><strong>Общая комиссия:</strong> ${property.commissionTotal}%</p>
           <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
-          <p class="demo-blur-line"><strong>Телефон:</strong> ${property.contacts?.phone || "+7 (9••) •••-••-••"}</p>
-          <p class="demo-blur-line"><strong>Telegram:</strong> ${property.contacts?.telegram || "@••••••••"}</p>
-          <p><button class="btn primary" id="demoToAuthBtn">Попробовать платформу</button></p>
+          <p><button class="btn" id="demoOpenContactsBtn">Открыть контакты</button></p>
+          <p><button class="btn primary" id="demoToAuthBtn">Начать делать сделки</button></p>
         </aside>
       </div>
     </section>
+    ${mobileBottomNavHtml("search")}
   `;
   document.getElementById("backToDemoBtn")?.addEventListener("click", () => {
     location.hash = "#/";
   });
   document.getElementById("demoToAuthBtn")?.addEventListener("click", () => {
-    location.hash = "#/auth-register";
+    goToAuthFromGuestDemo("#/auth-register");
   });
+  document.getElementById("demoOpenContactsBtn")?.addEventListener("click", () => {
+    goToAuthFromGuestDemo("#/auth-register");
+  });
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
 }
 
 function renderMapPage() {
   setMapBodyClass(true);
+  resetMobileSheetLandingState();
   app.innerHTML = `
     <section class="map-page">
     ${topbar()}
     ${mobileMapChromeHtml(false)}
     <main class="map-layout map-layout--app-sheet ${state.panelCollapsed ? "collapsed" : ""}" id="mapLayout">
-      <aside class="left-panel" id="leftPanel">
-        ${leftPanelMobileBlock(
-          "mapLeftPanelHandleArea",
-          `<div class="left-panel-head">
+      <div class="map-wrap">
+        <aside class="left-panel" id="leftPanel">
+          ${leftPanelMobileBlock(
+            "mapLeftPanelHandleArea",
+            `<div class="left-panel-head">
             <h3>Выберите объект на карте</h3>
             <button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button>
           </div>`,
-          ""
-        )}
-      </aside>
-      <div class="map-wrap">
-        <div id="map" class="map"></div>
-        <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
-        <button
-          class="open-left-panel-btn open-left-panel-btn--sheet"
-          type="button"
-          id="openLeftPanelBtn"
-          aria-label="Открыть список объектов"
-          aria-controls="leftPanel"
-          aria-expanded="false"
-          aria-hidden="true"
-        >
-          <span class="open-left-panel-ico open-left-panel-ico--mob" aria-hidden="true">▲</span>
-          <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
-          <span class="open-left-panel-label">Список</span>
-        </button>
-        <div class="map-draw-tools">
-          <button class="map-draw-btn" id="mapDrawAreaBtn" title="Рисовать область">✍</button>
+            ""
+          )}
+        </aside>
+        <div class="map-stage">
+          <div id="map" class="map"></div>
+          <canvas id="mapDrawCanvas" class="map-draw-canvas"></canvas>
+          <button
+            class="open-left-panel-btn open-left-panel-btn--sheet"
+            type="button"
+            id="openLeftPanelBtn"
+            aria-label="Открыть список объектов"
+            aria-controls="leftPanel"
+            aria-expanded="false"
+            aria-hidden="true"
+          >
+            <span class="open-left-panel-ico open-left-panel-ico--mob" aria-hidden="true">▲</span>
+            <span class="open-left-panel-ico open-left-panel-ico--desk" aria-hidden="true">❯</span>
+            <span class="open-left-panel-label">Список</span>
+          </button>
+          ${mapDrawToolsHtml()}
+          <div class="map-sheet-left-scrim" id="mapLeftPanelScrim" aria-hidden="true"></div>
         </div>
-        <div class="map-sheet-left-scrim" id="mapLeftPanelScrim" aria-hidden="true"></div>
       </div>
     </main>
     </section>
@@ -1617,7 +2180,8 @@ function renderMapPage() {
   document.getElementById("mapMobileFiltersBtn")?.addEventListener("click", () => {
     document.getElementById("filtersModal")?.classList.add("open");
   });
-  bindMobileBottomNavActions(false);
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
     location.hash = state.user ? "#/cabinet" : "#/auth";
   });
@@ -1630,37 +2194,47 @@ function renderMapPage() {
   document.getElementById("moreFilters").addEventListener("click", () => {
     document.getElementById("filtersModal").classList.add("open");
   });
-  document.getElementById("closeModal").addEventListener("click", () => {
+  document.getElementById("closeFiltersXBtn").addEventListener("click", () => {
     document.getElementById("filtersModal").classList.remove("open");
+  });
+  document.getElementById("filtersModal")?.addEventListener("click", (e) => {
+    if (e.target?.id === "filtersModal") {
+      document.getElementById("filtersModal")?.classList.remove("open");
+    }
   });
   document.getElementById("applyMoreFilters").addEventListener("click", () => {
     state.filters.minPrice = toRawNumberString(document.getElementById("modalMinPrice")?.value || "");
     state.filters.maxPrice = toRawNumberString(document.getElementById("modalMaxPrice")?.value || "");
     state.filters.bedrooms = document.getElementById("modalBedrooms")?.value || "";
-    state.filters.floorMin = document.getElementById("filterFloorMin").value.trim();
-    state.filters.floorMax = document.getElementById("filterFloorMax").value.trim();
-    state.filters.totalFloorsMin = document.getElementById("filterTotalFloorsMin").value.trim();
-    state.filters.totalFloorsMax = document.getElementById("filterTotalFloorsMax").value.trim();
-    state.filters.ceilingHeightMin = document.getElementById("filterCeilingMin").value.trim();
+    state.filters.floorMin = toRawNumberString(document.getElementById("filterFloorMin")?.value || "");
+    state.filters.floorMax = toRawNumberString(document.getElementById("filterFloorMax")?.value || "");
+    state.filters.totalFloorsMin = toRawNumberString(document.getElementById("filterTotalFloorsMin")?.value || "");
+    state.filters.totalFloorsMax = toRawNumberString(document.getElementById("filterTotalFloorsMax")?.value || "");
+    state.filters.ceilingHeightMin = normalizeDecimalInput(
+      String(document.getElementById("filterCeilingMin")?.value || "").replace(",", ".")
+    );
+    state.filters.partnerCommissionMinPct = normalizeDecimalInput(document.getElementById("filterPartnerPct")?.value || "");
+    state.filters.partnerCommissionMinRub = toRawNumberString(document.getElementById("filterPartnerRub")?.value || "");
     state.filters.finishing = document.getElementById("filterFinishing").value;
     state.filters.readiness = document.getElementById("filterReadiness").value;
+    state.filters.minArea = normalizeDecimalInput(
+      String(document.getElementById("filterAreaMin")?.value || "").replace(",", ".")
+    );
+    state.filters.maxArea = normalizeDecimalInput(
+      String(document.getElementById("filterAreaMax")?.value || "").replace(",", ".")
+    );
+    state.filters.housingStatus = document.getElementById("filterHousingStatus")?.value || "";
+    state.filters.publishedFrom = document.getElementById("filterPublishedFrom")?.value || "";
+    state.filters.metroWalkMax = toRawNumberString(document.getElementById("filterMetroWalkMax")?.value || "");
     document.getElementById("filtersModal").classList.remove("open");
     loadMapData();
   });
   document.getElementById("resetMoreFilters").addEventListener("click", () => {
-    state.filters.minPrice = "";
-    state.filters.maxPrice = "";
-    state.filters.bedrooms = "";
-    state.filters.floorMin = "";
-    state.filters.floorMax = "";
-    state.filters.totalFloorsMin = "";
-    state.filters.totalFloorsMax = "";
-    state.filters.ceilingHeightMin = "";
-    state.filters.finishing = "";
-    state.filters.readiness = "";
+    state.filters = emptyFilters();
     document.getElementById("filtersModal").classList.remove("open");
     renderMapPage();
   });
+  bindFiltersModalNumericFormatting();
   document.getElementById("closeLeftPanel")?.addEventListener("click", mapCollapseLeftPanel);
   document.getElementById("openLeftPanelBtn")?.addEventListener("click", openMapLeftPanel);
   document.getElementById("mapLeftPanelScrim")?.addEventListener("click", () => {
@@ -1668,12 +2242,10 @@ function renderMapPage() {
       mapCollapseLeftPanel();
     }
   });
-  const lp = document.getElementById("leftPanel");
-  const mapLayout = document.getElementById("mapLayout");
   bindMobileBottomSheet({ panelId: "leftPanel", layoutId: "mapLayout", isDemo: false });
-  mobileSheetSettleAfterRender(lp, mapLayout);
   bindMapZoomGuards();
   document.getElementById("mapDrawAreaBtn")?.addEventListener("click", startAreaDrawing);
+  bindMapDrawHint();
   ensureMapDrawControls();
   updateMapOpenPanelButton();
 
@@ -1695,16 +2267,7 @@ function renderMapPage() {
     loadMapData();
   });
   document.getElementById("resetFilters").addEventListener("click", () => {
-    state.filters.minPrice = "";
-    state.filters.maxPrice = "";
-    state.filters.bedrooms = "";
-    state.filters.floorMin = "";
-    state.filters.floorMax = "";
-    state.filters.totalFloorsMin = "";
-    state.filters.totalFloorsMax = "";
-    state.filters.ceilingHeightMin = "";
-    state.filters.finishing = "";
-    state.filters.readiness = "";
+    state.filters = emptyFilters();
     state.panelCollapsed = false;
     state.panelSheetT = null;
     clearAreaFilter();
@@ -1737,13 +2300,21 @@ function getAreaFilteredProperties() {
 }
 
 function renderAreaSelectionPanel(list) {
+  if (state.mapLeftPanelMode === "group") return;
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
+  const poly = state.areaPolygonCoords || [];
+  const polyKey = poly.length ? `${poly.length}:${Math.round((poly[0]?.[0] || 0) * 1e5)}` : "0";
+  const sig = `a:${polyKey}:${list.map((i) => i.id).join(",")}|n:${list.length}`;
+  const hasTrack = Boolean(panel.querySelector("[data-sheet-track]"));
+  if (hasTrack && sig === state.mapAreaListSig && state.mapLeftPanelMode === "area") return;
+  state.mapAreaListSig = sig;
   rememberSheetPosition(panel);
-  const bodyHtml = list.length ? list.map(cardMarkup).join("") : `<p class="muted">Внутри области объекты не найдены.</p>`;
+  const cards = list.length ? list.map(cardMarkup).join("") : `<p class="muted">Внутри области объекты не найдены.</p>`;
+  const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
-    `<div class="left-panel-head"><h3>В выбранной области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
+    `<div class="left-panel-head"><h3>Объекты в выделенной области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
     bodyHtml
   );
   document.getElementById("closeLeftPanel")?.addEventListener("click", () => {
@@ -1756,6 +2327,7 @@ function renderAreaSelectionPanel(list) {
   });
   bindSheetReflowOnImages(panel, "mapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
+  state.mapLeftPanelMode = "area";
 }
 
 function isPointInsideBounds(lat, lon, bounds) {
@@ -1776,11 +2348,17 @@ function getViewportProperties() {
 }
 
 function renderViewportPanel() {
+  if (state.mapLeftPanelMode === "group") return;
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
-  rememberSheetPosition(panel);
   const list = getViewportProperties().sort((a, b) => b.commissionPartner - a.commissionPartner);
-  const bodyHtml = list.length ? list.map(cardMarkup).join("") : `<p class="muted">В текущей области объекты не найдены.</p>`;
+  const sig = `v:${list.map((i) => i.id).join(",")}|n:${list.length}`;
+  const hasTrack = Boolean(panel.querySelector("[data-sheet-track]"));
+  if (hasTrack && sig === state.mapViewportListSig && state.mapLeftPanelMode === "viewport") return;
+  state.mapViewportListSig = sig;
+  rememberSheetPosition(panel);
+  const cards = list.length ? list.map(cardMarkup).join("") : `<p class="muted">В текущей области объекты не найдены.</p>`;
+  const bodyHtml = list.length ? `${cards}${sheetObjectsListFooterHtml()}` : cards;
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>Объекты в видимой области: ${list.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -1796,6 +2374,7 @@ function renderViewportPanel() {
   });
   bindSheetReflowOnImages(panel, "mapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
+  state.mapLeftPanelMode = "viewport";
 }
 
 function syncDrawButtons() {
@@ -1804,6 +2383,11 @@ function syncDrawButtons() {
   if (!drawBtn) return;
   drawBtn.classList.toggle("active", state.areaDrawMode);
   drawBtn.title = state.areaDrawMode ? "Режим рисования включен" : "Рисовать область";
+  if (state.areaDrawMode) {
+    const hint = document.getElementById("mapDrawHint");
+    if (hint) hint.classList.add("hidden");
+    localStorage.setItem("mapDrawHintDismissed", "1");
+  }
   if (drawCanvas) {
     drawCanvas.classList.toggle("active", state.areaDrawMode);
   }
@@ -1812,6 +2396,9 @@ function syncDrawButtons() {
 function setDemoDefaultLeftPanel() {
   const panel = document.getElementById("demoLeftPanel");
   if (!panel) return;
+  state.demoViewportListSig = "";
+  state.demoAreaListSig = "";
+  state.demoLeftPanelMode = null;
   panel.innerHTML = leftPanelMobileBlock(
     "demoLeftPanelHandleArea",
     `<div class="left-panel-head">
@@ -1995,14 +2582,41 @@ function filterPropertiesByState(list) {
   const rawMax = toRawNumberString(state.filters.maxPrice);
   const minP = rawMin ? Number(rawMin) : 0;
   const maxP = rawMax ? Number(rawMax) : Number.MAX_SAFE_INTEGER;
-  const floorMin = Number(state.filters.floorMin || 0);
-  const floorMax = Number(state.filters.floorMax || Number.MAX_SAFE_INTEGER);
-  const totalFloorsMin = Number(state.filters.totalFloorsMin || 0);
-  const totalFloorsMax = Number(state.filters.totalFloorsMax || Number.MAX_SAFE_INTEGER);
-  const ceilingHeightMin = Number(state.filters.ceilingHeightMin || 0);
+  const floorMin = Number(toRawNumberString(state.filters.floorMin) || 0);
+  const floorMaxRaw = toRawNumberString(state.filters.floorMax);
+  const floorMax = floorMaxRaw ? Number(floorMaxRaw) : Number.MAX_SAFE_INTEGER;
+  const totalFloorsMin = Number(toRawNumberString(state.filters.totalFloorsMin) || 0);
+  const totalFloorsMaxRaw = toRawNumberString(state.filters.totalFloorsMax);
+  const totalFloorsMax = totalFloorsMaxRaw ? Number(totalFloorsMaxRaw) : Number.MAX_SAFE_INTEGER;
+  const ceilingHeightMin = Number(normalizeDecimalInput(String(state.filters.ceilingHeightMin || "").replace(",", ".")) || 0);
+  const partnerPctMin = Number(normalizeDecimalInput(state.filters.partnerCommissionMinPct || ""));
+  const partnerRubMinRaw = toRawNumberString(state.filters.partnerCommissionMinRub || "");
+  const partnerRubMin = partnerRubMinRaw ? Number(partnerRubMinRaw) : 0;
+  const areaMinRaw = normalizeDecimalInput(String(state.filters.minArea || "").replace(",", "."));
+  const areaMaxRaw = normalizeDecimalInput(String(state.filters.maxArea || "").replace(",", "."));
+  const areaMin = areaMinRaw ? Number(areaMinRaw) : 0;
+  const areaMax = areaMaxRaw ? Number(areaMaxRaw) : Number.POSITIVE_INFINITY;
+  const metroMaxRaw = toRawNumberString(state.filters.metroWalkMax || "");
+  const metroWalkMax = metroMaxRaw ? Number(metroMaxRaw) : 0;
+  const pubFrom = String(state.filters.publishedFrom || "").trim();
+  const pubFromMs = pubFrom ? Date.parse(`${pubFrom}T00:00:00`) : null;
   return list.filter((item) => {
     const price = Number(item.price || 0);
     if (price < minP || price > maxP) return false;
+    const area = Number(item.area || 0);
+    if (areaMinRaw && (Number.isNaN(area) || area < areaMin)) return false;
+    if (areaMaxRaw && (Number.isNaN(area) || area > areaMax)) return false;
+    if (state.filters.housingStatus) {
+      const hs = item.housingStatus || "flat";
+      if (hs !== state.filters.housingStatus) return false;
+    }
+    if (pubFromMs != null && !Number.isNaN(pubFromMs)) {
+      if (publishedAtTimeMs(item) < pubFromMs) return false;
+    }
+    if (metroWalkMax > 0) {
+      const m = item.metroWalkMinutes;
+      if (m != null && Number.isFinite(Number(m)) && Number(m) > metroWalkMax) return false;
+    }
     const brF = state.filters.bedrooms;
     if (brF) {
       const n = Number(item.bedrooms || 0);
@@ -2018,6 +2632,12 @@ function filterPropertiesByState(list) {
     const byCeiling = ceilingHeight >= ceilingHeightMin;
     const byFinishing = state.filters.finishing ? item.finishing === state.filters.finishing : true;
     const byReadiness = state.filters.readiness ? item.readiness === state.filters.readiness : true;
+    const cp = Number(item.commissionPartner || 0);
+    if (partnerPctMin > 0 && cp < partnerPctMin) return false;
+    if (partnerRubMin > 0) {
+      const partnerRub = (price * cp) / 100;
+      if (partnerRub < partnerRubMin) return false;
+    }
     return byFloor && byTotalFloors && byCeiling && byFinishing && byReadiness;
   });
 }
@@ -2027,8 +2647,12 @@ async function loadMapData() {
   if (state.filters.minPrice) query.append("minPrice", toRawNumberString(state.filters.minPrice));
   if (state.filters.maxPrice) query.append("maxPrice", toRawNumberString(state.filters.maxPrice));
   if (state.filters.bedrooms) query.append("bedrooms", state.filters.bedrooms);
+  const partnerPctMin = Number(normalizeDecimalInput(state.filters.partnerCommissionMinPct || ""));
+  if (partnerPctMin > 0) query.append("partnerCommissionMin", String(partnerPctMin));
   const list = await api(`/api/properties?${query.toString()}`);
   state.properties = filterPropertiesByState(list);
+  state.mapViewportListSig = "";
+  state.mapAreaListSig = "";
   initMap();
 }
 
@@ -2041,27 +2665,120 @@ function normalizeAddressKey(address) {
     .trim();
 }
 
-function groupByHouse(list) {
-  const groupedMap = {};
-  for (const item of list) {
-    const addressKey = normalizeAddressKey(item.address);
-    const fallbackKey = `${Number(item.lat || 0).toFixed(5)}:${Number(item.lon || 0).toFixed(5)}`;
-    const key = addressKey || fallbackKey;
-    if (!groupedMap[key]) groupedMap[key] = [];
-    groupedMap[key].push(item);
+/** Макс. расстояние между точками (м), чтобы считать объекты одним зданием — одна метка, цифра только при 2+. */
+const SAME_BUILDING_MAX_METERS = 38;
+
+function groupByProximity(list) {
+  const valid = list.filter((p) => Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lon)));
+  if (!valid.length) return [];
+  const n = valid.length;
+  const parent = Array.from({ length: n }, (_, i) => i);
+  function find(i) {
+    return parent[i] === i ? i : (parent[i] = find(parent[i]));
   }
-  return Object.values(groupedMap);
+  function union(a, b) {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent[rb] = ra;
+  }
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (haversineMeters(valid[i].lat, valid[i].lon, valid[j].lat, valid[j].lon) <= SAME_BUILDING_MAX_METERS) {
+        union(i, j);
+      }
+    }
+  }
+  const clusters = new Map();
+  for (let i = 0; i < n; i++) {
+    const r = find(i);
+    if (!clusters.has(r)) clusters.set(r, []);
+    clusters.get(r).push(valid[i]);
+  }
+  return Array.from(clusters.values());
+}
+
+function groupByHouse(list) {
+  return groupByProximity(list);
+}
+
+function groupCentroid(group) {
+  if (!group.length) return [0, 0];
+  let slat = 0;
+  let slon = 0;
+  for (const p of group) {
+    slat += Number(p.lat);
+    slon += Number(p.lon);
+  }
+  return [slat / group.length, slon / group.length];
+}
+
+/**
+ * После выбора метки: без fitToViewport; на моб. — нижний лист в margin, объект в верхней зоне карты между топбаром и лентой.
+ */
+function focusMapOnPlacemark(lat, lon, panelId = "leftPanel") {
+  const map = state.mapInstance;
+  if (!map || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
+
+  const isMobile = window.matchMedia("(max-width: 900px)").matches;
+  const targetZoom = Math.max(map.getZoom(), 17);
+
+  if (!isMobile) {
+    map.setCenter([lat, lon], targetZoom, { duration: 320, checkZoomRange: true });
+    return;
+  }
+
+  const mapEl =
+    typeof map.container?.getElement === "function" ? map.container.getElement() : document.getElementById("map") || document.getElementById("demoMap");
+  if (!mapEl) return;
+  const mr = mapEl.getBoundingClientRect();
+
+  let marginTop = Math.max(56, Math.round(mr.height * 0.08));
+  let marginBottom = Math.round(mr.height * 0.42);
+  const topbar =
+    panelId === "demoLeftPanel"
+      ? document.querySelector(".demo-page .demo-top-strip") || document.querySelector(".demo-page .topbar")
+      : document.querySelector(".map-page .topbar");
+  if (topbar) {
+    marginTop = Math.max(48, Math.round(topbar.getBoundingClientRect().bottom - mr.top + 8));
+  }
+  const panel = document.getElementById(panelId);
+  if (panel) {
+    const track = panel.querySelector("[data-sheet-track]");
+    if (track) {
+      const tr = track.getBoundingClientRect();
+      marginBottom = Math.min(Math.round(mr.height - marginTop - 32), Math.max(marginBottom, Math.round(mr.bottom - tr.top + 24)));
+    }
+  }
+
+  marginTop = Math.max(40, Math.min(marginTop, Math.round(mr.height * 0.42)));
+  marginBottom = Math.max(80, Math.min(marginBottom, Math.round(mr.height - marginTop - 48)));
+
+  const spanLat = 0.00085;
+  const spanLon = 0.0011;
+  const bounds = [
+    [lat - spanLat / 2, lon - spanLon / 2],
+    [lat + spanLat / 2, lon + spanLon / 2]
+  ];
+  map.setBounds(bounds, {
+    checkZoomRange: true,
+    duration: 360,
+    zoomMargin: [marginTop, 20, marginBottom, 20],
+    preciseZoom: true
+  });
 }
 
 function showGroup(properties) {
+  state.mapViewportListSig = "";
+  state.mapAreaListSig = "";
   state.panelCollapsed = false;
   document.getElementById("mapLayout")?.classList.remove("collapsed");
-  refreshMapViewport();
   const panel = document.getElementById("leftPanel");
   if (!panel) return;
-  rememberSheetPosition(panel);
+  state.mapLeftPanelMode = "group";
+  state.panelSheetT = null;
   properties.sort((a, b) => b.commissionPartner - a.commissionPartner);
-  const bodyHtml = properties.map(cardMarkup).join("");
+  const bodyHtml = `${properties.map(cardMarkup).join("")}${sheetObjectsListFooterHtml()}`;
+  const [focusLat, focusLon] = groupCentroid(properties);
   panel.innerHTML = leftPanelMobileBlock(
     "mapLeftPanelHandleArea",
     `<div class="left-panel-head"><h3>Объектов в точке: ${properties.length}</h3><button class="close-left-panel" id="closeLeftPanel" aria-label="Свернуть панель">×</button></div>`,
@@ -2071,7 +2788,7 @@ function showGroup(properties) {
     mapCollapseLeftPanel();
   });
   updateMapOpenPanelButton();
-  mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
+  mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), true);
   ensureMapDrawControls();
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -2079,6 +2796,9 @@ function showGroup(properties) {
     });
   });
   bindSheetReflowOnImages(panel, "mapLayout");
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => focusMapOnPlacemark(focusLat, focusLon, "leftPanel"));
+  });
 }
 
 function initMap() {
@@ -2093,6 +2813,7 @@ function initMap() {
     if (state.mapInstance) {
       state.mapInstance.destroy();
       state.mapInstance = null;
+      state.mapLeftPanelMode = null;
     }
 
     const map = new ymaps.Map("map", {
@@ -2113,47 +2834,43 @@ function initMap() {
       state.viewportUpdateTimer = setTimeout(() => {
         const p = document.getElementById("leftPanel");
         if (getSheetNode(p)?.classList.contains("left-panel--sheet-live")) return;
+        if (state.mapLeftPanelMode === "group") return;
         if (state.areaPolygonCoords?.length) {
           renderAreaSelectionPanel(getAreaFilteredProperties());
         } else {
           renderViewportPanel();
         }
-      }, 220);
+      }, 420);
     });
 
-    let clusterer = null;
-    try {
-      clusterer = new ymaps.Clusterer({
-        groupByCoordinates: false,
-        gridSize: 72,
-        hasBalloon: false
-      });
-    } catch (_) {
-      /* */
-    }
     grouped.forEach((group) => {
-      const top = group.sort((a, b) => b.commissionPartner - a.commissionPartner)[0];
+      const sorted = group.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
+      const top = sorted[0];
+      const [plat, plon] = groupCentroid(group);
+      const multi = group.length >= 2;
+      const premium = top.commissionPartner >= 4;
       const placemark = new ymaps.Placemark(
-        [top.lat, top.lon],
+        [plat, plon],
+        multi
+          ? {
+              balloonContent: `${group.length} объект(а)`,
+              hintContent: `${group.length} объекта по адресу / в одном здании`,
+              iconContent: String(group.length)
+            }
+          : { hintContent: String(top.address || top.title || "").slice(0, 120) },
         {
-          balloonContent: `${group.length} объект(а)`,
-          hintContent: `${group.length} объект(а) по адресу`,
-          iconContent: String(group.length)
-        },
-        {
-          preset: top.commissionPartner >= 4 ? "islands#orangeCircleIcon" : "islands#blueCircleIcon"
+          preset: multi
+            ? premium
+              ? "islands#orangeCircleIcon"
+              : "islands#blueCircleIcon"
+            : premium
+              ? "islands#orangeIcon"
+              : "islands#blueIcon"
         }
       );
       placemark.events.add("click", () => showGroup(group));
-      if (clusterer) {
-        clusterer.add(placemark);
-      } else {
-        map.geoObjects.add(placemark);
-      }
+      map.geoObjects.add(placemark);
     });
-    if (clusterer) {
-      map.geoObjects.add(clusterer);
-    }
 
     if (state.areaPolygonCoords?.length) {
       const polygon = new ymaps.Polygon(
@@ -2207,6 +2924,7 @@ function initDemoMap() {
     if (state.mapInstance) {
       state.mapInstance.destroy();
       state.mapInstance = null;
+      state.demoLeftPanelMode = null;
     }
 
     const map = new ymaps.Map("demoMap", {
@@ -2227,47 +2945,43 @@ function initDemoMap() {
       state.viewportUpdateTimer = setTimeout(() => {
         const p = document.getElementById("demoLeftPanel");
         if (getSheetNode(p)?.classList.contains("left-panel--sheet-live")) return;
+        if (state.demoLeftPanelMode === "group") return;
         if (state.areaPolygonCoords?.length) {
           renderDemoAreaSelectionPanel();
         } else {
           renderDemoViewportPanel();
         }
-      }, 220);
+      }, 420);
     });
 
-    let clusterer = null;
-    try {
-      clusterer = new ymaps.Clusterer({
-        groupByCoordinates: false,
-        gridSize: 72,
-        hasBalloon: false
-      });
-    } catch (_) {
-      /* без кластера, если API недоступен */
-    }
     grouped.forEach((group) => {
-      const top = group.sort((a, b) => b.commissionPartner - a.commissionPartner)[0];
+      const sorted = group.slice().sort((a, b) => b.commissionPartner - a.commissionPartner);
+      const top = sorted[0];
+      const [plat, plon] = groupCentroid(group);
+      const multi = group.length >= 2;
+      const premium = top.commissionPartner >= 4;
       const placemark = new ymaps.Placemark(
-        [top.lat, top.lon],
+        [plat, plon],
+        multi
+          ? {
+              balloonContent: `${group.length} объект(а)`,
+              hintContent: `${group.length} объекта по адресу / в одном здании`,
+              iconContent: String(group.length)
+            }
+          : { hintContent: String(top.address || top.title || "").slice(0, 120) },
         {
-          balloonContent: `${group.length} объект(а)`,
-          hintContent: `${group.length} объект(а) по адресу`,
-          iconContent: String(group.length)
-        },
-        {
-          preset: top.commissionPartner >= 4 ? "islands#orangeCircleIcon" : "islands#blueCircleIcon"
+          preset: multi
+            ? premium
+              ? "islands#orangeCircleIcon"
+              : "islands#blueCircleIcon"
+            : premium
+              ? "islands#orangeIcon"
+              : "islands#blueIcon"
         }
       );
       placemark.events.add("click", () => showDemoGroup(group));
-      if (clusterer) {
-        clusterer.add(placemark);
-      } else {
-        map.geoObjects.add(placemark);
-      }
+      map.geoObjects.add(placemark);
     });
-    if (clusterer) {
-      map.geoObjects.add(clusterer);
-    }
 
     if (state.areaPolygonCoords?.length) {
       const polygon = new ymaps.Polygon(
@@ -2317,8 +3031,9 @@ async function renderPropertyPage(id) {
   const galleryPhotos = (property.photos || []).length
     ? property.photos
     : [PLACEHOLDER_IMAGE_URL];
+  const metroLine = propertyMetroLabel(property);
   app.innerHTML = `
-    ${topbar()}
+    ${topbar({ hideFilters: window.matchMedia("(max-width: 900px)").matches })}
     <section class="page">
       <p><button class="btn" id="goBack">← На карту</button></p>
       <div class="grid-2">
@@ -2328,7 +3043,7 @@ async function renderPropertyPage(id) {
             ${galleryPhotos
               .map(
                 (photo, index) =>
-                  `<img src="${photoUrlWithFallback(photo)}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" data-gallery-index="${index}" />`
+                  `<img class="gallery__img" ${imgLazyAttrs({ priority: index === 0 ? "high" : undefined })} src="${photoUrlWithFallback(photo, { gallery: true })}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" data-gallery-index="${index}" />`
               )
               .join("")}
           </div>
@@ -2337,6 +3052,14 @@ async function renderPropertyPage(id) {
         <aside class="panel">
           <h3>${money(property.price)} ₽</h3>
           <p><strong>Адрес:</strong> ${property.address}</p>
+          ${metroLine ? `<p><strong>Метро:</strong> ${escapeHtml(metroLine)}</p>` : ""}
+          ${
+            property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+              ? `<p><strong>Пешком до метро:</strong> ${Number(property.metroWalkMinutes)} мин</p>`
+              : ""
+          }
+          <p><strong>Статус жилья:</strong> ${housingStatusLabel(property.housingStatus)}</p>
+          <p><strong>Дата публикации:</strong> ${escapeHtml(formatPublishedDateRu(property.publishedAt || property.createdAt))}</p>
           <p><strong>Площадь:</strong> ${property.area} м²</p>
           <p><strong>Этаж:</strong> ${property.floor || "-"}</p>
           <p><strong>Этажность:</strong> ${property.totalFloors || "-"}</p>
@@ -2348,7 +3071,10 @@ async function renderPropertyPage(id) {
           <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
           ${
             property.pdfUrl
-              ? `<p><a href="${property.pdfUrl}?v=${encodeURIComponent(property.id || "")}-${Date.now()}" target="_blank" class="btn" id="downloadPdfBtn">Скачать презентацию PDF</a></p>`
+              ? `<p>
+                  <a href="${property.pdfUrl}?v=${encodeURIComponent(property.id || "")}-${Date.now()}" class="btn" id="downloadPdfBtn" download>Скачать презентацию PDF</a>
+                  <button class="btn" id="sharePdfBtn" type="button">Отправить клиенту</button>
+                </p>`
               : `<p><button class="btn" id="generatePdfBtn">Сгенерировать презентацию PDF</button></p>`
           }
           <hr />
@@ -2362,10 +3088,11 @@ async function renderPropertyPage(id) {
         </aside>
       </div>
     </section>
+    ${mobileBottomNavHtml("search")}
     <div class="gallery-lightbox" id="galleryLightbox">
       <button class="gallery-lightbox-close" id="galleryCloseBtn" aria-label="Закрыть">×</button>
       <button class="gallery-lightbox-nav" id="galleryPrevBtn" aria-label="Предыдущее фото">‹</button>
-      <img id="galleryLightboxImage" class="gallery-lightbox-image" src="${photoUrlWithFallback(galleryPhotos[0])}" alt="Фото объекта" />
+      <img id="galleryLightboxImage" class="gallery-lightbox-image" ${imgLazyAttrs({ priority: "high" })} src="${photoUrlWithFallback(galleryPhotos[0], { gallery: true })}" alt="Фото объекта" />
       <button class="gallery-lightbox-nav" id="galleryNextBtn" aria-label="Следующее фото">›</button>
       <div class="gallery-lightbox-counter" id="galleryCounter">1 / ${galleryPhotos.length}</div>
     </div>
@@ -2392,16 +3119,64 @@ async function renderPropertyPage(id) {
     const link = document.getElementById("downloadPdfBtn");
     if (!link) return;
     const originalText = link.textContent;
-    link.textContent = "Обновление PDF...";
+    link.textContent = "Скачивание...";
     link.style.pointerEvents = "none";
     try {
-      const data = await api(`/api/my/properties/${id}/generate-pdf`, { method: "POST" });
-      const freshUrl = `${data.pdfUrl}?v=${encodeURIComponent(id || "")}-${Date.now()}`;
-      window.open(freshUrl, "_blank", "noopener,noreferrer");
+      const latest = await api(`/api/properties/${id}`);
+      const blob = await fetchPropertyPresentationBlob(latest, id);
+      downloadBlobAsFile(blob, `presentation-${id}.pdf`);
       await renderPropertyPage(id);
-    } catch (_error) {
+    } catch (error) {
+      alert(error?.message || "Не удалось скачать PDF");
+    } finally {
       link.textContent = originalText || "Скачать презентацию PDF";
       link.style.pointerEvents = "";
+    }
+  });
+  document.getElementById("sharePdfBtn")?.addEventListener("click", async () => {
+    const shareBtn = document.getElementById("sharePdfBtn");
+    if (!shareBtn) return;
+    const originalText = shareBtn.textContent;
+    shareBtn.disabled = true;
+    shareBtn.textContent = "Подготовка...";
+    try {
+      const latest = await api(`/api/properties/${id}`);
+      const blob = await fetchPropertyPresentationBlob(latest, id);
+      const file = new File([blob], `presentation-${id}.pdf`, { type: "application/pdf" });
+      if (navigator.share) {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: "Презентация объекта",
+            text: "Отправляю PDF презентацию объекта",
+            files: [file]
+          });
+        } else {
+          const blobUrl = URL.createObjectURL(blob);
+          try {
+            await navigator.share({
+              title: "Презентация объекта",
+              text: "Отправляю PDF презентацию объекта",
+              url: blobUrl
+            });
+          } finally {
+            URL.revokeObjectURL(blobUrl);
+          }
+        }
+      } else {
+        downloadBlobAsFile(blob, `presentation-${id}.pdf`);
+      }
+      await renderPropertyPage(id);
+    } catch (error) {
+      const aborted =
+        error?.name === "AbortError" ||
+        (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError") ||
+        /abort|cancel|отмен/i.test(String(error?.message || ""));
+      if (!aborted) {
+        alert(error?.message || "Не удалось подготовить PDF");
+      }
+    } finally {
+      shareBtn.disabled = false;
+      shareBtn.textContent = originalText || "Отправить клиенту";
     }
   });
   document.getElementById("addObjectBtn")?.addEventListener("click", () => {
@@ -2410,14 +3185,15 @@ async function renderPropertyPage(id) {
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
   document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
   document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
 
   let currentGalleryIndex = 0;
   const lightbox = document.getElementById("galleryLightbox");
   const lightboxImage = document.getElementById("galleryLightboxImage");
   const galleryCounter = document.getElementById("galleryCounter");
   const updateLightbox = () => {
-    const url = photoUrlWithFallback(galleryPhotos[currentGalleryIndex]);
-    lightboxImage.src = url;
+    lightboxImage.src = optimizePhotoSrc(galleryPhotos[currentGalleryIndex] || PLACEHOLDER_IMAGE_URL, "gallery");
     galleryCounter.textContent = `${currentGalleryIndex + 1} / ${galleryPhotos.length}`;
   };
   const openLightbox = (index) => {
@@ -2450,14 +3226,15 @@ async function renderPropertyPage(id) {
   });
 }
 
-function renderAuthPage() {
-  setMapBodyClass(false);
-  app.innerHTML = `
-    <section class="login-page">
+function authFormsInnerHtml() {
+  return `
       <div class="login-wrapper">
         <div class="login-box">
           <h3>Вход</h3>
+          <p class="auth-notice" id="authNotice"></p>
+          <label class="field-label" for="loginEmail">Логин (email)</label>
           <input id="loginEmail" placeholder="Email" type="email" autocomplete="username email" />
+          <label class="field-label" for="loginPassword">Пароль</label>
           <input id="loginPassword" type="password" placeholder="Пароль" autocomplete="current-password" />
           <button class="btn primary full" id="login">Войти</button>
           <button class="btn full" type="button" id="toDemoMapBtn">К демо без входа</button>
@@ -2466,63 +3243,175 @@ function renderAuthPage() {
           <p class="muted" id="authStatus"></p>
         </div>
       </div>
+      <div class="contact-us-card">
+        <h4>Связаться с нами</h4>
+        <p class="muted">По предложениям и вопросам пишите на почту:</p>
+        <p><a class="btn" href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
+      </div>
 
       <div class="auth-modal" id="registerModal">
-        <div class="auth-modal-content">
-          <h3>Регистрация</h3>
-          <label class="field-label" for="accountType">Тип аккаунта</label>
-          <select id="accountType">
-            <option value="broker">Частный брокер</option>
-            <option value="agency_owner">Агентство</option>
-          </select>
-          <input id="lastName" placeholder="Фамилия (обязательно)" autocomplete="family-name" />
-          <input id="firstName" placeholder="Имя (обязательно)" autocomplete="given-name" />
-          <input id="email" placeholder="Email (обязательно)" type="email" autocomplete="email" />
-          <div class="phone-group">
-            <span>+7</span>
-            <input id="phone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
+        <div class="auth-modal-content auth-modal-content--register">
+          <div class="panel-head">
+            <h3 id="registerModalTitle">Регистрация</h3>
+            <button class="close-panel-action" id="closeRegisterXBtn" type="button" aria-label="Закрыть">×</button>
           </div>
-          <input id="password" placeholder="Пароль (мин 6)" type="password" autocomplete="new-password" />
-          <label class="field-label" for="agency" id="agencyFieldLabel">Самозанятый/ИП (обязательно)</label>
-          <input id="agency" placeholder="Агентство / ИП (обязательно для агентства)" />
-          <p class="note">* ИП / юрлица должны иметь соответствующие ОКВЭД для операций с недвижимостью</p>
-          <input id="inn" placeholder="ИНН (10 или 12 цифр)" inputmode="numeric" />
-          <label class="checkbox-line">
-            <input type="checkbox" id="agree" />
-            <span>
-              Я соглашаюсь с
-              <a href="/privacy.html" target="_blank" rel="noopener noreferrer">обработкой персональных данных</a>
-            </span>
-          </label>
-          <label class="checkbox-line">
-            <input type="checkbox" id="marketing" />
-            <span>Я согласен получать рекламные сообщения</span>
-          </label>
-          <p>
-            <button class="btn primary full" id="register">Создать аккаунт</button>
-            <button class="btn full" id="closeRegister">Закрыть</button>
-          </p>
+          <div id="registerFormWrap">
+            <label class="field-label" for="accountType">Тип аккаунта</label>
+            <select id="accountType">
+              <option value="broker">Частный брокер</option>
+              <option value="agency_owner">Агентство</option>
+            </select>
+            <input id="lastName" placeholder="Фамилия (обязательно)" autocomplete="family-name" />
+            <input id="firstName" placeholder="Имя (обязательно)" autocomplete="given-name" />
+            <input id="email" placeholder="Email (обязательно)" type="email" autocomplete="email" />
+            <div class="phone-group">
+              <span>+7</span>
+              <input id="phone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
+            </div>
+            <input id="password" placeholder="Пароль (мин 6)" type="password" autocomplete="new-password" />
+            <label class="field-label" for="agency" id="agencyFieldLabel">ФИО ИП/самозанятого (обязательно)</label>
+            <input id="agency" placeholder="Название агентства или ФИО ИП/самозанятого" />
+            <p class="note">* ИП / юрлица должны иметь соответствующие ОКВЭД для операций с недвижимостью</p>
+            <label class="checkbox-line">
+              <input type="checkbox" id="agree" />
+              <span>
+                Я соглашаюсь с
+                <a href="/privacy.html" target="_blank" rel="noopener noreferrer">обработкой персональных данных</a>
+              </span>
+            </label>
+            <label class="checkbox-line">
+              <input type="checkbox" id="marketing" />
+              <span>Я согласен получать рекламные сообщения</span>
+            </label>
+            <p>
+              <button class="btn primary full" id="register" type="button">Создать аккаунт</button>
+            </p>
+          </div>
+          <div id="registerDoneWrap" class="auth-result-wrap" hidden>
+            <p class="auth-result-text" id="registerDoneText"></p>
+            <p><button class="btn primary full" type="button" id="registerDoneClose">Понятно</button></p>
+          </div>
         </div>
       </div>
 
       <div class="auth-modal" id="resetModal">
         <div class="auth-modal-content">
-          <h3>Восстановление пароля</h3>
-          <input id="resetEmail" placeholder="Введите email" type="email" />
-          <p>
-            <button class="btn primary full" id="forgot">Отправить ссылку</button>
-            <button class="btn full" id="closeReset">Закрыть</button>
-          </p>
+          <div class="panel-head">
+            <h3 id="resetModalTitle">Восстановление пароля</h3>
+            <button class="close-panel-action" id="closeResetXBtn" type="button" aria-label="Закрыть">×</button>
+          </div>
+          <div id="resetFormWrap">
+            <label class="field-label" for="resetEmail">Email</label>
+            <input id="resetEmail" placeholder="Введите email" type="email" />
+            <p>
+              <button class="btn primary full" id="forgot" type="button">Отправить ссылку</button>
+              <button class="btn full" id="closeReset" type="button">Закрыть</button>
+            </p>
+          </div>
+          <div id="resetDoneWrap" class="auth-result-wrap" hidden>
+            <p class="auth-result-text" id="resetDoneText"></p>
+            <p><button class="btn primary full" type="button" id="resetDoneClose">Понятно</button></p>
+          </div>
         </div>
       </div>
-    </section>
-    ${mobileBottomNavHtml(!state.token)}
   `;
+}
 
+function removeAuthDemoOverlay() {
+  document.getElementById("authDemoOverlay")?.remove();
+}
+
+function dismissDemoAuthOverlay() {
+  document.getElementById("registerModal")?.classList.remove("active");
+  document.getElementById("resetModal")?.classList.remove("active");
+  document.body.classList.remove("auth-modal-open");
+  removeAuthDemoOverlay();
+  const target = state.authOverlayReturnHash || "#/";
+  state.authOverlayReturnHash = null;
+  if (location.hash !== target) {
+    location.hash = target;
+  } else {
+    router();
+  }
+}
+
+/** С демо-карты или карточки демо — открыть вход/регистрацию оверлеем с возвратом по «×». */
+function goToAuthFromGuestDemo(nextHash) {
+  const cur = location.hash || "#/";
+  if (cur === "#/" || cur.startsWith("#/demo/property/")) {
+    state.authOverlayReturnHash = cur;
+  } else if (!cur.startsWith("#/auth")) {
+    state.authOverlayReturnHash = null;
+  }
+  location.hash = nextHash;
+}
+
+function renderDemoAuthOverlay(initialHash) {
+  removeAuthDemoOverlay();
+  const shell = document.createElement("div");
+  shell.id = "authDemoOverlay";
+  shell.className = "auth-demo-overlay";
+  shell.innerHTML = `
+    <div class="auth-demo-overlay__backdrop" data-auth-overlay-dismiss role="presentation"></div>
+    <div class="auth-demo-overlay__panel login-page login-page--overlay">
+      <button type="button" class="auth-demo-overlay__x" id="authDemoOverlayClose" aria-label="Закрыть">×</button>
+      ${authFormsInnerHtml()}
+    </div>
+  `;
+  document.body.appendChild(shell);
+  attachAuthDomListeners(true);
+  if (initialHash === "#/auth-register") {
+    requestAnimationFrame(() => document.getElementById("openRegister")?.click());
+  }
+}
+
+function renderAuthPage() {
+  removeAuthDemoOverlay();
+  state.authOverlayReturnHash = null;
+  setMapBodyClass(false);
+  app.innerHTML = `
+    <section class="login-page">
+      ${authFormsInnerHtml()}
+    </section>
+    ${mobileBottomNavHtml(state.token ? "cabinet" : "search")}
+  `;
+  attachAuthDomListeners(false);
+}
+
+function attachAuthDomListeners(demoOverlay) {
+  const setAuthModalOpen = (open) => {
+    document.body.classList.toggle("auth-modal-open", Boolean(open));
+  };
+  const resetRegisterModalUi = () => {
+    document.getElementById("registerFormWrap")?.removeAttribute("hidden");
+    document.getElementById("registerDoneWrap")?.setAttribute("hidden", "");
+    const title = document.getElementById("registerModalTitle");
+    if (title) title.textContent = "Регистрация";
+    const btn = document.getElementById("register");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Создать аккаунт";
+    }
+  };
+  const resetPasswordModalUi = () => {
+    document.getElementById("resetFormWrap")?.removeAttribute("hidden");
+    document.getElementById("resetDoneWrap")?.setAttribute("hidden", "");
+    const title = document.getElementById("resetModalTitle");
+    if (title) title.textContent = "Восстановление пароля";
+    const btn = document.getElementById("forgot");
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "Отправить ссылку";
+    }
+  };
   const toDemoEl = document.getElementById("toDemoMapBtn");
   if (toDemoEl) {
     toDemoEl.textContent = state.token ? "На карту" : "К демо без входа";
     toDemoEl.addEventListener("click", () => {
+      if (demoOverlay) {
+        dismissDemoAuthOverlay();
+        return;
+      }
       if (
         state.panelCollapsedBeforeCabinet != null ||
         state.panelSheetTBeforeCabinet != null
@@ -2536,34 +3425,195 @@ function renderAuthPage() {
     });
   }
   document.getElementById("openRegister").addEventListener("click", () => {
+    resetRegisterModalUi();
     document.getElementById("registerModal").classList.add("active");
+    setAuthModalOpen(true);
   });
-  document.getElementById("closeRegister").addEventListener("click", () => {
+  document.getElementById("closeRegisterXBtn")?.addEventListener("click", () => {
+    if (demoOverlay) {
+      dismissDemoAuthOverlay();
+      return;
+    }
     document.getElementById("registerModal").classList.remove("active");
+    setAuthModalOpen(false);
+    resetRegisterModalUi();
   });
   document.getElementById("openReset").addEventListener("click", () => {
+    resetPasswordModalUi();
     document.getElementById("resetModal").classList.add("active");
+    setAuthModalOpen(true);
   });
   document.getElementById("closeReset").addEventListener("click", () => {
     document.getElementById("resetModal").classList.remove("active");
+    setAuthModalOpen(false);
+    resetPasswordModalUi();
   });
-  bindMobileBottomNavActions(!state.token);
+  document.getElementById("closeResetXBtn")?.addEventListener("click", () => {
+    document.getElementById("resetModal").classList.remove("active");
+    setAuthModalOpen(false);
+    resetPasswordModalUi();
+  });
+  document.getElementById("registerModal")?.addEventListener("click", (event) => {
+    if (event.target?.id !== "registerModal") return;
+    if (demoOverlay) {
+      dismissDemoAuthOverlay();
+      return;
+    }
+    document.getElementById("registerModal")?.classList.remove("active");
+    setAuthModalOpen(false);
+    resetRegisterModalUi();
+  });
+  document.getElementById("resetModal")?.addEventListener("click", (event) => {
+    if (event.target?.id !== "resetModal") return;
+    document.getElementById("resetModal")?.classList.remove("active");
+    setAuthModalOpen(false);
+    resetPasswordModalUi();
+  });
+  document.getElementById("registerDoneClose")?.addEventListener("click", () => {
+    if (demoOverlay) {
+      resetRegisterModalUi();
+      dismissDemoAuthOverlay();
+      return;
+    }
+    document.getElementById("registerModal")?.classList.remove("active");
+    setAuthModalOpen(false);
+    resetRegisterModalUi();
+  });
+  document.getElementById("resetDoneClose")?.addEventListener("click", () => {
+    document.getElementById("resetModal")?.classList.remove("active");
+    setAuthModalOpen(false);
+    resetPasswordModalUi();
+  });
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
 
   const updateRegisterFormByType = () => {
     const type = document.getElementById("accountType").value;
     const agencyInput = document.getElementById("agency");
     const label = document.getElementById("agencyFieldLabel");
     agencyInput.placeholder =
-      type === "agency_owner" ? "Название агентства (обязательно)" : "Самозанятый/ИП (обязательно)";
+      type === "agency_owner"
+        ? "Название агентства (обязательно)"
+        : "ФИО ИП/самозанятого (обязательно)";
     if (label) {
-      label.textContent = type === "agency_owner" ? "Название агентства (обязательно)" : "Самозанятый/ИП (обязательно)";
+      label.textContent =
+        type === "agency_owner"
+          ? "Название агентства (обязательно)"
+          : "ФИО ИП/самозанятого (обязательно)";
     }
   };
   document.getElementById("accountType").addEventListener("change", updateRegisterFormByType);
   updateRegisterFormByType();
 
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+  const fieldErrorId = (inputId) => `${inputId}Error`;
+  const clearFieldError = (inputEl) => {
+    if (!inputEl) return;
+    inputEl.classList.remove("input-invalid");
+    const err = document.getElementById(fieldErrorId(inputEl.id));
+    if (err) err.remove();
+  };
+  const setFieldError = (inputEl, message) => {
+    if (!inputEl) return;
+    inputEl.classList.add("input-invalid");
+    const errorElementId = fieldErrorId(inputEl.id);
+    let err = document.getElementById(errorElementId);
+    if (!err) {
+      err = document.createElement("p");
+      err.id = errorElementId;
+      err.className = "field-error-text";
+      const anchor = inputEl.closest(".phone-group") || inputEl;
+      anchor.insertAdjacentElement("afterend", err);
+    }
+    err.textContent = message;
+  };
+  const validateEmailField = (inputEl, requiredMessage = "Введите email") => {
+    const value = String(inputEl?.value || "").trim();
+    if (!value) {
+      setFieldError(inputEl, requiredMessage);
+      return false;
+    }
+    if (!emailRe.test(value)) {
+      setFieldError(inputEl, "Некорректный формат email");
+      return false;
+    }
+    clearFieldError(inputEl);
+    return true;
+  };
+  const validateRegisterPhone = () => {
+    const phoneEl = document.getElementById("phone");
+    const digits = toDigits(phoneEl?.value || "");
+    if (digits.length !== 10) {
+      setFieldError(phoneEl, "Телефон: 10 цифр после +7");
+      return false;
+    }
+    clearFieldError(phoneEl);
+    return true;
+  };
+  const validatePasswordField = (inputId, minLength = 6) => {
+    const passEl = document.getElementById(inputId);
+    const value = String(passEl?.value || "");
+    if (value.length < minLength) {
+      setFieldError(passEl, `Минимум ${minLength} символов`);
+      return false;
+    }
+    clearFieldError(passEl);
+    return true;
+  };
+  const validateNonEmpty = (inputId, message = "Поле обязательно") => {
+    const inputEl = document.getElementById(inputId);
+    if (!String(inputEl?.value || "").trim()) {
+      setFieldError(inputEl, message);
+      return false;
+    }
+    clearFieldError(inputEl);
+    return true;
+  };
+
+  document.getElementById("email")?.addEventListener("input", () => validateEmailField(document.getElementById("email")));
+  document.getElementById("loginEmail")?.addEventListener("input", () => validateEmailField(document.getElementById("loginEmail")));
+  document.getElementById("resetEmail")?.addEventListener("input", () => validateEmailField(document.getElementById("resetEmail")));
+  document.getElementById("loginPassword")?.addEventListener("input", () =>
+    validateNonEmpty("loginPassword", "Введите пароль")
+  );
+  document.getElementById("phone")?.addEventListener("input", validateRegisterPhone);
+  document.getElementById("password")?.addEventListener("input", () => validatePasswordField("password", 6));
+  document.getElementById("firstName")?.addEventListener("input", () => validateNonEmpty("firstName", "Введите имя"));
+  document.getElementById("lastName")?.addEventListener("input", () => validateNonEmpty("lastName", "Введите фамилию"));
+  document.getElementById("agency")?.addEventListener("input", () =>
+    validateNonEmpty("agency", "Укажите агентство или ФИО ИП/самозанятого")
+  );
+
   document.getElementById("register").addEventListener("click", async () => {
+    const authStatus = document.getElementById("authStatus");
+    const authNotice = document.getElementById("authNotice");
+    const showAuthNotice = (message) => {
+      if (!authNotice) return;
+      authNotice.textContent = message || "";
+      authNotice.classList.toggle("visible", Boolean(message));
+      if (message) {
+        authNotice.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+    };
+    if (authStatus) authStatus.textContent = "";
+    showAuthNotice("");
+    const registerBtn = document.getElementById("register");
+    const originalRegisterLabel = registerBtn?.textContent || "Создать аккаунт";
+    if (registerBtn) {
+      registerBtn.disabled = true;
+      registerBtn.textContent = "Отправка…";
+    }
     try {
+      const isValid =
+        validateEmailField(document.getElementById("email")) &&
+        validateRegisterPhone() &&
+        validatePasswordField("password", 6) &&
+        validateNonEmpty("firstName", "Введите имя") &&
+        validateNonEmpty("lastName", "Введите фамилию") &&
+        validateNonEmpty("agency", "Укажите агентство или ФИО ИП/самозанятого");
+      if (!isValid) {
+        throw new Error("Проверьте поля формы: есть некорректные данные");
+      }
       const payload = collectAuth();
       if (
         !payload.email ||
@@ -2571,16 +3621,12 @@ function renderAuthPage() {
         !payload.firstName ||
         !payload.lastName ||
         !payload.agency ||
-        !payload.inn ||
         !payload.phone
       ) {
         throw new Error("Заполните все обязательные поля");
       }
       if (!/^\+7\d{10}$/.test(payload.phone)) {
         throw new Error("Телефон должен быть в формате +7 и 10 цифр");
-      }
-      if (!/^\d{10}$|^\d{12}$/.test(payload.inn)) {
-        throw new Error("ИНН должен содержать 10 или 12 цифр");
       }
       if (payload.password.length < 6) {
         throw new Error("Пароль должен быть не менее 6 символов");
@@ -2592,15 +3638,43 @@ function renderAuthPage() {
         method: "POST",
         body: JSON.stringify(payload)
       });
+      if (data.requiresEmailVerification) {
+        const doneText = document.getElementById("registerDoneText");
+        const title = document.getElementById("registerModalTitle");
+        if (title) title.textContent = "Почти готово";
+        if (doneText) {
+          doneText.textContent =
+            data.message ||
+            "На вашу почту отправлено письмо для подтверждения email. Откройте письмо, перейдите по ссылке, затем войдите в аккаунт. Если письма нет, проверьте папку «Спам».";
+        }
+        document.getElementById("registerFormWrap")?.setAttribute("hidden", "");
+        document.getElementById("registerDoneWrap")?.removeAttribute("hidden");
+        if (registerBtn) {
+          registerBtn.disabled = false;
+          registerBtn.textContent = originalRegisterLabel;
+        }
+        return;
+      }
       setAuth(data);
+      removeAuthDemoOverlay();
+      state.authOverlayReturnHash = null;
       location.hash = "#/";
     } catch (error) {
-      document.getElementById("authStatus").textContent = error.message;
+      if (registerBtn) {
+        registerBtn.disabled = false;
+        registerBtn.textContent = originalRegisterLabel;
+      }
+      alert(error?.message || "Ошибка регистрации");
     }
   });
 
   document.getElementById("login").addEventListener("click", async () => {
     try {
+      const emailOk = validateEmailField(document.getElementById("loginEmail"), "Введите email для входа");
+      const passOk = validateNonEmpty("loginPassword", "Введите пароль");
+      if (!emailOk || !passOk) {
+        throw new Error("Проверьте email и пароль");
+      }
       const data = await api("/api/auth/login", {
         method: "POST",
         body: JSON.stringify({
@@ -2609,25 +3683,200 @@ function renderAuthPage() {
         })
       });
       setAuth(data);
+      removeAuthDemoOverlay();
+      state.authOverlayReturnHash = null;
       location.hash = "#/";
     } catch (error) {
       document.getElementById("authStatus").textContent = error.message;
     }
   });
 
-  document.getElementById("forgot").addEventListener("click", async () => {
-    const data = await api("/api/auth/forgot-password", {
-      method: "POST",
-      body: JSON.stringify({ email: document.getElementById("resetEmail").value })
+  const onForgotPassword = async () => {
+    const authStatus = document.getElementById("authStatus");
+    if (authStatus) authStatus.textContent = "";
+    if (!validateEmailField(document.getElementById("resetEmail"), "Введите email для восстановления")) {
+      alert("Введите корректный email для восстановления");
+      return;
+    }
+    const forgotBtn = document.getElementById("forgot");
+    const originalForgotLabel = forgotBtn?.textContent || "Отправить ссылку";
+    if (forgotBtn) {
+      forgotBtn.disabled = true;
+      forgotBtn.textContent = "Отправка…";
+    }
+    try {
+      const data = await api("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email: document.getElementById("resetEmail").value })
+      });
+      const doneText = document.getElementById("resetDoneText");
+      const title = document.getElementById("resetModalTitle");
+      if (title) title.textContent = "Проверьте почту";
+      if (doneText) {
+        doneText.textContent =
+          data.message ||
+          "Если такой email зарегистрирован, мы отправили письмо со ссылкой для сброса пароля. Если письма нет, проверьте папку «Спам».";
+      }
+      document.getElementById("resetFormWrap")?.setAttribute("hidden", "");
+      document.getElementById("resetDoneWrap")?.removeAttribute("hidden");
+    } catch (error) {
+      alert(error?.message || "Не удалось отправить письмо");
+    } finally {
+      if (forgotBtn) {
+        forgotBtn.disabled = false;
+        forgotBtn.textContent = originalForgotLabel;
+      }
+    }
+  };
+  document.getElementById("forgot").addEventListener("click", onForgotPassword);
+  if (demoOverlay) {
+    document.getElementById("authDemoOverlayClose")?.addEventListener("click", dismissDemoAuthOverlay);
+    document
+      .querySelector("#authDemoOverlay [data-auth-overlay-dismiss]")
+      ?.addEventListener("click", dismissDemoAuthOverlay);
+  }
+}
+
+function parseAgencyInviteTokenFromHash(hash) {
+  const prefix = "#/auth-agency-invite/";
+  if (!String(hash || "").startsWith(prefix)) return null;
+  try {
+    return decodeURIComponent(hash.slice(prefix.length));
+  } catch {
+    return null;
+  }
+}
+
+/** Завершение регистрации брокера по ссылке из письма от агентства. */
+async function renderAgencyInvitePage(token) {
+  removeAuthDemoOverlay();
+  state.authOverlayReturnHash = null;
+  setMapBodyClass(false);
+  let info = null;
+  let errMsg = "";
+  try {
+    info = await api(`/api/auth/agency-invite-info?token=${encodeURIComponent(token)}`);
+  } catch (e) {
+    errMsg = e.message || "Ссылка недействительна";
+  }
+
+  if (errMsg || !info?.email) {
+    app.innerHTML = `
+    <section class="login-page">
+      <div class="login-wrapper">
+        <div class="login-box">
+          <h3>Приглашение недоступно</h3>
+          <p class="muted">${escapeHtml(errMsg || "Запросите у руководителя агентства новое письмо.")}</p>
+          <p><button type="button" class="btn full" id="inviteErrToAuth">Перейти ко входу</button></p>
+        </div>
+      </div>
+    </section>
+    ${mobileBottomNavHtml("search")}
+    `;
+    document.getElementById("inviteErrToAuth")?.addEventListener("click", () => {
+      location.hash = "#/auth";
     });
-    document.getElementById("authStatus").textContent = data.message;
-    document.getElementById("resetModal").classList.remove("active");
+    bindMobileBottomNavActions();
+    updateMobileNavMetrics();
+    return;
+  }
+
+  app.innerHTML = `
+    <section class="login-page">
+      <div class="login-wrapper">
+        <div class="login-box">
+          <h3>Регистрация по приглашению</h3>
+          <p class="muted">Агентство: <strong>${escapeHtml(info.agencyName || "")}</strong></p>
+          <p class="muted">Этот email указал руководитель; входить вы будете с ним:</p>
+          <p><strong>${escapeHtml(info.email)}</strong></p>
+          <label class="field-label" for="inviteFirstName">Имя</label>
+          <input id="inviteFirstName" placeholder="Иван" autocomplete="given-name" />
+          <label class="field-label" for="inviteLastName">Фамилия</label>
+          <input id="inviteLastName" placeholder="Иванов" autocomplete="family-name" />
+          <label class="field-label" for="invitePassword">Пароль</label>
+          <input id="invitePassword" type="password" placeholder="минимум 6 символов" autocomplete="new-password" />
+          <label class="field-label" for="invitePhone">Телефон</label>
+          <div class="phone-group">
+            <span>+7</span>
+            <input id="invitePhone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
+          </div>
+          <label class="checkbox-line">
+            <input type="checkbox" id="inviteAgree" />
+            <span>
+              Я соглашаюсь с
+              <a href="/privacy.html" target="_blank" rel="noopener noreferrer">обработкой персональных данных</a>
+            </span>
+          </label>
+          <label class="checkbox-line">
+            <input type="checkbox" id="inviteMarketing" />
+            <span>Я согласен получать рекламные сообщения</span>
+          </label>
+          <button class="btn primary full" type="button" id="inviteCompleteBtn">Завершить регистрацию</button>
+          <p class="muted" id="inviteStatus"></p>
+        </div>
+      </div>
+    </section>
+    ${mobileBottomNavHtml("search")}
+  `;
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
+  document.getElementById("inviteCompleteBtn")?.addEventListener("click", async () => {
+    const status = document.getElementById("inviteStatus");
+    if (status) status.textContent = "";
+    const firstName = document.getElementById("inviteFirstName")?.value.trim() || "";
+    const lastName = document.getElementById("inviteLastName")?.value.trim() || "";
+    const password = document.getElementById("invitePassword")?.value || "";
+    const phone = `+7${toDigits(document.getElementById("invitePhone")?.value || "")}`;
+    const agree = document.getElementById("inviteAgree")?.checked;
+    const marketingConsent = document.getElementById("inviteMarketing")?.checked;
+    if (!firstName || !lastName) {
+      if (status) status.textContent = "Укажите имя и фамилию";
+      return;
+    }
+    if (password.length < 6) {
+      if (status) status.textContent = "Пароль не менее 6 символов";
+      return;
+    }
+    if (!/^\+7\d{10}$/.test(phone)) {
+      if (status) status.textContent = "Телефон: 10 цифр после +7";
+      return;
+    }
+    if (!agree) {
+      if (status) status.textContent = "Нужно согласие на обработку персональных данных";
+      return;
+    }
+    const btn = document.getElementById("inviteCompleteBtn");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Сохранение…";
+    }
+    try {
+      const data = await api("/api/auth/complete-agency-invite", {
+        method: "POST",
+        body: JSON.stringify({
+          token,
+          firstName,
+          lastName,
+          password,
+          phone,
+          agree: true,
+          marketingConsent
+        })
+      });
+      setAuth(data);
+      location.hash = "#/map";
+    } catch (e) {
+      if (status) status.textContent = e.message || "Ошибка";
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "Завершить регистрацию";
+      }
+    }
   });
 }
 
 function collectAuth() {
   const phoneDigits = toDigits(document.getElementById("phone").value);
-  const innDigits = toDigits(document.getElementById("inn").value);
   return {
     accountType: document.getElementById("accountType").value === "agency_owner" ? "agency_owner" : "broker",
     firstName: document.getElementById("firstName").value.trim(),
@@ -2637,7 +3886,7 @@ function collectAuth() {
     password: document.getElementById("password").value,
     phone: `+7${phoneDigits}`,
     agency: document.getElementById("agency").value.trim(),
-    inn: innDigits,
+    inn: "",
     marketingConsent: document.getElementById("marketing").checked,
     agree: document.getElementById("agree").checked
   };
@@ -2660,8 +3909,183 @@ async function logout() {
   }
   state.token = "";
   state.user = null;
+  state.authOverlayReturnHash = null;
+  removeAuthDemoOverlay();
   localStorage.removeItem("token");
   localStorage.removeItem("user");
+}
+
+async function renderCabinetProfilePage() {
+  setMapBodyClass(false);
+  if (!state.token) {
+    renderAuthPage();
+    return;
+  }
+  let me = state.user;
+  try {
+    me = await api("/api/auth/me");
+    state.user = me;
+    localStorage.setItem("user", JSON.stringify(me));
+  } catch {
+    /* use state.user */
+  }
+  const phoneDigits =
+    me.phone && String(me.phone).startsWith("+7") && String(me.phone).length >= 12
+      ? toDigits(String(me.phone).slice(3))
+      : toDigits(String(me.phone || ""));
+  const accountLabel = me.isAgencyOwner ? "Владелец агентства" : "Брокер";
+  app.innerHTML = `
+    ${topbar({ slim: true })}
+    <section class="cabinet cabinet--profile">
+      <div class="panel">
+        <p><button type="button" class="btn" id="profileBackCabinet">← В кабинет</button></p>
+        <h2>Редактировать профиль</h2>
+        <p class="muted">Тип аккаунта: <strong>${escapeHtml(accountLabel)}</strong></p>
+        <p class="profile-email-display muted"><strong>Email:</strong> ${escapeHtml(me.email || "—")}</p>
+        <h3>Пароль</h3>
+        <p class="muted">Новый пароль задаётся по ссылке из письма на этот адрес.</p>
+        <p><button type="button" class="btn" id="profileRequestPasswordEmailBtn">Сменить пароль</button></p>
+        <p class="muted" id="profilePasswordEmailStatus"></p>
+        <form id="cabinetProfileForm" autocomplete="off">
+          <div class="form-grid">
+            <div class="field-block">
+              <label class="field-label" for="profileFirstName">Имя</label>
+              <input id="profileFirstName" required value="${escapeHtml(me.firstName || "")}" autocomplete="given-name" />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileLastName">Фамилия</label>
+              <input id="profileLastName" required value="${escapeHtml(me.lastName || "")}" autocomplete="family-name" />
+            </div>
+            <div class="field-block field-span-2">
+              <label class="field-label" for="profilePhone">Телефон</label>
+              <div class="phone-group">
+                <span>+7</span>
+                <input id="profilePhone" maxlength="10" inputmode="numeric" value="${escapeHtml(phoneDigits)}" autocomplete="tel-national" />
+              </div>
+            </div>
+            <div class="field-block field-span-2">
+              <label class="field-label" for="profileAgency">Название агентства или ФИО ИП/самозанятого</label>
+              <input id="profileAgency" required value="${escapeHtml(me.agency || "")}" />
+            </div>
+            <div class="field-block field-span-2">
+              <label class="field-label" for="profileInn">ИНН (необязательно)</label>
+              <input id="profileInn" value="${escapeHtml(me.inn || "")}" />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileTelegram">Telegram</label>
+              <input id="profileTelegram" value="${escapeHtml(me.telegram || "")}" placeholder="@nickname" />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileWhatsapp">WhatsApp</label>
+              <input id="profileWhatsapp" value="${escapeHtml(me.whatsapp || "")}" />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileVk">ВКонтакте</label>
+              <input id="profileVk" value="${escapeHtml(me.vk || "")}" />
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="profileMax">MAX</label>
+              <input id="profileMax" value="${escapeHtml(me.max || "")}" />
+            </div>
+            <div class="field-block field-span-2">
+              <label class="checkbox-line">
+                <input type="checkbox" id="profileMarketing" ${me.marketingConsent ? "checked" : ""} />
+                <span>Я согласен получать рекламные сообщения</span>
+              </label>
+            </div>
+          </div>
+          <p><button type="submit" class="btn primary" id="profileSaveBtn">Сохранить данные</button></p>
+          <p class="muted" id="profileFormStatus"></p>
+        </form>
+        <hr />
+        <p><button type="button" class="btn" id="profileLogoutBtn">Выйти из аккаунта</button></p>
+        <p style="margin-top: 28px;"><button type="button" class="btn danger-btn" id="profileDeleteBtn">Удалить профиль</button></p>
+        <p class="muted" id="profileDeleteHint">Удаление необратимо. Объекты брокера агентства перейдут к агентству; у владельца агентства без брокеров объекты будут удалены вместе с профилем.</p>
+      </div>
+    </section>
+    ${mobileBottomNavHtml("cabinet")}
+  `;
+  bindBrandHomeButton();
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
+  document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
+  document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
+  document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
+  document.getElementById("profileBackCabinet")?.addEventListener("click", () => {
+    location.hash = "#/cabinet";
+  });
+  document.getElementById("profileRequestPasswordEmailBtn")?.addEventListener("click", async () => {
+    const st = document.getElementById("profilePasswordEmailStatus");
+    if (st) st.textContent = "";
+    const btn = document.getElementById("profileRequestPasswordEmailBtn");
+    const email = String(me.email || "").trim().toLowerCase();
+    if (!email) {
+      if (st) st.textContent = "Не удалось определить email.";
+      return;
+    }
+    if (btn) btn.disabled = true;
+    try {
+      const data = await api("/api/auth/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email })
+      });
+      if (st) st.textContent = data.message || "Проверьте почту.";
+    } catch (err) {
+      if (st) st.textContent = err.message || "Ошибка отправки";
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  });
+  document.getElementById("cabinetProfileForm")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const status = document.getElementById("profileFormStatus");
+    if (status) status.textContent = "";
+    const phone = `+7${toDigits(document.getElementById("profilePhone")?.value || "")}`;
+    const payload = {
+      firstName: document.getElementById("profileFirstName")?.value.trim() || "",
+      lastName: document.getElementById("profileLastName")?.value.trim() || "",
+      phone,
+      agency: document.getElementById("profileAgency")?.value.trim() || "",
+      inn: document.getElementById("profileInn")?.value.trim() || "",
+      telegram: document.getElementById("profileTelegram")?.value.trim() || "",
+      whatsapp: document.getElementById("profileWhatsapp")?.value.trim() || "",
+      vk: document.getElementById("profileVk")?.value.trim() || "",
+      max: document.getElementById("profileMax")?.value.trim() || "",
+      marketingConsent: Boolean(document.getElementById("profileMarketing")?.checked)
+    };
+    if (!/^\+7\d{10}$/.test(phone)) {
+      if (status) status.textContent = "Телефон: 10 цифр после +7";
+      return;
+    }
+    try {
+      const data = await api("/api/me/profile", { method: "PATCH", body: JSON.stringify(payload) });
+      state.user = data.user;
+      localStorage.setItem("user", JSON.stringify(data.user));
+      if (status) status.textContent = "Сохранено";
+    } catch (err) {
+      if (status) status.textContent = err.message || "Ошибка сохранения";
+    }
+  });
+  document.getElementById("profileLogoutBtn")?.addEventListener("click", async () => {
+    await logout();
+    location.hash = "#/auth";
+  });
+  document.getElementById("profileDeleteBtn")?.addEventListener("click", async () => {
+    if (
+      !window.confirm(
+        "Удалить профиль безвозвратно? Для владельца агентства с брокерами удаление недоступно, пока не удалены все брокеры."
+      )
+    ) {
+      return;
+    }
+    try {
+      await api("/api/me", { method: "DELETE" });
+      await logout();
+      location.hash = "#/auth";
+    } catch (err) {
+      alert(err.message || "Не удалось удалить профиль");
+    }
+  });
 }
 
 async function renderCabinetPage(openForm = false) {
@@ -2672,14 +4096,13 @@ async function renderCabinetPage(openForm = false) {
   }
   const [items, stats] = await Promise.all([api("/api/my/properties"), api("/api/my/stats")]);
   app.innerHTML = `
-    ${topbar()}
+    ${topbar({ slim: true })}
     <section class="cabinet">
       <div class="panel">
         <div class="panel-head">
           <div class="cabinet-head-main">
             <h2>${state.user?.isAgencyOwner ? "Личный кабинет агентства" : "Личный кабинет брокера"}</h2>
-            <button class="btn" id="openChangePasswordModal">Сменить пароль</button>
-            <button class="btn" id="logoutCabinet">Выйти из личного кабинета</button>
+            <button class="btn primary" type="button" id="openCabinetProfile">Редактировать профиль</button>
           </div>
           <button class="close-panel-action" id="closeCabinetPanel" aria-label="Закрыть кабинет">×</button>
         </div>
@@ -2694,7 +4117,7 @@ async function renderCabinetPage(openForm = false) {
                 .map(
                   (p) => `
           <article class="card">
-            <img src="${photoUrlWithFallback(p.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="">
+            <img ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(p.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="">
             <div class="card-body">
               <div class="price">${money(p.price)} ₽</div>
               <div>${p.address}</div>
@@ -2710,6 +4133,11 @@ async function renderCabinetPage(openForm = false) {
                 .join("")
             : "<p class='muted'>Пока нет объектов.</p>"
         }
+      </div>
+      <div class="panel contact-us-card">
+        <h4>Связаться с нами</h4>
+        <p class="muted">По вопросам и предложениям:</p>
+        <p><a class="btn" href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a></p>
       </div>
       <div class="modal" id="propertyFormModal">
         <div class="modal-card property-form-modal-card">
@@ -2741,15 +4169,15 @@ async function renderCabinetPage(openForm = false) {
             </div>
             <div class="field-block">
               <label class="field-label" for="bedroomsInput">Спальни</label>
-              <input id="bedroomsInput" name="bedrooms" type="number" required />
+              <input id="bedroomsInput" name="bedrooms" type="text" inputmode="numeric" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="floorInput">Этаж</label>
-              <input id="floorInput" name="floor" type="number" required />
+              <input id="floorInput" name="floor" type="text" inputmode="numeric" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="totalFloorsInput">Этажей в доме</label>
-              <input id="totalFloorsInput" name="totalFloors" type="number" required />
+              <input id="totalFloorsInput" name="totalFloors" type="text" inputmode="numeric" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="ceilingHeightInput">Высота потолков (м)</label>
@@ -2757,7 +4185,7 @@ async function renderCabinetPage(openForm = false) {
             </div>
             <div class="field-block">
               <label class="field-label" for="commissionTotalInput">Общая комиссия (%)</label>
-              <input id="commissionTotalInput" name="commissionTotal" type="number" step="0.1" required />
+              <input id="commissionTotalInput" name="commissionTotal" type="text" inputmode="decimal" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="finishingInput">Отделка</label>
@@ -2777,8 +4205,19 @@ async function renderCabinetPage(openForm = false) {
               </select>
             </div>
             <div class="field-block">
+              <label class="field-label" for="housingStatusInput">Статус жилья</label>
+              <select id="housingStatusInput" name="housingStatus" required>
+                <option value="flat">Квартира</option>
+                <option value="apartments">Апартаменты</option>
+              </select>
+            </div>
+            <div class="field-block">
+              <label class="field-label" for="metroWalkInput">До метро пешком (мин)</label>
+              <input id="metroWalkInput" name="metroWalkMinutes" type="text" inputmode="numeric" placeholder="Необязательно" />
+            </div>
+            <div class="field-block">
               <label class="field-label" for="commissionPartnerInput">Комиссия партнеру (%)</label>
-              <input id="commissionPartnerInput" name="commissionPartner" type="number" step="0.1" required />
+              <input id="commissionPartnerInput" name="commissionPartner" type="text" inputmode="decimal" required />
             </div>
             <div class="field-block">
               <label class="field-label" for="phoneInput">Телефон</label>
@@ -2814,32 +4253,11 @@ async function renderCabinetPage(openForm = false) {
         </div>
       </div>
     </section>
-    <div class="modal" id="changePasswordModal">
-      <div class="modal-card">
-        <div class="panel-head">
-          <h3>Смена пароля</h3>
-          <button class="close-panel-action" id="closeChangePasswordModal" aria-label="Закрыть">×</button>
-        </div>
-        <div class="form-grid">
-          <div class="field-block field-span-2">
-            <label class="field-label" for="oldPasswordInput">Старый пароль</label>
-            <input id="oldPasswordInput" type="password" placeholder="Введите текущий пароль" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="newPasswordInput">Новый пароль</label>
-            <input id="newPasswordInput" type="password" placeholder="Минимум 6 символов" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="newPasswordConfirmInput">Повтор нового пароля</label>
-            <input id="newPasswordConfirmInput" type="password" placeholder="Повторите новый пароль" />
-          </div>
-        </div>
-        <p><button class="btn primary" type="button" id="changePasswordBtn">Сменить пароль</button></p>
-        <p class="muted" id="passwordStatus"></p>
-      </div>
-    </div>
+    ${mobileBottomNavHtml("cabinet")}
   `;
   bindBrandHomeButton();
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
   const closePropertyFormModal = () => {
     document.getElementById("propertyFormModal")?.classList.remove("open");
   };
@@ -2859,55 +4277,8 @@ async function renderCabinetPage(openForm = false) {
   document.getElementById("closeCabinetPanel").addEventListener("click", () => {
     location.hash = "#/";
   });
-  document.getElementById("logoutCabinet").addEventListener("click", () => {
-    logout();
-    location.hash = "#/auth";
-  });
-  const changePasswordModal = document.getElementById("changePasswordModal");
-  const closeChangePasswordModal = () => {
-    changePasswordModal?.classList.remove("open");
-  };
-  document.getElementById("openChangePasswordModal")?.addEventListener("click", () => {
-    changePasswordModal?.classList.add("open");
-    document.getElementById("passwordStatus").textContent = "";
-  });
-  document.getElementById("closeChangePasswordModal")?.addEventListener("click", closeChangePasswordModal);
-  changePasswordModal?.addEventListener("click", (event) => {
-    if (event.target === changePasswordModal) closeChangePasswordModal();
-  });
-  document.getElementById("changePasswordBtn")?.addEventListener("click", async () => {
-    const oldPassword = document.getElementById("oldPasswordInput").value;
-    const newPassword = document.getElementById("newPasswordInput").value;
-    const confirmPassword = document.getElementById("newPasswordConfirmInput").value;
-    const status = document.getElementById("passwordStatus");
-    status.textContent = "";
-    if (!oldPassword || !newPassword || !confirmPassword) {
-      status.textContent = "Заполните все поля смены пароля";
-      return;
-    }
-    if (newPassword.length < 6) {
-      status.textContent = "Новый пароль должен быть не менее 6 символов";
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      status.textContent = "Новый пароль и подтверждение не совпадают";
-      return;
-    }
-    try {
-      await api("/api/auth/change-password", {
-        method: "POST",
-        body: JSON.stringify({ oldPassword, newPassword, confirmPassword })
-      });
-      status.textContent = "Пароль успешно изменен";
-      document.getElementById("oldPasswordInput").value = "";
-      document.getElementById("newPasswordInput").value = "";
-      document.getElementById("newPasswordConfirmInput").value = "";
-      setTimeout(() => {
-        closeChangePasswordModal();
-      }, 500);
-    } catch (err) {
-      status.textContent = err.message || "Ошибка смены пароля";
-    }
+  document.getElementById("openCabinetProfile")?.addEventListener("click", () => {
+    location.hash = "#/cabinet/profile";
   });
   let editingPropertyId = null;
   let pendingPhotoFiles = [];
@@ -3010,13 +4381,18 @@ async function renderCabinetPage(openForm = false) {
     form.elements.address.value = property.address || "";
     form.elements.price.value = formatSpacedNumber(property.price || "");
     form.elements.area.value = String(property.area ?? "").replace(".", ",");
-    form.elements.bedrooms.value = property.bedrooms ?? "";
-    form.elements.floor.value = property.floor ?? "";
-    form.elements.totalFloors.value = property.totalFloors ?? "";
+    form.elements.bedrooms.value = formatSpacedNumber(property.bedrooms ?? "");
+    form.elements.floor.value = formatSpacedNumber(property.floor ?? "");
+    form.elements.totalFloors.value = formatSpacedNumber(property.totalFloors ?? "");
     form.elements.ceilingHeight.value = property.ceilingHeight ?? "";
     form.elements.commissionTotal.value = property.commissionTotal ?? "";
     form.elements.finishing.value = property.finishing || "";
     form.elements.readiness.value = property.readiness || "";
+    form.elements.housingStatus.value = property.housingStatus || "flat";
+    form.elements.metroWalkMinutes.value =
+      property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+        ? formatSpacedNumber(String(property.metroWalkMinutes))
+        : "";
     form.elements.commissionPartner.value = property.commissionPartner ?? "";
     form.elements.phone.value = formatRussianPhoneMasked(String(property.contacts?.phone || "").replace(/\D/g, "").slice(-10));
     form.elements.telegram.value = property.contacts?.telegram || "";
@@ -3059,6 +4435,12 @@ async function renderCabinetPage(openForm = false) {
     }
     formData.set("price", toRawNumberString(formData.get("price")));
     formData.set("area", normalizeDecimalInput(formData.get("area")));
+    formData.set("bedrooms", toRawNumberString(formData.get("bedrooms")));
+    formData.set("floor", toRawNumberString(formData.get("floor")));
+    formData.set("totalFloors", toRawNumberString(formData.get("totalFloors")));
+    formData.set("commissionTotal", normalizeDecimalInput(String(formData.get("commissionTotal") || "").replace(",", ".")));
+    formData.set("commissionPartner", normalizeDecimalInput(String(formData.get("commissionPartner") || "").replace(",", ".")));
+    formData.set("metroWalkMinutes", toRawNumberString(formData.get("metroWalkMinutes")));
     formData.set("phone", normalizeRussianPhone(formData.get("phone")));
     formData.set("telegram", normalizeTelegramNickname(formData.get("telegram")));
     if (!editingPropertyId && pendingPhotoFiles.length === 0) {
@@ -3086,6 +4468,24 @@ async function renderCabinetPage(openForm = false) {
   priceInput?.addEventListener("input", (event) => {
     const raw = toRawNumberString(event.target.value);
     event.target.value = formatSpacedNumber(raw);
+  });
+
+  const wireIntField = (id) => {
+    document.getElementById(id)?.addEventListener("input", (event) => {
+      const raw = toRawNumberString(event.target.value);
+      event.target.value = formatSpacedNumber(raw);
+    });
+  };
+  wireIntField("bedroomsInput");
+  wireIntField("floorInput");
+  wireIntField("totalFloorsInput");
+  wireIntField("metroWalkInput");
+
+  document.getElementById("commissionTotalInput")?.addEventListener("input", (event) => {
+    event.target.value = normalizeDecimalInput(event.target.value);
+  });
+  document.getElementById("commissionPartnerInput")?.addEventListener("input", (event) => {
+    event.target.value = normalizeDecimalInput(event.target.value);
   });
 
   const areaInput = document.getElementById("areaInput");
@@ -3427,18 +4827,22 @@ async function renderAgencyPage() {
         <p>${escapeHtml(err.message || "Ошибка загрузки панели агентства")}</p>
         <p><button class="btn" type="button" id="agencyErrToMap">На карту</button></p>
       </section>
+      ${mobileBottomNavHtml("cabinet")}
     `;
     document.getElementById("agencyErrToMap").addEventListener("click", () => (location.hash = "#/"));
+    bindMobileBottomNavActions();
+    updateMobileNavMetrics();
     return;
   }
 
   const brokers = Array.isArray(agencyData.brokers) ? agencyData.brokers : [];
+  const activeBrokers = brokers.filter((b) => !b.invitePending);
   const assignOptions = [
     {
       id: state.user.id,
       label: `Агентство (${state.user.agency || state.user.email || "владелец"})`
     },
-    ...brokers.map((b) => ({
+    ...activeBrokers.map((b) => ({
       id: b.id,
       label: `${b.email}${b.name ? ` (${b.name})` : ""}`
     }))
@@ -3447,8 +4851,8 @@ async function renderAgencyPage() {
     .map(
       (b) => `<tr>
       <td>${escapeHtml(b.email)}</td>
-      <td>${escapeHtml(b.name || "—")}</td>
-      <td>${escapeHtml(b.phone || "—")}</td>
+      <td>${escapeHtml(b.invitePending ? "ожидает регистрации" : b.name || "—")}</td>
+      <td>${escapeHtml(b.invitePending ? "—" : b.phone || "—")}</td>
       <td class="muted">${escapeHtml((b.createdAt || "").slice(0, 10))}</td>
       <td><button type="button" class="btn danger-btn agency-del-broker" data-id="${escapeHtml(b.id)}" data-email="${escapeHtml(
         b.email
@@ -3489,37 +4893,18 @@ async function renderAgencyPage() {
     ${topbar({ slim: true })}
     <section class="page admin-page">
       <h1>Панель агентства</h1>
-      <p class="muted">Вы можете добавлять логины брокеров агентства и удалять их при необходимости.</p>
+      <p class="muted">Добавьте email сотрудника — ему на почту уйдёт приглашение. Пароль, телефон и согласия он укажет сам по ссылке из письма.</p>
       <p class="muted">Лимит: <strong>${agencyData.brokerCount} / ${agencyData.brokerLimit || "∞"}</strong></p>
 
       <div class="panel">
-        <h3>Добавить брокера</h3>
+        <h3>Пригласить брокера</h3>
         <div class="form-grid">
-          <div class="field-block">
-            <label class="field-label" for="agencyBrokerFirstName">Имя</label>
-            <input id="agencyBrokerFirstName" placeholder="Иван" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="agencyBrokerLastName">Фамилия</label>
-            <input id="agencyBrokerLastName" placeholder="Иванов" />
-          </div>
-          <div class="field-block">
-            <label class="field-label" for="agencyBrokerEmail">Email</label>
+          <div class="field-block field-span-2">
+            <label class="field-label" for="agencyBrokerEmail">Email сотрудника</label>
             <input id="agencyBrokerEmail" type="email" placeholder="broker@agency.ru" />
           </div>
-          <div class="field-block">
-            <label class="field-label" for="agencyBrokerPassword">Пароль</label>
-            <input id="agencyBrokerPassword" type="password" placeholder="минимум 6 символов" />
-          </div>
-          <div class="field-block field-span-2">
-            <label class="field-label" for="agencyBrokerPhone">Телефон</label>
-            <div class="phone-group">
-              <span>+7</span>
-              <input id="agencyBrokerPhone" placeholder="9991234567" maxlength="10" inputmode="numeric" />
-            </div>
-          </div>
         </div>
-        <p><button class="btn primary" type="button" id="agencyCreateBrokerBtn">Создать брокера</button></p>
+        <p><button class="btn primary" type="button" id="agencyCreateBrokerBtn">Отправить приглашение</button></p>
         <p class="muted" id="agencyStatus"></p>
       </div>
 
@@ -3530,7 +4915,7 @@ async function renderAgencyPage() {
             <thead>
               <tr>
                 <th>Email</th>
-                <th>Имя</th>
+                <th>Имя / статус</th>
                 <th>Телефон</th>
                 <th>Создан</th>
                 <th></th>
@@ -3564,34 +4949,33 @@ async function renderAgencyPage() {
         </div>
       </div>
     </section>
+    ${mobileBottomNavHtml("cabinet")}
   `;
 
   bindBrandHomeButton();
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
   document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
   document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
   document.getElementById("toMapBtn")?.addEventListener("click", () => (location.hash = "#/"));
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
 
   document.getElementById("agencyCreateBrokerBtn")?.addEventListener("click", async () => {
-    const firstName = document.getElementById("agencyBrokerFirstName").value.trim();
-    const lastName = document.getElementById("agencyBrokerLastName").value.trim();
     const email = document.getElementById("agencyBrokerEmail").value.trim();
-    const password = document.getElementById("agencyBrokerPassword").value;
-    const phone = `+7${toDigits(document.getElementById("agencyBrokerPhone").value)}`;
     const status = document.getElementById("agencyStatus");
     status.textContent = "";
-    if (!firstName || !lastName || !email || !password || !/^\+7\d{10}$/.test(phone)) {
-      status.textContent = "Заполните все поля и укажите корректный телефон";
+    if (!email) {
+      status.textContent = "Укажите email сотрудника";
       return;
     }
     try {
       await api("/api/agency/brokers", {
         method: "POST",
-        body: JSON.stringify({ firstName, lastName, email, password, phone })
+        body: JSON.stringify({ email })
       });
       await renderAgencyPage();
     } catch (err) {
-      status.textContent = err.message || "Ошибка создания брокера";
+      status.textContent = err.message || "Ошибка отправки приглашения";
     }
   });
 
@@ -3674,23 +5058,28 @@ async function renderAdminPage() {
         <p>${escapeHtml(err.message || "Ошибка")}</p>
         <p><button class="btn" type="button" id="adminErrToMap">На карту</button></p>
       </section>
+      ${mobileBottomNavHtml("cabinet")}
     `;
     document.getElementById("adminErrToMap").addEventListener("click", () => {
       location.hash = "#/";
     });
+    bindMobileBottomNavActions();
+    updateMobileNavMetrics();
     return;
   }
 
   const agencyRows = agencies
     .map(
       (a) => `<tr>
-      <td>${escapeHtml(a.agency || "—")}</td>
-      <td>${escapeHtml(a.email || "—")}</td>
-      <td>${a.brokerCount}</td>
-      <td>${a.brokerLimit}</td>
-      <td>
-        <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
-        <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
+      <td data-label="Агентство">${escapeHtml(a.agency || "—")}</td>
+      <td data-label="Email">${escapeHtml(a.email || "—")}</td>
+      <td data-label="Брокеров">${a.brokerCount}</td>
+      <td data-label="Лимит">${a.brokerLimit}</td>
+      <td data-label="Действия">
+        <div class="admin-row-actions">
+          <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
+          <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
+        </div>
       </td>
     </tr>`
     )
@@ -3699,19 +5088,21 @@ async function renderAdminPage() {
   const usersRows = privateBrokers
     .map(
       (u) => `<tr>
-      <td>${escapeHtml(u.email)}</td>
-      <td>${escapeHtml(u.name || "—")}</td>
-      <td>${escapeHtml(u.agency || "—")}</td>
-      <td>${escapeHtml(u.phone || "—")}</td>
-      <td>${u.role === "admin" ? "admin" : "брокер"}</td>
-      <td class="muted">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
-      <td>
-        <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
-        ${
-          u.role === "admin"
-            ? `<span class="muted">—</span>`
-            : `<button class="btn danger-btn admin-del-user" data-id="${escapeHtml(u.id)}" data-email="${escapeHtml(u.email)}" type="button">Удалить</button>`
-        }
+      <td data-label="Email">${escapeHtml(u.email)}</td>
+      <td data-label="Имя">${escapeHtml(u.name || "—")}</td>
+      <td data-label="Организация">${escapeHtml(u.agency || "—")}</td>
+      <td data-label="Телефон">${escapeHtml(u.phone || "—")}</td>
+      <td data-label="Роль">${u.role === "admin" ? "admin" : "брокер"}</td>
+      <td class="muted" data-label="Регистрация">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
+      <td data-label="Действия">
+        <div class="admin-row-actions">
+          <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
+          ${
+            u.role === "admin"
+              ? `<span class="muted">—</span>`
+              : `<button class="btn danger-btn admin-del-user" data-id="${escapeHtml(u.id)}" data-email="${escapeHtml(u.email)}" type="button">Удалить</button>`
+          }
+        </div>
       </td>
     </tr>`
     )
@@ -3720,14 +5111,21 @@ async function renderAdminPage() {
   const propRows = properties
     .map(
       (p) => `<tr>
-      <td><code>${escapeHtml(p.id)}</code></td>
-      <td>${escapeHtml(p.address || "—")}</td>
-      <td>${money(p.price)} ₽</td>
-      <td>${escapeHtml(p.ownerEmail)}</td>
-      <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
-      <td>
-        <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
-        <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+      <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
+      <td data-label="Адрес">
+        <div class="admin-prop-cell">
+          <img class="admin-prop-thumb" src="${photoUrlWithFallback(getPropertyPreviewPhoto(p))}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />
+          <span>${escapeHtml(p.address || "—")}</span>
+        </div>
+      </td>
+      <td data-label="Цена">${money(p.price)} ₽</td>
+      <td data-label="Владелец">${escapeHtml(p.ownerEmail)}</td>
+      <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
+      <td data-label="Действия">
+        <div class="admin-row-actions">
+          <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
+          <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+        </div>
       </td>
     </tr>`
     )
@@ -3757,11 +5155,11 @@ async function renderAdminPage() {
       <h2>Агентства</h2>
       <div class="panel">
         <h3>Список агентств</h3>
-        <div class="address-row">
+        <div class="address-row admin-search-row">
           <input id="adminAgencySearchInput" placeholder="Поиск агентства: email, имя, название" />
           <button class="btn" type="button" id="adminAgencySearchBtn">Найти</button>
         </div>
-        <div class="admin-table-wrap" style="margin-top:10px;">
+        <div class="admin-table-wrap admin-table-wrap--spaced">
           <table class="admin-table">
             <thead>
               <tr>
@@ -3779,7 +5177,7 @@ async function renderAdminPage() {
         </div>
       </div>
       <h2>Частные брокеры</h2>
-      <div class="address-row" style="margin-bottom:10px;">
+      <div class="address-row admin-search-row">
         <input id="adminPrivateBrokerSearchInput" placeholder="Поиск частного брокера: email, имя, телефон, ИП/самозанятый" />
         <button class="btn" type="button" id="adminPrivateBrokerSearchBtn">Найти</button>
       </div>
@@ -3805,7 +5203,7 @@ async function renderAdminPage() {
 
       <div class="admin-tab-panel" id="adminPropertiesPanel">
       <h2>Объекты</h2>
-      <div class="address-row" style="margin-bottom:10px;">
+      <div class="address-row admin-search-row">
         <input id="adminPropertySearchInput" placeholder="Поиск объекта: ID, адрес, email владельца" />
         <button class="btn" type="button" id="adminPropertySearchBtn">Найти</button>
       </div>
@@ -3846,6 +5244,7 @@ async function renderAdminPage() {
         </div>
       </div>
     </section>
+    ${mobileBottomNavHtml("cabinet")}
   `;
 
   bindBrandHomeButton();
@@ -3861,6 +5260,8 @@ async function renderAdminPage() {
   document.getElementById("cabinetBtn")?.addEventListener("click", () => {
     location.hash = "#/cabinet";
   });
+  bindMobileBottomNavActions();
+  updateMobileNavMetrics();
 
   const usersTabBtn = document.getElementById("adminUsersTabBtn");
   const propertiesTabBtn = document.getElementById("adminPropertiesTabBtn");
@@ -3903,13 +5304,15 @@ async function renderAdminPage() {
       ? list
           .map(
             (a) => `<tr>
-          <td>${escapeHtml(a.agency || "—")}</td>
-          <td>${escapeHtml(a.email || "—")}</td>
-          <td>${a.brokerCount}</td>
-          <td>${a.brokerLimit}</td>
-          <td>
-            <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
-            <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
+          <td data-label="Агентство">${escapeHtml(a.agency || "—")}</td>
+          <td data-label="Email">${escapeHtml(a.email || "—")}</td>
+          <td data-label="Брокеров">${a.brokerCount}</td>
+          <td data-label="Лимит">${a.brokerLimit}</td>
+          <td data-label="Действия">
+            <div class="admin-row-actions">
+              <button class="btn admin-open-agency" data-id="${escapeHtml(a.id)}" type="button">Открыть</button>
+              <button class="btn danger-btn admin-del-agency" data-id="${escapeHtml(a.id)}" data-email="${escapeHtml(a.email || "")}" type="button">Удалить</button>
+            </div>
           </td>
         </tr>`
           )
@@ -4137,21 +5540,23 @@ async function renderAdminPage() {
         ? list
             .map(
               (u) => `<tr>
-          <td>${escapeHtml(u.email)}</td>
-          <td>${escapeHtml(u.name || "—")}</td>
-          <td>${escapeHtml(u.agency || "—")}</td>
-          <td>${escapeHtml(u.phone || "—")}</td>
-          <td>${u.role === "admin" ? "admin" : "брокер"}</td>
-          <td class="muted">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
-          <td>
-            <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
-            ${
-              u.role === "admin"
-                ? `<span class="muted">—</span>`
-                : `<button class="btn danger-btn admin-del-user" data-id="${escapeHtml(u.id)}" data-email="${escapeHtml(
-                    u.email
-                  )}" type="button">Удалить</button>`
-            }
+          <td data-label="Email">${escapeHtml(u.email)}</td>
+          <td data-label="Имя">${escapeHtml(u.name || "—")}</td>
+          <td data-label="Организация">${escapeHtml(u.agency || "—")}</td>
+          <td data-label="Телефон">${escapeHtml(u.phone || "—")}</td>
+          <td data-label="Роль">${u.role === "admin" ? "admin" : "брокер"}</td>
+          <td class="muted" data-label="Регистрация">${escapeHtml((u.createdAt || "").slice(0, 10))}</td>
+          <td data-label="Действия">
+            <div class="admin-row-actions">
+              <button class="btn admin-open-user" data-id="${escapeHtml(u.id)}" type="button">Открыть</button>
+              ${
+                u.role === "admin"
+                  ? `<span class="muted">—</span>`
+                  : `<button class="btn danger-btn admin-del-user" data-id="${escapeHtml(u.id)}" data-email="${escapeHtml(
+                      u.email
+                    )}" type="button">Удалить</button>`
+              }
+            </div>
           </td>
         </tr>`
             )
@@ -4182,14 +5587,21 @@ async function renderAdminPage() {
       ? list
           .map(
             (p) => `<tr>
-          <td><code>${escapeHtml(p.id)}</code></td>
-          <td>${escapeHtml(p.address || "—")}</td>
-          <td>${money(p.price)} ₽</td>
-          <td>${escapeHtml(p.ownerEmail)}</td>
-          <td class="muted">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
-          <td>
-            <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
-            <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+          <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
+          <td data-label="Адрес">
+            <div class="admin-prop-cell">
+              <img class="admin-prop-thumb" src="${photoUrlWithFallback(getPropertyPreviewPhoto(p))}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />
+              <span>${escapeHtml(p.address || "—")}</span>
+            </div>
+          </td>
+          <td data-label="Цена">${money(p.price)} ₽</td>
+          <td data-label="Владелец">${escapeHtml(p.ownerEmail)}</td>
+          <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
+          <td data-label="Действия">
+            <div class="admin-row-actions">
+              <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
+              <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+            </div>
           </td>
         </tr>`
           )
@@ -4223,14 +5635,36 @@ async function renderAdminPage() {
 
 async function router() {
   const hash = location.hash || "#/";
+  const agencyInviteToken = parseAgencyInviteTokenFromHash(hash);
+  if (agencyInviteToken) {
+    await renderAgencyInvitePage(agencyInviteToken);
+    return;
+  }
   if (!state.token) {
     if (hash.startsWith("#/demo/property/")) {
       const id = decodeURIComponent(hash.split("/")[3] || "");
       renderDemoPropertyPage(id);
       return;
     }
-    if (hash === "#/cabinet" || hash === "#/cabinet/add") {
+    if (hash === "#/cabinet" || hash === "#/cabinet/add" || hash === "#/cabinet/profile") {
       location.hash = "#/auth";
+      return;
+    }
+    const overlayReturn = state.authOverlayReturnHash;
+    const wantsAuthOverlay =
+      hash === "#/auth" || hash === "#/auth-form" || hash === "#/auth-register";
+    if (
+      wantsAuthOverlay &&
+      overlayReturn &&
+      (overlayReturn === "#/" || overlayReturn.startsWith("#/demo/property/"))
+    ) {
+      if (overlayReturn.startsWith("#/demo/property/")) {
+        const rid = decodeURIComponent(overlayReturn.split("/")[3] || "");
+        renderDemoPropertyPage(rid);
+      } else {
+        renderPublicDemoPage();
+      }
+      renderDemoAuthOverlay(hash);
       return;
     }
     if (hash === "#/auth") {
@@ -4284,6 +5718,10 @@ async function router() {
     await renderPropertyPage(id);
     return;
   }
+  if (hash === "#/cabinet/profile") {
+    await renderCabinetProfilePage();
+    return;
+  }
   if (hash === "#/cabinet") {
     await renderCabinetPage();
     return;
@@ -4297,3 +5735,22 @@ async function router() {
 
 window.addEventListener("hashchange", router);
 router();
+
+(function bindMobileSheetResizeOnce() {
+  let mobileSheetResizeTimer = 0;
+  window.addEventListener(
+    "resize",
+    () => {
+      window.clearTimeout(mobileSheetResizeTimer);
+      mobileSheetResizeTimer = window.setTimeout(() => {
+        updateMobileNavMetrics();
+        if (!window.matchMedia("(max-width: 900px)").matches) return;
+        const lp = document.getElementById("leftPanel");
+        const dm = document.getElementById("demoLeftPanel");
+        if (lp?.querySelector("[data-sheet-track]")) mobileSheetSettleAfterRender(lp, document.getElementById("mapLayout"));
+        if (dm?.querySelector("[data-sheet-track]")) mobileSheetSettleAfterRender(dm, document.getElementById("demoMapLayout"));
+      }, 140);
+    },
+    { passive: true }
+  );
+})();
