@@ -1103,7 +1103,7 @@ function refreshMobileSheetLayoutVars(panel) {
  * Рулон снизу: трек (белый блок) «приклеен» основанием к низу экрана, translateY сдвигает полотно.
  * Меньше translateY — шторка уезжает вверх (карта снизу, лист на весь экран и выше верхней границы).
  * Больше translateY — опускается, максимум yPeek: видна только полоса со счётчиком (ручка + заголовок).
- * yHalf — только старт «~половина карты / половина листа» (не фиксируется при отпускании).
+ * yHalf — старт посередине между разворотом и полоской счётчика (translate), не фиксируется при отпускании.
  */
 function getSheetGeometry(panel) {
   if (!window.matchMedia("(max-width: 900px)").matches) return null;
@@ -1136,8 +1136,8 @@ function getSheetGeometry(panel) {
   if (!Number.isFinite(yMax)) yMax = yMaxByScreen;
   if (yMax < yMin) yMax = yMin;
   const yPeek = yMax;
-  const stage = Math.max(160, vh - navH - 8);
-  let yHalf = Math.round(yPeek - stage * 0.5);
+  const span = Math.max(0, yPeek - yMin);
+  let yHalf = span > 1 ? Math.round(yMin + span * 0.5) : Math.round(yPeek - 24);
   yHalf = Math.min(yPeek - 10, Math.max(yMin + 18, yHalf));
   return { h: H, yMin, yMax, yPeek, yHalf, yMid: yHalf, yFirst: yHalf, vh, navH, peekVisible };
 }
@@ -1199,15 +1199,20 @@ function sheetDragRubberTranslate(t, g) {
   return t;
 }
 
-/** После жеста — только два упора: вверх (лист) или вниз (полоса со счётчиком); без «липкого» среднего положения. */
+/**
+ * Два упора: развернуто (yMin) и свёрнуто до счётчика (yPeek).
+ * Нельзя сравнивать rawY с (yMin+yPeek)/2 при сильно отрицательном yMin — rawY всегда > mid, получалось
+ * «всегда yPeek» или хаос из-за ветки |vy|>0.1 при единицах px/ms.
+ */
 function pickMobileSheetSnapY(rawY, vy, g) {
   if (!g) return rawY;
-  const fling = 0.45;
+  const span = g.yPeek - g.yMin;
+  if (!(span > 0.5)) return g.yPeek;
+  const fling = 0.55;
   if (vy > fling) return g.yPeek;
   if (vy < -fling) return g.yMin;
-  const mid = (g.yMin + g.yPeek) / 2;
-  if (Math.abs(vy) > 0.1) return vy > 0 ? g.yPeek : g.yMin;
-  return rawY <= mid ? g.yMin : g.yPeek;
+  const u = (rawY - g.yMin) / span;
+  return u <= 0.5 ? g.yMin : g.yPeek;
 }
 
 function sheetSnapAnimate(s, targetY, g, commit) {
