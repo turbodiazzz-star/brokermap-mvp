@@ -1123,6 +1123,16 @@ function isAltIOSBrowser() {
   return /CriOS|YaBrowser|YaApp_iOS|Yowser|FxiOS|EdgiOS|OPiOS/i.test(ua);
 }
 
+function isYandexMobileBrowser() {
+  const ua = String(navigator.userAgent || "");
+  return /YaBrowser|YaApp_iOS|Yowser/i.test(ua);
+}
+
+function isChromeIOSBrowser() {
+  const ua = String(navigator.userAgent || "");
+  return /CriOS/i.test(ua);
+}
+
 function mobileBrowserExtraBottomPad() {
   if (!window.matchMedia("(max-width: 900px)").matches) return 0;
   const ua = String(navigator.userAgent || "");
@@ -1256,6 +1266,8 @@ function getSheetGeometry(panel) {
   const navOverlapPanel = navRect ? Math.max(0, Math.round(panelRect.bottom - navRect.top)) : 0;
   const browserExtraBottom = mobileBrowserExtraBottomPad();
   const altIOS = isAltIOSBrowser();
+  const yandexMobile = isYandexMobileBrowser();
+  const chromeIOS = isChromeIOSBrowser();
   const navOverlapEffective = navOverlapPanel + browserExtraBottom;
   let peekCollapsedPx = Math.ceil(headBottomFromTrack + 2 + navOverlapEffective);
   if (scrollEl) {
@@ -1304,9 +1316,9 @@ function getSheetGeometry(panel) {
     const secondTopFromTrack = secondCard
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
-    const gapBefore2ndCard = altIOS ? 58 : 54;
+    const gapBefore2ndCard = yandexMobile ? 46 : chromeIOS ? 66 : altIOS ? 60 : 58;
     const hi = secondCard ? Math.max(minFloor, secondTopFromTrack - gapBefore2ndCard) : H;
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.46 : 0.45));
+    const aimStart = Math.round(baseUsable * (yandexMobile ? 0.485 : chromeIOS ? 0.43 : 0.44));
     let merged = Math.min(hi, Math.max(minFloor, Math.min(aimStart, hi)));
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
@@ -1317,7 +1329,7 @@ function getSheetGeometry(panel) {
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
     const floorList = Math.round(headStrip + cardH + 4);
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.46 : 0.45));
+    const aimStart = Math.round(baseUsable * (yandexMobile ? 0.485 : chromeIOS ? 0.43 : 0.44));
     targetOpenVis = Math.min(H, Math.max(floorList, Math.min(aimStart, H)));
   }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));
