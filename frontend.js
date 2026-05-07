@@ -1010,9 +1010,13 @@ function leftPanelTrackWrap(innerHtml) {
   return `<div class="left-panel__track" data-sheet-track>${innerHtml}</div>`;
 }
 
+function sheetBackToFirstButtonHtml() {
+  return `<button type="button" class="sheet-back-to-first" data-sheet-back-first aria-label="К первому объекту">⌄</button>`;
+}
+
 function leftPanelMobileBlock(handleAreaId, headHtml, bodyHtml) {
   const body = bodyHtml ? `<div class="left-panel-scroll" data-sheet-scroll>${bodyHtml}</div>` : "";
-  return leftPanelTrackWrap(leftPanelHandleHtml(handleAreaId) + headHtml + body);
+  return leftPanelTrackWrap(leftPanelHandleHtml(handleAreaId) + headHtml + body) + sheetBackToFirstButtonHtml();
 }
 
 function sheetObjectsListFooterHtml() {
@@ -1364,7 +1368,7 @@ function resetMobileSheetLandingState() {
 /** Лёгкое «резиновое» сопротивление у краёв жеста (как шторки iOS). */
 function sheetDragRubberTranslate(t, g) {
   if (!g) return t;
-  const k = 0.58;
+  const k = 0.34;
   if (t < g.yMin) return g.yMin + (t - g.yMin) * k;
   if (t > g.yMax) return g.yMax + (t - g.yMax) * k;
   return t;
@@ -1399,6 +1403,23 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   let gestureStartedFromPeek = false;
   /** Новое касание отменяет текущую инерцию (fling). */
   let sheetDragInterruptGen = 0;
+  const setBackToFirstVisible = (visible) => {
+    const btn = panel.querySelector("[data-sheet-back-first]");
+    if (!btn) return;
+    btn.classList.toggle("visible", Boolean(visible));
+  };
+  const syncBackToFirstButton = (y, g) => {
+    if (!g) {
+      setBackToFirstVisible(false);
+      return;
+    }
+    if (state.panelCollapsed) {
+      setBackToFirstVisible(false);
+      return;
+    }
+    const threshold = clampSheetT(g.yHalf - 18, g);
+    setBackToFirstVisible(y <= threshold);
+  };
 
   const commitSheetState = (y, g) => {
     const atPeek = Math.abs(y - g.yPeek) < 10;
@@ -1417,25 +1438,15 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     if (lastCollapsedUi !== atPeek) {
       lastCollapsedUi = atPeek;
     }
+    syncBackToFirstButton(y, g);
   };
 
   /** Медленное отпускание — остаёмся на текущем translate (листаем объекты). Быстрый свайп — инерция до остановки. */
   const finishMobileSheetRelease = (s, normalizedT, vy, g) => {
     const gen = sheetDragInterruptGen;
-    const V_STAY = 0.12;
-    const V_FAST = 1.0;
+    const V_STAY = 0.32;
     s.classList.remove("left-panel--sheet-live");
     const ty0 = clampSheetT(normalizedT, g);
-    if (Number.isFinite(vy) && Math.abs(vy) >= V_FAST) {
-      // Резкий свайп: быстрый предсказуемый снап (быстрее и стабильнее по fps, чем длинная инерция).
-      const snapTarget = vy > 0 ? g.yPeek : Math.min(g.yHalf - 8, g.yMin + 24);
-      const snapT = clampSheetT(snapTarget, g);
-      setPanelTranslateY(s, snapT, true, 220);
-      commitSheetState(snapT, g);
-      if (state.panelCollapsed) state.panelSheetT = g.yPeek;
-      else state.panelSheetT = snapT;
-      return;
-    }
     if (gestureStartedFromPeek && ty0 < g.yPeek - 10) {
       // Первый подъём из свёрнутого: мягко фиксируем в "стартовом" положении, не даём улетать в самый верх.
       const mid = clampSheetT(g.yHalf, g);
@@ -1453,7 +1464,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       return;
     }
     let t = ty0;
-    let v = vy * 1.06;
+    let v = vy * 0.64;
     let lastTs = performance.now();
     const tStart = lastTs;
     const step = (now) => {
@@ -1472,7 +1483,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       commitSheetState(t, g);
       if (state.panelCollapsed) state.panelSheetT = g.yPeek;
       else state.panelSheetT = t;
-      v *= Math.pow(0.986, dt / 16.67);
+      v *= Math.pow(0.972, dt / 16.67);
       if (Math.abs(v) < 0.048) {
         const settle = clampSheetT(t, g);
         setPanelTranslateY(s, settle, false);
@@ -1561,7 +1572,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const now = performance.now();
     const dt = Math.max(1, now - lastMoveTs);
     const vy = (e.clientY - lastMoveY) / dt;
-    velocityY = velocityY * 0.18 + vy * 0.82;
+    velocityY = velocityY * 0.25 + vy * 0.75;
     lastMoveY = e.clientY;
     lastMoveTs = now;
   };
@@ -1638,6 +1649,20 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     },
     true
   );
+  panel.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-sheet-back-first]");
+    if (!btn) return;
+    if (!mq()) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const s = sheetNode();
+    const g = getSheetGeometry(panel);
+    if (!s || !g) return;
+    const target = clampSheetT(g.yHalf, g);
+    setPanelTranslateY(s, target, true, 300);
+    commitSheetState(target, g);
+    state.panelSheetT = target;
+  });
 
   const onPointerCancel = (e) => {
     const pid = activeId;
@@ -1658,6 +1683,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   panel.addEventListener("pointerup", onPointerUp);
   panel.addEventListener("pointercancel", onPointerCancel);
   panel.dataset.mobileSheetBound = "1";
+  setBackToFirstVisible(false);
   ensureMobileSheetVisualViewportReflow();
 }
 
