@@ -995,6 +995,53 @@ function bindDemoCardButtons(root = document) {
   });
 }
 
+let sheetRouteTransitionTimer = 0;
+
+function ensureSheetRouteTransitionOverlay() {
+  let overlay = document.getElementById("sheetRouteTransition");
+  if (overlay) return overlay;
+  overlay = document.createElement("div");
+  overlay.id = "sheetRouteTransition";
+  overlay.className = "sheet-route-transition";
+  overlay.setAttribute("aria-hidden", "true");
+  overlay.innerHTML = `
+    <div class="sheet-route-transition__card">
+      <div class="sheet-route-transition__bar sheet-route-transition__bar--lg"></div>
+      <div class="sheet-route-transition__bar"></div>
+      <div class="sheet-route-transition__bar sheet-route-transition__bar--sm"></div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  return overlay;
+}
+
+function beginSheetRouteTransition(cardEl) {
+  const overlay = ensureSheetRouteTransitionOverlay();
+  document.body.classList.add("sheet-route-transitioning");
+  overlay.classList.add("visible");
+  cardEl?.classList.add("card--route-opening");
+  window.clearTimeout(sheetRouteTransitionTimer);
+  sheetRouteTransitionTimer = window.setTimeout(() => {
+    endSheetRouteTransition();
+  }, 2200);
+}
+
+function endSheetRouteTransition() {
+  window.clearTimeout(sheetRouteTransitionTimer);
+  sheetRouteTransitionTimer = 0;
+  document.body.classList.remove("sheet-route-transitioning");
+  document.querySelectorAll(".card--route-opening").forEach((el) => el.classList.remove("card--route-opening"));
+  const overlay = document.getElementById("sheetRouteTransition");
+  overlay?.classList.remove("visible");
+}
+
+function navigateToSheetCard(hash, cardEl) {
+  beginSheetRouteTransition(cardEl);
+  window.setTimeout(() => {
+    location.hash = hash;
+  }, 90);
+}
+
 function bindSheetCardOpenByTap(root, opts = {}) {
   if (!root) return;
   const isDemo = opts.isDemo === true;
@@ -1011,7 +1058,8 @@ function bindSheetCardOpenByTap(root, opts = {}) {
       }
       const id = String(card.dataset.cardOpenId || "").trim();
       if (!id) return;
-      location.hash = isDemo ? `#/demo/property/${encodeURIComponent(id)}` : `#/property/${encodeURIComponent(id)}`;
+      const target = isDemo ? `#/demo/property/${encodeURIComponent(id)}` : `#/property/${encodeURIComponent(id)}`;
+      navigateToSheetCard(target, card);
     });
   });
 }
@@ -2529,6 +2577,7 @@ function renderPublicDemoPage() {
 }
 
 function renderDemoPropertyPage(id) {
+  endSheetRouteTransition();
   setMapBodyClass(false);
   if (!state.demoAllProperties || !state.demoAllProperties.length) {
     state.demoAllProperties = createDemoProperties(100);
@@ -3561,6 +3610,7 @@ function refreshMapViewport() {
 }
 
 async function renderPropertyPage(id) {
+  endSheetRouteTransition();
   setMapBodyClass(false);
   if (!state.token) {
     renderAuthPage();

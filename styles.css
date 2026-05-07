@@ -687,6 +687,66 @@ body.view-map #app {
   filter: brightness(0.99);
 }
 
+.card.card--feed.card--route-opening {
+  transform: scale(0.988);
+  opacity: 0.86;
+}
+
+.sheet-route-transition {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(247, 250, 255, 0.72);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+  z-index: 2400;
+}
+
+.sheet-route-transition.visible {
+  opacity: 1;
+}
+
+.sheet-route-transition__card {
+  width: min(460px, calc(100vw - 40px));
+  background: #fff;
+  border: 1px solid #dce5f7;
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.16);
+}
+
+.sheet-route-transition__bar {
+  height: 10px;
+  border-radius: 999px;
+  margin: 8px 0;
+  background: linear-gradient(90deg, #e8edf8 0%, #f4f7fd 35%, #e8edf8 70%);
+  background-size: 220% 100%;
+  animation: sheet-route-shimmer 1.05s linear infinite;
+}
+
+.sheet-route-transition__bar--lg {
+  height: 14px;
+  width: 78%;
+}
+
+.sheet-route-transition__bar--sm {
+  width: 54%;
+}
+
+@keyframes sheet-route-shimmer {
+  from {
+    background-position: 220% 0;
+  }
+  to {
+    background-position: -20% 0;
+  }
+}
+
 .card-media {
   position: relative;
 }
