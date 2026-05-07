@@ -1889,6 +1889,11 @@ textarea {
     display: none !important;
   }
 
+  .map-page .map-layout--app-sheet .sheet-back-to-first,
+  .demo-page .map-layout--app-sheet .sheet-back-to-first {
+    display: none !important;
+  }
+
   .open-left-panel-btn--sheet .open-left-panel-ico--mob {
     display: none !important;
   }

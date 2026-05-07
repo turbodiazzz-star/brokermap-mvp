@@ -829,7 +829,7 @@ function cardMarkup(property) {
   const commissionRub = (Number(property.price || 0) * pct) / 100;
   const premium = property.commissionPartner >= 4;
   return `
-    <article class="card card--feed ${premium ? "premium" : ""}">
+    <article class="card card--feed ${premium ? "premium" : ""}" data-card-open-id="${escapeHtml(property.id)}">
       <div class="card-media">
         <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
         ${propertyFeedPhotoDots(property)}
@@ -965,7 +965,7 @@ function demoCardMarkup(item) {
   const commissionRub = (Number(item.price || 0) * pct) / 100;
   const premium = item.commissionPartner >= 4;
   return `
-    <article class="card card--feed ${premium ? "premium" : ""}">
+    <article class="card card--feed ${premium ? "premium" : ""}" data-card-open-id="${escapeHtml(item.id)}">
       <div class="card-media">
         <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
         ${propertyFeedPhotoDots(item)}
@@ -997,6 +997,27 @@ function bindDemoCardButtons(root = document) {
   root.querySelectorAll(".open-demo-contacts").forEach((btn) => {
     btn.addEventListener("click", () => {
       goToAuthFromGuestDemo("#/auth-register");
+    });
+  });
+}
+
+function bindSheetCardOpenByTap(root, opts = {}) {
+  if (!root) return;
+  const isDemo = opts.isDemo === true;
+  root.querySelectorAll("article.card.card--feed[data-card-open-id]").forEach((card) => {
+    if (card.dataset.cardTapBound === "1") return;
+    card.dataset.cardTapBound = "1";
+    card.addEventListener("click", (event) => {
+      if (
+        event.target.closest(
+          "button, a[href], input, textarea, select, label, [data-sheet-back-first], .close-left-panel"
+        )
+      ) {
+        return;
+      }
+      const id = String(card.dataset.cardOpenId || "").trim();
+      if (!id) return;
+      location.hash = isDemo ? `#/demo/property/${encodeURIComponent(id)}` : `#/property/${encodeURIComponent(id)}`;
     });
   });
 }
@@ -1733,7 +1754,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     "click",
     (ev) => {
       if (panel.dataset.sheetJustDragged !== "1") return;
-      if (ev.target.closest(".open-object, .open-demo-object")) {
+      if (ev.target.closest(".open-object, .open-demo-object, article.card.card--feed[data-card-open-id]")) {
         ev.preventDefault();
         ev.stopPropagation();
       }
@@ -2162,6 +2183,7 @@ function renderDemoPanel(list, title, opts = {}) {
     demoCollapseLeftPanel();
   });
   bindDemoCardButtons(panel);
+  bindSheetCardOpenByTap(panel, { isDemo: true });
   primeMobileSheetAfterPanelHtml(panel);
   bindSheetReflowOnImages(panel, "demoMapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"), false);
@@ -2787,6 +2809,7 @@ function renderAreaSelectionPanel(list) {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  bindSheetCardOpenByTap(panel, { isDemo: false });
   bindSheetReflowOnImages(panel, "mapLayout");
   primeMobileSheetAfterPanelHtml(panel);
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
@@ -2836,6 +2859,7 @@ function renderViewportPanel() {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  bindSheetCardOpenByTap(panel, { isDemo: false });
   bindSheetReflowOnImages(panel, "mapLayout");
   primeMobileSheetAfterPanelHtml(panel);
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
@@ -3268,6 +3292,7 @@ function showGroup(properties) {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  bindSheetCardOpenByTap(panel, { isDemo: false });
   bindSheetReflowOnImages(panel, "mapLayout");
   scheduleMobileSheetReflow(panel, document.getElementById("mapLayout"));
   requestAnimationFrame(() => {
