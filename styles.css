@@ -1024,12 +1024,14 @@ body.sheet-property-popup-open {
 }
 
 #galleryPrevBtn,
-#cardGalleryPrevBtn {
+#cardGalleryPrevBtn,
+#popupGalleryPrevBtn {
   left: 18px;
 }
 
 #galleryNextBtn,
-#cardGalleryNextBtn {
+#cardGalleryNextBtn,
+#popupGalleryNextBtn {
   right: 18px;
 }
 
@@ -2243,12 +2245,14 @@ textarea {
   }
 
   #galleryPrevBtn,
-  #cardGalleryPrevBtn {
+  #cardGalleryPrevBtn,
+  #popupGalleryPrevBtn {
     left: 8px;
   }
 
   #galleryNextBtn,
-  #cardGalleryNextBtn {
+  #cardGalleryNextBtn,
+  #popupGalleryNextBtn {
     right: 8px;
   }
 

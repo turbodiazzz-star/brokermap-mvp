@@ -1149,7 +1149,13 @@ function renderSheetPropertyPopupBody(property, options = {}) {
             isDemo
               ? `<p><button class="btn primary full" id="popupDemoOpenContactsBtn" type="button">Открыть контакты</button></p>
                  <p><button class="btn full" id="popupDemoAuthBtn" type="button">Начать делать сделки</button></p>`
-              : `<p><strong>Телефон:</strong> ${escapeHtml(property?.contacts?.phone || "-")}</p>
+              : `${property?.pdfUrl
+                   ? `<p>
+                        <a href="${property.pdfUrl}?v=${encodeURIComponent(property.id || "")}-${Date.now()}" class="btn" id="popupDownloadPdfBtn" download>Скачать презентацию PDF</a>
+                        <button class="btn" id="popupSharePdfBtn" type="button">Отправить клиенту</button>
+                      </p>`
+                   : `<p><button class="btn" id="popupGeneratePdfBtn" type="button">Сгенерировать презентацию PDF</button></p>`}
+                 <p><strong>Телефон:</strong> ${escapeHtml(property?.contacts?.phone || "-")}</p>
                  <p><strong>Telegram:</strong> ${escapeHtml(property?.contacts?.telegram || "-")}</p>
                  <p><a class="btn primary full contact-call-btn" href="tel:${escapeHtml(telValue)}">Связаться с брокером</a></p>`
           }
@@ -1221,7 +1227,97 @@ function bindSheetPropertyPopupBehavior(popupEl, property, options = {}) {
       closeSheetPropertyPopup();
       goToAuthFromGuestDemo("#/auth-register");
     });
+    return;
   }
+
+  const propertyId = encodeURIComponent(property.id || "");
+  popupEl.querySelector("#popupGeneratePdfBtn")?.addEventListener("click", async () => {
+    const button = popupEl.querySelector("#popupGeneratePdfBtn");
+    if (!button || !propertyId) return;
+    button.disabled = true;
+    button.textContent = "Генерация...";
+    try {
+      await api(`/api/my/properties/${propertyId}/generate-pdf`, { method: "POST" });
+      closeSheetPropertyPopup();
+      openSheetPropertyPopup(property.id, { isDemo: false });
+    } catch (_error) {
+      button.disabled = false;
+      button.textContent = "Сгенерировать презентацию PDF";
+    }
+  });
+
+  popupEl.querySelector("#popupDownloadPdfBtn")?.addEventListener("click", async (event) => {
+    event.preventDefault();
+    const link = popupEl.querySelector("#popupDownloadPdfBtn");
+    if (!link || !propertyId) return;
+    const originalText = link.textContent;
+    link.textContent = "Скачивание...";
+    link.style.pointerEvents = "none";
+    try {
+      const latest = await api(`/api/properties/${propertyId}`);
+      const blob = await fetchPropertyPresentationBlob(latest, propertyId);
+      downloadBlobAsFile(blob, `presentation-${propertyId}.pdf`);
+      closeSheetPropertyPopup();
+      openSheetPropertyPopup(property.id, { isDemo: false });
+    } catch (error) {
+      alert(error?.message || "Не удалось скачать PDF");
+    } finally {
+      if (link.isConnected) {
+        link.textContent = originalText || "Скачать презентацию PDF";
+        link.style.pointerEvents = "";
+      }
+    }
+  });
+
+  popupEl.querySelector("#popupSharePdfBtn")?.addEventListener("click", async () => {
+    const shareBtn = popupEl.querySelector("#popupSharePdfBtn");
+    if (!shareBtn || !propertyId) return;
+    const originalText = shareBtn.textContent;
+    shareBtn.disabled = true;
+    shareBtn.textContent = "Подготовка...";
+    try {
+      const latest = await api(`/api/properties/${propertyId}`);
+      const blob = await fetchPropertyPresentationBlob(latest, propertyId);
+      const file = new File([blob], `presentation-${propertyId}.pdf`, { type: "application/pdf" });
+      if (navigator.share) {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({
+            title: "Презентация объекта",
+            text: "Отправляю PDF презентацию объекта",
+            files: [file]
+          });
+        } else {
+          const blobUrl = URL.createObjectURL(blob);
+          try {
+            await navigator.share({
+              title: "Презентация объекта",
+              text: "Отправляю PDF презентацию объекта",
+              url: blobUrl
+            });
+          } finally {
+            URL.revokeObjectURL(blobUrl);
+          }
+        }
+      } else {
+        downloadBlobAsFile(blob, `presentation-${propertyId}.pdf`);
+      }
+      closeSheetPropertyPopup();
+      openSheetPropertyPopup(property.id, { isDemo: false });
+    } catch (error) {
+      const aborted =
+        error?.name === "AbortError" ||
+        (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError") ||
+        /abort|cancel|отмен/i.test(String(error?.message || ""));
+      if (!aborted) {
+        alert(error?.message || "Не удалось подготовить PDF");
+      }
+    } finally {
+      if (shareBtn.isConnected) {
+        shareBtn.disabled = false;
+        shareBtn.textContent = originalText || "Отправить клиенту";
+      }
+    }
+  });
 }
 
 async function openSheetPropertyPopup(id, options = {}) {
