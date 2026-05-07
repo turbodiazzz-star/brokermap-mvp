@@ -1295,32 +1295,24 @@ function getSheetGeometry(panel) {
       firstCard.offsetTop + scrollEl.offsetTop + scrollPad + firstCard.offsetHeight + mb;
     const cards = scrollEl.querySelectorAll("article.card, .card");
     const secondCard = cards[1] || null;
-    const lo = Math.ceil(firstBottomFromTrackTop + 16);
+    const minFloor = Math.ceil(firstBottomFromTrackTop + navOverlapEffective + (altIOS ? 8 : 6));
     const secondTopFromTrack = secondCard
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
-    /** Большой зазор перед второй карточкой — иначе торчит превью во «втором» ряду (овал на скрине). */
-    const gapBefore2ndCard = altIOS ? 34 : 48;
-    const hi = secondCard ? Math.max(lo, secondTopFromTrack - gapBefore2ndCard) : H;
-    const navTapPad = Math.min(38, Math.round(navH * 0.44));
-    const openUiPad = Math.min(58, navOverlapPanel + 12 + (altIOS ? Math.max(18, browserExtraBottom + 8) : 0));
-    const floorCard = Math.ceil(firstBottomFromTrackTop + 20) + navTapPad + openUiPad;
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.69 : 0.64));
-    // Критично: на старте первая карточка (включая кнопки) должна быть видна целиком.
-    // Поэтому floorCard — жёсткий минимум, даже если это частично открывает 2-ю карточку.
-    let merged = Math.max(floorCard, Math.min(aimStart, hi));
+    const gapBefore2ndCard = altIOS ? 20 : 16;
+    const hi = secondCard ? Math.max(minFloor, secondTopFromTrack - gapBefore2ndCard) : H;
+    const aimStart = Math.round(baseUsable * (altIOS ? 0.60 : 0.58));
+    let merged = Math.min(hi, Math.max(minFloor, Math.min(aimStart, hi)));
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
       const footerTop = listFooter.offsetTop + scrollEl.offsetTop + scrollPad;
-      merged = Math.min(merged, Math.max(lo, footerTop - 10));
+      merged = Math.min(merged, Math.max(minFloor, footerTop - 10));
     }
     targetOpenVis = Math.min(H, merged);
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
-    const navTapPad = Math.min(40, Math.round(navH * 0.45));
-    const openUiPad = Math.min(58, navOverlapPanel + 12 + (altIOS ? Math.max(18, browserExtraBottom + 8) : 0));
-    const floorList = Math.round(headStrip + cardH + 16) + navTapPad + openUiPad;
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.64 : 0.615));
+    const floorList = Math.round(headStrip + cardH + navOverlapEffective + 8);
+    const aimStart = Math.round(baseUsable * (altIOS ? 0.60 : 0.58));
     targetOpenVis = Math.min(H, Math.max(floorList, Math.min(aimStart, H)));
   }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));
