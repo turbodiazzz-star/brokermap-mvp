@@ -4899,7 +4899,12 @@ async function renderCabinetPage(openForm = false) {
           "Данные заполнены. Фото не импортируются. Проверьте поля и при необходимости скорректируйте.";
       }
     } catch (error) {
-      if (statusEl) statusEl.textContent = error?.message || "Не удалось распознать ссылку.";
+      if (statusEl) {
+        const msg = String(error?.message || "Не удалось распознать ссылку.");
+        statusEl.textContent = msg.includes("Вы не робот")
+          ? `${msg} Попробуйте открыть объявление в браузере и подтвердить, что вы не робот, затем повторите.`
+          : msg;
+      }
     } finally {
       btn.disabled = false;
     }

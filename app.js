@@ -387,6 +387,38 @@ function parseCianListingFromHtml(html, url) {
   };
 }
 
+function normalizeCianListingUrl(inputUrl) {
+  const parsed = new URL(String(inputUrl || "").trim());
+  const host = parsed.hostname.toLowerCase();
+  if (!host.endsWith("cian.ru")) {
+    throw new Error("CIAN_HOST");
+  }
+  const match = parsed.pathname.match(/\/(sale|rent)\/flat\/(\d+)\/?/i);
+  if (!match) {
+    return {
+      canonicalUrl: `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}/`,
+      listingId: ""
+    };
+  }
+  const section = match[1].toLowerCase();
+  const id = match[2];
+  return {
+    canonicalUrl: `https://www.cian.ru/${section}/flat/${id}/`,
+    listingId: id
+  };
+}
+
+function looksLikeCianAntiBotPage(html) {
+  const text = String(html || "").toLowerCase();
+  if (!text) return false;
+  return (
+    text.includes("вы не робот") ||
+    text.includes("подтвердите, что запросы отправляли вы") ||
+    text.includes("requests from your device look automated") ||
+    text.includes("captcha")
+  );
+}
+
 function housingStatusLabel(value) {
   const map = { flat: "Квартира", apartments: "Апартаменты" };
   return map[value] || map.flat;
@@ -1223,10 +1255,16 @@ app.post("/api/my/properties/parse-cian", auth, async (req, res) => {
   if (!hostname.endsWith("cian.ru")) {
     return res.status(400).json({ message: "Поддерживаются только ссылки cian.ru." });
   }
+  let normalized;
+  try {
+    normalized = normalizeCianListingUrl(parsedUrl.toString());
+  } catch (_error) {
+    return res.status(400).json({ message: "Поддерживаются только ссылки cian.ru." });
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(parsedUrl.toString(), {
+    const response = await fetch(normalized.canonicalUrl, {
       method: "GET",
       headers: {
         "User-Agent":
@@ -1237,12 +1275,21 @@ app.post("/api/my/properties/parse-cian", auth, async (req, res) => {
       signal: controller.signal
     });
     const html = await response.text();
+    if (looksLikeCianAntiBotPage(html)) {
+      return res.status(429).json({
+        message:
+          "Циан показал страницу антибота «Вы не робот». Автозаполнение по этой ссылке сейчас недоступно."
+      });
+    }
     if (!response.ok || !html) {
       return res.status(502).json({ message: "Не удалось получить данные по ссылке Циан." });
     }
-    const parsed = parseCianListingFromHtml(html, parsedUrl.toString());
+    const parsed = parseCianListingFromHtml(html, normalized.canonicalUrl);
     if (!parsed.address && !parsed.description && !parsed.price && !parsed.area) {
       return res.status(422).json({ message: "Не удалось распознать данные объявления. Проверьте ссылку." });
+    }
+    if (normalized.listingId && !parsed.title) {
+      parsed.title = `Объект Циан #${normalized.listingId}`;
     }
     return res.json(parsed);
   } catch (_error) {
