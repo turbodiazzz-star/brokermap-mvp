@@ -1265,31 +1265,61 @@ app.post("/api/my/properties/parse-cian", auth, async (req, res) => {
   } catch (_error) {
     return res.status(400).json({ message: "Поддерживаются только ссылки cian.ru." });
   }
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  const tryUrls = (() => {
+    const original = parsedUrl.toString();
+    const canonical = normalized.canonicalUrl;
+    const mobile = normalized.listingId
+      ? `https://m.cian.ru/${canonical.replace("https://www.cian.ru/", "")}`
+      : "";
+    return Array.from(new Set([canonical, mobile, original].filter(Boolean)));
+  })();
+  const fetchHtml = async (targetUrl) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 9000);
+    try {
+      const response = await fetch(targetUrl, {
+        method: "GET",
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+          Referer: "https://www.cian.ru/"
+        },
+        signal: controller.signal
+      });
+      const html = await response.text().catch(() => "");
+      return { ok: response.ok, status: response.status, html, url: targetUrl };
+    } catch (_error) {
+      return { ok: false, status: 0, html: "", url: targetUrl };
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
   try {
-    const response = await fetch(normalized.canonicalUrl, {
-      method: "GET",
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"
-      },
-      signal: controller.signal
-    });
-    const html = await response.text();
-    if (!response.ok || !html) {
+    let picked = null;
+    for (const u of tryUrls) {
+      const probe = await fetchHtml(u);
+      if (probe.html) {
+        picked = probe;
+        // Если получили хоть какой-то HTML — пробуем парсить.
+        break;
+      }
+    }
+    if (!picked || !picked.html) {
       return res.status(502).json({ message: "Не удалось получить данные по ссылке Циан." });
     }
-    const antiBot = looksLikeCianAntiBotPage(html);
-    const parsed = parseCianListingFromHtml(html, normalized.canonicalUrl);
+    const antiBot = looksLikeCianAntiBotPage(picked.html);
+    const parsed = parseCianListingFromHtml(picked.html, normalized.canonicalUrl);
     const hasUsefulData = Boolean(parsed.address || parsed.description || parsed.price || parsed.area || parsed.floor);
     if (!hasUsefulData && antiBot) {
       return res.status(429).json({
         message:
           "Циан показал страницу антибота «Вы не робот». Автозаполнение по этой ссылке сейчас недоступно."
       });
+    }
+    if (!hasUsefulData && picked.status >= 500) {
+      return res.status(502).json({ message: "Сервис Циан временно недоступен. Попробуйте позже." });
     }
     if (!hasUsefulData) {
       return res.status(422).json({ message: "Не удалось распознать данные объявления. Проверьте ссылку." });
@@ -1300,8 +1330,6 @@ app.post("/api/my/properties/parse-cian", auth, async (req, res) => {
     return res.json(parsed);
   } catch (_error) {
     return res.status(502).json({ message: "Не удалось обработать ссылку Циан. Попробуйте позже." });
-  } finally {
-    clearTimeout(timeout);
   }
 });
 
