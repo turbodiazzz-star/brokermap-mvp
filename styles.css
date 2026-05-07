@@ -383,6 +383,15 @@ body.view-map #app {
 .auth button,
 .btn {
   cursor: pointer;
+  transition: transform 120ms ease, box-shadow 160ms ease, filter 160ms ease, background-color 160ms ease, border-color 160ms ease;
+  will-change: transform;
+}
+
+.filters button:not(:disabled):active,
+.auth button:not(:disabled):active,
+.btn:not(:disabled):active {
+  transform: translateY(1px) scale(0.992);
+  filter: brightness(0.985);
 }
 
 .primary {

@@ -976,7 +976,7 @@ function demoCardMarkup(item) {
         <div class="card-spec">${escapeHtml(propertySpecSummaryLine(item))}</div>
         <div class="card-address muted">${escapeHtml(item.address || "")}</div>
         ${propertyMetroHtml(item)}
-        <p class="card-actions"><button class="btn full open-demo-contacts" type="button">Открыть контакты</button></p>
+        <p class="card-actions"><button class="btn primary full open-demo-contacts" type="button">Открыть контакты</button></p>
       </div>
     </article>
   `;
@@ -2542,7 +2542,7 @@ function renderDemoPropertyPage(id) {
           <p><strong>Спален:</strong> ${property.bedrooms}</p>
           <p><strong>Общая комиссия:</strong> ${property.commissionTotal}%</p>
           <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
-          <p><button class="btn" id="demoOpenContactsBtn">Открыть контакты</button></p>
+          <p><button class="btn primary" id="demoOpenContactsBtn">Открыть контакты</button></p>
           <p><button class="btn primary" id="demoToAuthBtn">Начать делать сделки</button></p>
         </aside>
       </div>
