@@ -1297,13 +1297,13 @@ function getSheetGeometry(panel) {
     const secondCard = cards[1] || null;
     // Старт: показываем первую карточку полностью, но без "подглядывания" второй.
     // Не завышаем floor на всю высоту браузерных панелей.
-    const minFloor = Math.ceil(firstBottomFromTrackTop + (altIOS ? 10 : 8));
+    const minFloor = Math.ceil(firstBottomFromTrackTop + 2);
     const secondTopFromTrack = secondCard
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
-    const gapBefore2ndCard = altIOS ? 40 : 36;
+    const gapBefore2ndCard = altIOS ? 52 : 46;
     const hi = secondCard ? Math.max(minFloor, secondTopFromTrack - gapBefore2ndCard) : H;
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.56 : 0.54));
+    const aimStart = Math.round(baseUsable * (altIOS ? 0.53 : 0.51));
     let merged = Math.min(hi, Math.max(minFloor, Math.min(aimStart, hi)));
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
@@ -1313,8 +1313,8 @@ function getSheetGeometry(panel) {
     targetOpenVis = Math.min(H, merged);
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
-    const floorList = Math.round(headStrip + cardH + (altIOS ? 10 : 8));
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.56 : 0.54));
+    const floorList = Math.round(headStrip + cardH + 4);
+    const aimStart = Math.round(baseUsable * (altIOS ? 0.53 : 0.51));
     targetOpenVis = Math.min(H, Math.max(floorList, Math.min(aimStart, H)));
   }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));

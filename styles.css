@@ -1630,8 +1630,8 @@ textarea {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 10px 0 2px;
-    margin: 0 0 4px;
+    padding: 8px 0 0;
+    margin: 0 0 6px;
     flex-shrink: 0;
   }
 
@@ -1653,7 +1653,7 @@ textarea {
   .map-page .map-layout--app-sheet .left-panel-head,
   .demo-page .map-layout--app-sheet .left-panel-head {
     flex-shrink: 0;
-    padding-bottom: 8px;
+    padding: 6px 0 10px;
   }
 
   .map-page .map-layout--app-sheet .left-panel-head h3,
