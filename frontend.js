@@ -989,11 +989,16 @@ function demoCardMarkup(item) {
 function bindDemoCardButtons(root = document) {
   root.querySelectorAll(".open-demo-object").forEach((btn) => {
     btn.addEventListener("click", () => {
-      captureSheetReturnStateFromPanel(root, true);
-      navigateToSheetCard(
-        `#/demo/property/${encodeURIComponent(btn.dataset.id)}`,
-        btn.closest("article.card.card--feed")
-      );
+      const id = String(btn.dataset.id || "").trim();
+      if (!id) return;
+      if (isMapLikeRoute()) {
+        navigateToSheetCard("", btn.closest("article.card.card--feed"), { popup: true, id, isDemo: true });
+      } else {
+        navigateToSheetCard(
+          `#/demo/property/${encodeURIComponent(id)}`,
+          btn.closest("article.card.card--feed")
+        );
+      }
     });
   });
   root.querySelectorAll(".open-demo-contacts").forEach((btn) => {
@@ -1092,11 +1097,200 @@ function applySheetReturnState(snapshot) {
   state.panelSheetInitialized = Boolean(snapshot.panelSheetInitialized);
 }
 
-function navigateToSheetCard(hash, cardEl) {
+function closeSheetPropertyPopup() {
+  const popup = document.getElementById("sheetPropertyPopup");
+  if (!popup) return;
+  const onEsc = popup.__onEsc;
+  if (onEsc) document.removeEventListener("keydown", onEsc);
+  popup.remove();
+  document.body.classList.remove("sheet-property-popup-open");
+}
+
+function renderSheetPropertyPopupBody(property, options = {}) {
+  const isDemo = options.isDemo === true;
+  const galleryPhotos = (property?.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
+  const metroLine = property ? propertyMetroLabel(property) : "";
+  const telValue = normalizePhoneForTel(property?.contacts?.phone || "");
+  return `
+    <div class="sheet-property-popup__content">
+      <div class="sheet-property-popup__grid">
+        <section class="sheet-property-popup__main">
+          <h2>${escapeHtml(property?.title || "Объект")}</h2>
+          <div class="gallery">
+            ${galleryPhotos
+              .map(
+                (photo, index) =>
+                  `<img class="gallery__img" ${imgLazyAttrs({ priority: index === 0 ? "high" : undefined })} src="${photoUrlWithFallback(
+                    photo,
+                    { gallery: true }
+                  )}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" data-popup-gallery-index="${index}" />`
+              )
+              .join("")}
+          </div>
+          <p>${escapeHtml(property?.description || "")}</p>
+        </section>
+        <aside class="sheet-property-popup__aside">
+          <h3>${money(property?.price)} ₽</h3>
+          <p><strong>Адрес:</strong> ${escapeHtml(property?.address || "-")}</p>
+          ${metroLine ? `<p><strong>Метро:</strong> ${escapeHtml(metroLine)}</p>` : ""}
+          ${
+            property?.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
+              ? `<p><strong>Пешком до метро:</strong> ${Number(property.metroWalkMinutes)} мин</p>`
+              : ""
+          }
+          <p><strong>Статус жилья:</strong> ${housingStatusLabel(property?.housingStatus)}</p>
+          <p><strong>Дата публикации:</strong> ${escapeHtml(formatPublishedDateRu(property?.publishedAt || property?.createdAt))}</p>
+          <p><strong>Площадь:</strong> ${escapeHtml(property?.area || "-")} м²</p>
+          <p><strong>Спален:</strong> ${escapeHtml(property?.bedrooms || "-")}</p>
+          <p><strong>Комиссия:</strong> ${escapeHtml(property?.commissionTotal || "-")}%</p>
+          <p><strong>Партнеру:</strong> ${escapeHtml(property?.commissionPartner || "-")}%</p>
+          <hr />
+          ${
+            isDemo
+              ? `<p><button class="btn primary full" id="popupDemoOpenContactsBtn" type="button">Открыть контакты</button></p>
+                 <p><button class="btn full" id="popupDemoAuthBtn" type="button">Начать делать сделки</button></p>`
+              : `<p><strong>Телефон:</strong> ${escapeHtml(property?.contacts?.phone || "-")}</p>
+                 <p><strong>Telegram:</strong> ${escapeHtml(property?.contacts?.telegram || "-")}</p>
+                 <p><a class="btn primary full contact-call-btn" href="tel:${escapeHtml(telValue)}">Связаться с брокером</a></p>`
+          }
+        </aside>
+      </div>
+    </div>
+    <div class="gallery-lightbox" id="popupGalleryLightbox">
+      <button class="gallery-lightbox-close" id="popupGalleryCloseBtn" aria-label="Закрыть">×</button>
+      <button class="gallery-lightbox-nav" id="popupGalleryPrevBtn" aria-label="Предыдущее фото">‹</button>
+      <img id="popupGalleryLightboxImage" class="gallery-lightbox-image" ${imgLazyAttrs({ priority: "high" })} src="${photoUrlWithFallback(
+        galleryPhotos[0],
+        { gallery: true }
+      )}" alt="Фото объекта" />
+      <button class="gallery-lightbox-nav" id="popupGalleryNextBtn" aria-label="Следующее фото">›</button>
+      <div class="gallery-lightbox-counter" id="popupGalleryCounter">1 / ${galleryPhotos.length}</div>
+    </div>
+  `;
+}
+
+function bindSheetPropertyPopupBehavior(popupEl, property, options = {}) {
+  if (!popupEl || !property) return;
+  const isDemo = options.isDemo === true;
+  const galleryPhotos = (property.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
+  let currentGalleryIndex = 0;
+  const lightbox = popupEl.querySelector("#popupGalleryLightbox");
+  const lightboxImage = popupEl.querySelector("#popupGalleryLightboxImage");
+  const galleryCounter = popupEl.querySelector("#popupGalleryCounter");
+  const updateLightbox = () => {
+    if (!lightboxImage || !galleryCounter) return;
+    lightboxImage.src = optimizePhotoSrc(galleryPhotos[currentGalleryIndex] || PLACEHOLDER_IMAGE_URL, "gallery");
+    galleryCounter.textContent = `${currentGalleryIndex + 1} / ${galleryPhotos.length}`;
+  };
+  const openLightbox = (index) => {
+    if (!lightbox) return;
+    currentGalleryIndex = index;
+    updateLightbox();
+    lightbox.classList.add("open");
+  };
+  const closeLightbox = () => {
+    lightbox?.classList.remove("open");
+  };
+  const showPrev = () => {
+    currentGalleryIndex = (currentGalleryIndex - 1 + galleryPhotos.length) % galleryPhotos.length;
+    updateLightbox();
+  };
+  const showNext = () => {
+    currentGalleryIndex = (currentGalleryIndex + 1) % galleryPhotos.length;
+    updateLightbox();
+  };
+
+  popupEl.querySelectorAll("[data-popup-gallery-index]").forEach((img) => {
+    img.addEventListener("click", () => {
+      openLightbox(Number(img.dataset.popupGalleryIndex || 0));
+    });
+  });
+  popupEl.querySelector("#popupGalleryCloseBtn")?.addEventListener("click", closeLightbox);
+  popupEl.querySelector("#popupGalleryPrevBtn")?.addEventListener("click", showPrev);
+  popupEl.querySelector("#popupGalleryNextBtn")?.addEventListener("click", showNext);
+  lightbox?.addEventListener("click", (event) => {
+    if (event.target === lightbox) closeLightbox();
+  });
+
+  if (isDemo) {
+    popupEl.querySelector("#popupDemoOpenContactsBtn")?.addEventListener("click", () => {
+      closeSheetPropertyPopup();
+      goToAuthFromGuestDemo("#/auth-register");
+    });
+    popupEl.querySelector("#popupDemoAuthBtn")?.addEventListener("click", () => {
+      closeSheetPropertyPopup();
+      goToAuthFromGuestDemo("#/auth-register");
+    });
+  }
+}
+
+async function openSheetPropertyPopup(id, options = {}) {
+  if (!id) return;
+  const isDemo = options.isDemo === true;
+  closeSheetPropertyPopup();
+  const popup = document.createElement("div");
+  popup.id = "sheetPropertyPopup";
+  popup.className = "sheet-property-popup";
+  popup.innerHTML = `
+    <button class="sheet-property-popup__backdrop" type="button" data-popup-close aria-label="Закрыть карточку"></button>
+    <section class="sheet-property-popup__panel" role="dialog" aria-modal="true">
+      <button class="sheet-property-popup__close" type="button" data-popup-close aria-label="Закрыть">×</button>
+      <div class="sheet-property-popup__loading">Загрузка...</div>
+    </section>
+  `;
+  document.body.appendChild(popup);
+  document.body.classList.add("sheet-property-popup-open");
+
+  popup.querySelectorAll("[data-popup-close]").forEach((node) => {
+    node.addEventListener("click", () => closeSheetPropertyPopup());
+  });
+  const onEsc = (event) => {
+    if (event.key === "Escape") closeSheetPropertyPopup();
+  };
+  popup.__onEsc = onEsc;
+  document.addEventListener("keydown", onEsc);
+
+  try {
+    let property = null;
+    if (isDemo) {
+      if (!state.demoAllProperties || !state.demoAllProperties.length) {
+        state.demoAllProperties = createDemoProperties(100);
+      }
+      property = state.demoAllProperties.find((item) => String(item.id) === String(id)) || null;
+    } else {
+      property = await api(`/api/properties/${encodeURIComponent(id)}`);
+    }
+    const panel = popup.querySelector(".sheet-property-popup__panel");
+    if (!panel || !property) {
+      closeSheetPropertyPopup();
+      return;
+    }
+    panel.innerHTML = `
+      <button class="sheet-property-popup__close" type="button" data-popup-close aria-label="Закрыть">×</button>
+      ${renderSheetPropertyPopupBody(property, { isDemo })}
+    `;
+    panel.querySelector("[data-popup-close]")?.addEventListener("click", () => closeSheetPropertyPopup());
+    bindSheetPropertyPopupBehavior(popup, property, { isDemo });
+  } catch (_error) {
+    closeSheetPropertyPopup();
+  }
+}
+
+function navigateToSheetCard(hash, cardEl, options = {}) {
+  if (options.popup && options.id) {
+    cardEl?.classList.add("card--route-opening");
+    window.setTimeout(() => cardEl?.classList.remove("card--route-opening"), 180);
+    openSheetPropertyPopup(options.id, { isDemo: options.isDemo === true });
+    return;
+  }
   beginSheetRouteTransition(cardEl);
   window.setTimeout(() => {
     location.hash = hash;
   }, 90);
+}
+
+function isMapLikeRoute() {
+  return Boolean(document.getElementById("mapLayout") || document.getElementById("demoMapLayout"));
 }
 
 function bindSheetCardOpenByTap(root, opts = {}) {
@@ -1115,9 +1309,12 @@ function bindSheetCardOpenByTap(root, opts = {}) {
       }
       const id = String(card.dataset.cardOpenId || "").trim();
       if (!id) return;
-      const target = isDemo ? `#/demo/property/${encodeURIComponent(id)}` : `#/property/${encodeURIComponent(id)}`;
-      captureSheetReturnStateFromPanel(root, isDemo);
-      navigateToSheetCard(target, card);
+      if (isMapLikeRoute()) {
+        navigateToSheetCard("", card, { popup: true, id, isDemo });
+      } else {
+        const target = isDemo ? `#/demo/property/${encodeURIComponent(id)}` : `#/property/${encodeURIComponent(id)}`;
+        navigateToSheetCard(target, card);
+      }
     });
   });
 }
@@ -2946,8 +3143,13 @@ function renderAreaSelectionPanel(list) {
   });
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
-      captureSheetReturnStateFromPanel(panel, false);
-      navigateToSheetCard(`#/property/${btn.dataset.id}`, btn.closest("article.card.card--feed"));
+      const id = String(btn.dataset.id || "").trim();
+      if (!id) return;
+      if (isMapLikeRoute()) {
+        navigateToSheetCard("", btn.closest("article.card.card--feed"), { popup: true, id, isDemo: false });
+      } else {
+        navigateToSheetCard(`#/property/${id}`, btn.closest("article.card.card--feed"));
+      }
     });
   });
   bindSheetCardOpenByTap(panel, { isDemo: false });
@@ -2997,8 +3199,13 @@ function renderViewportPanel() {
   });
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
-      captureSheetReturnStateFromPanel(panel, false);
-      navigateToSheetCard(`#/property/${btn.dataset.id}`, btn.closest("article.card.card--feed"));
+      const id = String(btn.dataset.id || "").trim();
+      if (!id) return;
+      if (isMapLikeRoute()) {
+        navigateToSheetCard("", btn.closest("article.card.card--feed"), { popup: true, id, isDemo: false });
+      } else {
+        navigateToSheetCard(`#/property/${id}`, btn.closest("article.card.card--feed"));
+      }
     });
   });
   bindSheetCardOpenByTap(panel, { isDemo: false });
@@ -3431,8 +3638,13 @@ function showGroup(properties) {
   ensureMapDrawControls();
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
-      captureSheetReturnStateFromPanel(panel, false);
-      navigateToSheetCard(`#/property/${btn.dataset.id}`, btn.closest("article.card.card--feed"));
+      const id = String(btn.dataset.id || "").trim();
+      if (!id) return;
+      if (isMapLikeRoute()) {
+        navigateToSheetCard("", btn.closest("article.card.card--feed"), { popup: true, id, isDemo: false });
+      } else {
+        navigateToSheetCard(`#/property/${id}`, btn.closest("article.card.card--feed"));
+      }
     });
   });
   bindSheetCardOpenByTap(panel, { isDemo: false });
@@ -6398,6 +6610,7 @@ async function renderAdminPage() {
 
 async function router() {
   endSheetRouteTransition();
+  closeSheetPropertyPopup();
   const hash = location.hash || "#/";
   const agencyInviteToken = parseAgencyInviteTokenFromHash(hash);
   if (agencyInviteToken) {

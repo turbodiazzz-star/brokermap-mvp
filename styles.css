@@ -747,6 +747,80 @@ body.view-map #app {
   }
 }
 
+body.sheet-property-popup-open {
+  overflow: hidden;
+}
+
+.sheet-property-popup {
+  position: fixed;
+  inset: 0;
+  z-index: 980;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet-property-popup__backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(15, 23, 42, 0.52);
+}
+
+.sheet-property-popup__panel {
+  position: relative;
+  z-index: 1;
+  width: min(1040px, calc(100vw - 24px));
+  max-height: min(92dvh, 92vh);
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 18px;
+  border: 1px solid #dbe4fb;
+  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.34);
+  padding: 18px;
+}
+
+.sheet-property-popup__close {
+  position: sticky;
+  top: 0;
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: #eef2ff;
+  color: #3b4460;
+  font-size: 23px;
+  line-height: 1;
+  cursor: pointer;
+  display: block;
+}
+
+.sheet-property-popup__loading {
+  padding: 28px 10px 14px;
+  text-align: center;
+  color: #667189;
+}
+
+.sheet-property-popup__grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr);
+}
+
+.sheet-property-popup__main,
+.sheet-property-popup__aside {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  padding: 14px;
+}
+
+.sheet-property-popup__main h2,
+.sheet-property-popup__aside h3 {
+  margin-top: 0;
+}
+
 .card-media {
   position: relative;
 }
@@ -1465,6 +1539,26 @@ textarea {
 }
 
 @media (max-width: 900px) {
+  .sheet-property-popup {
+    align-items: flex-end;
+  }
+
+  .sheet-property-popup__panel {
+    width: 100%;
+    max-width: 100%;
+    max-height: min(94dvh, 94vh);
+    border-radius: 16px 16px 0 0;
+    border-left: 0;
+    border-right: 0;
+    border-bottom: 0;
+    padding: 12px;
+    padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .sheet-property-popup__grid {
+    grid-template-columns: 1fr;
+  }
+
   body.auth-modal-open .mobile-map-bottom-nav {
     display: none !important;
   }
