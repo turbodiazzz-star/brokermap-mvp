@@ -1148,6 +1148,10 @@ function renderSheetPropertyPopupBody(property, options = {}) {
           ${
             isDemo
               ? `<p><button class="btn primary full" id="popupDemoOpenContactsBtn" type="button">Открыть контакты</button></p>
+                 <p class="card-actions card-actions--split">
+                   <button class="btn full" id="popupDemoDownloadPdfBtn" type="button">Скачать презентацию PDF</button>
+                   <button class="btn full" id="popupDemoSharePdfBtn" type="button">Отправить клиенту</button>
+                 </p>
                  <p><button class="btn full" id="popupDemoAuthBtn" type="button">Начать делать сделки</button></p>`
               : `${property?.pdfUrl
                    ? `<p>
@@ -1220,6 +1224,14 @@ function bindSheetPropertyPopupBehavior(popupEl, property, options = {}) {
 
   if (isDemo) {
     popupEl.querySelector("#popupDemoOpenContactsBtn")?.addEventListener("click", () => {
+      closeSheetPropertyPopup();
+      goToAuthFromGuestDemo("#/auth-register");
+    });
+    popupEl.querySelector("#popupDemoDownloadPdfBtn")?.addEventListener("click", () => {
+      closeSheetPropertyPopup();
+      goToAuthFromGuestDemo("#/auth-register");
+    });
+    popupEl.querySelector("#popupDemoSharePdfBtn")?.addEventListener("click", () => {
       closeSheetPropertyPopup();
       goToAuthFromGuestDemo("#/auth-register");
     });
@@ -2976,6 +2988,10 @@ function renderDemoPropertyPage(id) {
           <p><strong>Общая комиссия:</strong> ${property.commissionTotal}%</p>
           <p><strong>Партнеру:</strong> ${property.commissionPartner}%</p>
           <p><button class="btn primary" id="demoOpenContactsBtn">Открыть контакты</button></p>
+          <p class="card-actions card-actions--split">
+            <button class="btn" id="demoDownloadPdfBtn" type="button">Скачать презентацию PDF</button>
+            <button class="btn" id="demoSharePdfBtn" type="button">Отправить клиенту</button>
+          </p>
           <p><button class="btn primary" id="demoToAuthBtn">Начать делать сделки</button></p>
         </aside>
       </div>
@@ -3001,6 +3017,12 @@ function renderDemoPropertyPage(id) {
     goToAuthFromGuestDemo("#/auth-register");
   });
   document.getElementById("demoOpenContactsBtn")?.addEventListener("click", () => {
+    goToAuthFromGuestDemo("#/auth-register");
+  });
+  document.getElementById("demoDownloadPdfBtn")?.addEventListener("click", () => {
+    goToAuthFromGuestDemo("#/auth-register");
+  });
+  document.getElementById("demoSharePdfBtn")?.addEventListener("click", () => {
     goToAuthFromGuestDemo("#/auth-register");
   });
   bindMobileBottomNavActions();
