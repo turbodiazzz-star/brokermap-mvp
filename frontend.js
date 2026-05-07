@@ -902,18 +902,18 @@ function priceRoundedThousands(value) {
 
 function createDemoProperties(count = 100) {
   const residentialPhotos = [
-    "https://images.unsplash.com/photo-1494526585095-c41746248156?w=1600",
-    "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1600",
-    "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=1600",
-    "https://images.unsplash.com/photo-1460317442991-0ec209397118?w=1600",
-    "https://images.unsplash.com/photo-1560185007-cde436f6a4d0?w=1600",
-    "https://images.unsplash.com/photo-1600607686527-6fb886090705?w=1600"
+    "https://picsum.photos/seed/bm-res-1/1200/800",
+    "https://picsum.photos/seed/bm-res-2/1200/800",
+    "https://picsum.photos/seed/bm-res-3/1200/800",
+    "https://picsum.photos/seed/bm-res-4/1200/800",
+    "https://picsum.photos/seed/bm-res-5/1200/800",
+    "https://picsum.photos/seed/bm-res-6/1200/800"
   ];
   const planPhotos = [
-    "https://images.unsplash.com/photo-1582407947304-fd86f028f716?w=1600",
-    "https://images.unsplash.com/photo-1600607687644-c7171b42498f?w=1600",
-    "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=1600",
-    "https://images.unsplash.com/photo-1600585152220-90363fe7e115?w=1600"
+    "https://picsum.photos/seed/bm-plan-1/1200/800",
+    "https://picsum.photos/seed/bm-plan-2/1200/800",
+    "https://picsum.photos/seed/bm-plan-3/1200/800",
+    "https://picsum.photos/seed/bm-plan-4/1200/800"
   ];
   const finishingOptions = ["finished", "whitebox", "concrete"];
   const readinessOptions = ["resale", "assignment"];
@@ -1320,15 +1320,12 @@ function getSheetGeometry(panel) {
     // 2) вторая карточка на старте не видна совсем (0px).
     // Для iOS Chrome/Yandex добавляем небольшой стабильный запас,
     // т.к. их нижний UI часто перекрывает больше, чем показывает viewport.
-    const altButtonsPad = altIOS ? 16 : 0;
-    const minForFirstButtons = Math.ceil(actionsBottomFromTrackTop + 8 + navOverlapPanel + browserExtraBottom + altButtonsPad);
-    const maxWithoutSecondPeek = secondCard ? Math.ceil(secondTopFromTrack - 22) : H;
-    const aimStart = Math.round(baseUsable * 0.47);
-    let merged = Math.max(minForFirstButtons, Math.min(aimStart, maxWithoutSecondPeek));
-    if (secondCard && merged > maxWithoutSecondPeek) {
-      // При конфликте стараемся держать ближе к кнопкам первой карточки,
-      // но не поднимать так высоко, чтобы явно показать вторую.
-      merged = Math.max(minForFirstButtons - 8, maxWithoutSecondPeek);
+    const minForFirstButtons = Math.ceil(actionsBottomFromTrackTop + 4 + Math.min(14, navOverlapEffective));
+    const maxWithoutSecondPeek = secondCard ? Math.ceil(secondTopFromTrack - 30) : H;
+    const aimStart = Math.round(baseUsable * 0.45);
+    let merged = Math.min(maxWithoutSecondPeek, Math.max(minForFirstButtons, Math.min(aimStart, maxWithoutSecondPeek)));
+    if (secondCard && minForFirstButtons > maxWithoutSecondPeek) {
+      merged = maxWithoutSecondPeek;
     }
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
