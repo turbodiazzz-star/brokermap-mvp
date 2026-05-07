@@ -2325,6 +2325,7 @@ function applyDemoFilters() {
 function renderPublicDemoPage() {
   setMapBodyClass(true);
   resetMobileSheetLandingState();
+  const isMobileSheet = window.matchMedia("(max-width: 900px)").matches;
   if (state.demoDataVersion !== CURRENT_DEMO_DATA_VERSION) {
     state.demoAllProperties = null;
     state.demoDataVersion = CURRENT_DEMO_DATA_VERSION;
@@ -2344,7 +2345,7 @@ function renderPublicDemoPage() {
         </p>
         <button type="button" class="btn demo-top-strip__open" id="demoAboutOpen">О демо</button>
       </div>
-      <main class="map-layout demo-map-layout map-layout--app-sheet ${state.panelCollapsed ? "collapsed" : ""}" id="demoMapLayout">
+      <main class="map-layout demo-map-layout map-layout--app-sheet ${isMobileSheet && state.panelCollapsed ? "collapsed" : ""}" id="demoMapLayout">
         <div class="map-wrap demo-map-wrap">
           <aside class="left-panel" id="demoLeftPanel"></aside>
           <div class="map-stage">
@@ -2687,11 +2688,12 @@ function renderDemoPropertyPage(id) {
 function renderMapPage() {
   setMapBodyClass(true);
   resetMobileSheetLandingState();
+  const isMobileSheet = window.matchMedia("(max-width: 900px)").matches;
   app.innerHTML = `
     <section class="map-page">
     ${topbar()}
     ${mobileMapChromeHtml(false)}
-    <main class="map-layout map-layout--app-sheet ${state.panelCollapsed ? "collapsed" : ""}" id="mapLayout">
+    <main class="map-layout map-layout--app-sheet ${isMobileSheet && state.panelCollapsed ? "collapsed" : ""}" id="mapLayout">
       <div class="map-wrap">
         <aside class="left-panel" id="leftPanel">
           ${leftPanelMobileBlock(
@@ -6223,6 +6225,7 @@ async function renderAdminPage() {
 }
 
 async function router() {
+  endSheetRouteTransition();
   const hash = location.hash || "#/";
   const agencyInviteToken = parseAgencyInviteTokenFromHash(hash);
   if (agencyInviteToken) {

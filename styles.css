@@ -1972,6 +1972,14 @@ textarea {
     display: none !important;
   }
 
+  .map-layout--app-sheet.collapsed .left-panel {
+    display: none !important;
+  }
+
+  .map-layout--app-sheet.collapsed .map-wrap {
+    grid-template-columns: 1fr !important;
+  }
+
   .map-page .map-layout--app-sheet .sheet-back-to-first,
   .demo-page .map-layout--app-sheet .sheet-back-to-first {
     display: none !important;
