@@ -298,6 +298,96 @@ async function fetchPropertyPresentationBlob(property, id) {
   return fetchPdfBlobWithAuth(absoluteUrl);
 }
 
+function toAsciiPdfText(value) {
+  return String(value || "")
+    .replace(/[^\x20-\x7E]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapePdfText(value) {
+  return String(value || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\(/g, "\\(")
+    .replace(/\)/g, "\\)");
+}
+
+function buildDemoPresentationPdfBlob(property) {
+  const lines = [
+    `BrokerMap Demo Presentation`,
+    `Object ID: ${toAsciiPdfText(property?.id || "-")}`,
+    `Title: ${toAsciiPdfText(property?.title || "Property")}`,
+    `Price: ${toAsciiPdfText(money(property?.price || 0))} RUB`,
+    `Address: ${toAsciiPdfText(property?.address || "-")}`,
+    `Area: ${toAsciiPdfText(property?.area || "-")} m2`,
+    `Bedrooms: ${toAsciiPdfText(property?.bedrooms || "-")}`,
+    `Commission total: ${toAsciiPdfText(property?.commissionTotal || "-")}%`,
+    `Commission partner: ${toAsciiPdfText(property?.commissionPartner || "-")}%`,
+    `Generated: ${new Date().toISOString()}`
+  ];
+
+  const content = [
+    "BT",
+    "/F1 13 Tf",
+    "50 790 Td",
+    "18 TL",
+    ...lines.map((line, index) => `${index ? "T* " : ""}(${escapePdfText(line)}) Tj`),
+    "ET"
+  ].join("\n");
+  const contentLength = new TextEncoder().encode(content).length;
+
+  const objects = [
+    "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n",
+    "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n",
+    "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n",
+    "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n",
+    `5 0 obj\n<< /Length ${contentLength} >>\nstream\n${content}\nendstream\nendobj\n`
+  ];
+
+  let pdf = "%PDF-1.4\n";
+  const offsets = [0];
+  for (const obj of objects) {
+    offsets.push(pdf.length);
+    pdf += obj;
+  }
+  const xrefPos = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n`;
+  pdf += "0000000000 65535 f \n";
+  for (let i = 1; i < offsets.length; i += 1) {
+    pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefPos}\n%%EOF`;
+  return new Blob([pdf], { type: "application/pdf" });
+}
+
+async function shareDemoPresentationPdf(property) {
+  const id = String(property?.id || "demo");
+  const blob = buildDemoPresentationPdfBlob(property);
+  const file = new File([blob], `presentation-${id}.pdf`, { type: "application/pdf" });
+  if (navigator.share) {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        title: "Demo презентация объекта",
+        text: "PDF презентация демо-объекта",
+        files: [file]
+      });
+      return;
+    }
+    const blobUrl = URL.createObjectURL(blob);
+    try {
+      await navigator.share({
+        title: "Demo презентация объекта",
+        text: "PDF презентация демо-объекта",
+        url: blobUrl
+      });
+      return;
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
+  }
+  downloadBlobAsFile(blob, `presentation-${id}.pdf`);
+}
+
 function formatRussianPhoneMasked(value) {
   const digits = String(value || "").replace(/\D/g, "").slice(0, 10);
   if (!digits) return "";
@@ -1228,12 +1318,31 @@ function bindSheetPropertyPopupBehavior(popupEl, property, options = {}) {
       goToAuthFromGuestDemo("#/auth-register");
     });
     popupEl.querySelector("#popupDemoDownloadPdfBtn")?.addEventListener("click", () => {
-      closeSheetPropertyPopup();
-      goToAuthFromGuestDemo("#/auth-register");
+      const blob = buildDemoPresentationPdfBlob(property);
+      downloadBlobAsFile(blob, `presentation-${property.id || "demo"}.pdf`);
     });
-    popupEl.querySelector("#popupDemoSharePdfBtn")?.addEventListener("click", () => {
-      closeSheetPropertyPopup();
-      goToAuthFromGuestDemo("#/auth-register");
+    popupEl.querySelector("#popupDemoSharePdfBtn")?.addEventListener("click", async () => {
+      const btn = popupEl.querySelector("#popupDemoSharePdfBtn");
+      if (!btn) return;
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Подготовка...";
+      try {
+        await shareDemoPresentationPdf(property);
+      } catch (error) {
+        const aborted =
+          error?.name === "AbortError" ||
+          (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError") ||
+          /abort|cancel|отмен/i.test(String(error?.message || ""));
+        if (!aborted) {
+          alert(error?.message || "Не удалось отправить PDF");
+        }
+      } finally {
+        if (btn.isConnected) {
+          btn.disabled = false;
+          btn.textContent = originalText || "Отправить клиенту";
+        }
+      }
     });
     popupEl.querySelector("#popupDemoAuthBtn")?.addEventListener("click", () => {
       closeSheetPropertyPopup();
@@ -3020,10 +3129,31 @@ function renderDemoPropertyPage(id) {
     goToAuthFromGuestDemo("#/auth-register");
   });
   document.getElementById("demoDownloadPdfBtn")?.addEventListener("click", () => {
-    goToAuthFromGuestDemo("#/auth-register");
+    const blob = buildDemoPresentationPdfBlob(property);
+    downloadBlobAsFile(blob, `presentation-${property.id || "demo"}.pdf`);
   });
-  document.getElementById("demoSharePdfBtn")?.addEventListener("click", () => {
-    goToAuthFromGuestDemo("#/auth-register");
+  document.getElementById("demoSharePdfBtn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("demoSharePdfBtn");
+    if (!btn) return;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Подготовка...";
+    try {
+      await shareDemoPresentationPdf(property);
+    } catch (error) {
+      const aborted =
+        error?.name === "AbortError" ||
+        (typeof DOMException !== "undefined" && error instanceof DOMException && error.name === "AbortError") ||
+        /abort|cancel|отмен/i.test(String(error?.message || ""));
+      if (!aborted) {
+        alert(error?.message || "Не удалось отправить PDF");
+      }
+    } finally {
+      if (btn.isConnected) {
+        btn.disabled = false;
+        btn.textContent = originalText || "Отправить клиенту";
+      }
+    }
   });
   bindMobileBottomNavActions();
   updateMobileNavMetrics();
