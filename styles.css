@@ -1699,10 +1699,12 @@ textarea {
     width: 42px;
     height: 42px;
     border-radius: 999px;
-    border: 1px solid #d7deec;
-    background: rgba(31, 42, 68, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.42);
+    background: rgba(22, 31, 47, 0.42);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     color: #fff;
-    font-size: 24px;
+    font-size: 20px;
     line-height: 1;
     display: inline-flex;
     align-items: center;
@@ -1719,6 +1721,13 @@ textarea {
   .demo-page .map-layout--app-sheet .sheet-back-to-first.visible {
     opacity: 1;
     transform: translateY(0);
+  }
+
+  .map-page .map-layout--app-sheet .sheet-back-to-first > span,
+  .demo-page .map-layout--app-sheet .sheet-back-to-first > span {
+    display: inline-block;
+    transform: translateY(1px);
+    font-weight: 700;
   }
 
   .map-page .map-layout--app-sheet .left-panel.left-panel--updating .left-panel__track,

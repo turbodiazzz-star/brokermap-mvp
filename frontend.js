@@ -1011,7 +1011,7 @@ function leftPanelTrackWrap(innerHtml) {
 }
 
 function sheetBackToFirstButtonHtml() {
-  return `<button type="button" class="sheet-back-to-first" data-sheet-back-first aria-label="К первому объекту">⌄</button>`;
+  return `<button type="button" class="sheet-back-to-first" data-sheet-back-first aria-label="К первому объекту"><span aria-hidden="true">⌃</span></button>`;
 }
 
 function leftPanelMobileBlock(handleAreaId, headHtml, bodyHtml) {
@@ -1081,6 +1081,32 @@ function setPanelTranslateY(el, y, withTransition, durationMs) {
     el.style.removeProperty("transition");
   }
   el.style.transform = `translate3d(0, ${y}px, 0)`;
+}
+
+function animateSheetToY(s, fromY, toY, commitStep, commitDone) {
+  if (!s) return;
+  const distance = Math.abs(toY - fromY);
+  if (distance < 2) {
+    setPanelTranslateY(s, toY, false);
+    if (typeof commitStep === "function") commitStep(toY);
+    if (typeof commitDone === "function") commitDone(toY);
+    return;
+  }
+  const duration = Math.max(220, Math.min(520, Math.round(180 + distance * 0.45)));
+  const t0 = performance.now();
+  const easeOutQuart = (x) => 1 - Math.pow(1 - x, 4);
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / duration);
+    const y = fromY + (toY - fromY) * easeOutQuart(p);
+    setPanelTranslateY(s, y, false);
+    if (typeof commitStep === "function") commitStep(y);
+    if (p >= 1) {
+      if (typeof commitDone === "function") commitDone(toY);
+      return;
+    }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 /** Видимая высота (iOS Safari URL bar / клавиатура) — стабильнее, чем innerHeight. */
@@ -1659,9 +1685,20 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const g = getSheetGeometry(panel);
     if (!s || !g) return;
     const target = clampSheetT(g.yHalf, g);
-    setPanelTranslateY(s, target, true, 300);
-    commitSheetState(target, g);
-    state.panelSheetT = target;
+    const from = clampSheetT(getPanelTranslateY(s), g);
+    animateSheetToY(
+      s,
+      from,
+      target,
+      (y) => {
+        commitSheetState(clampSheetT(y, g), g);
+      },
+      (yFinal) => {
+        const y = clampSheetT(yFinal, g);
+        commitSheetState(y, g);
+        state.panelSheetT = y;
+      }
+    );
   });
 
   const onPointerCancel = (e) => {
