@@ -1484,6 +1484,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   let lastMoveY = 0;
   let lastMoveTs = 0;
   let velocityY = 0;
+  let velocitySamples = [];
   let gestureGeometry = null;
   let lastCollapsedUi = state.panelCollapsed;
   let dragMaxAbsDy = 0;
@@ -1492,6 +1493,27 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   /** Новое касание отменяет текущую инерцию (fling). */
   let sheetDragInterruptGen = 0;
   let backBtnSyncTs = 0;
+  const pushVelocitySample = (y, ts) => {
+    velocitySamples.push({ y, ts });
+    const cutoff = ts - 140;
+    velocitySamples = velocitySamples.filter((s) => s.ts >= cutoff);
+    if (velocitySamples.length > 10) {
+      velocitySamples = velocitySamples.slice(velocitySamples.length - 10);
+    }
+  };
+  const estimateGestureVelocity = (fallback = 0) => {
+    if (velocitySamples.length < 2) return fallback;
+    const newest = velocitySamples[velocitySamples.length - 1];
+    let oldest = velocitySamples[0];
+    for (let i = velocitySamples.length - 2; i >= 0; i--) {
+      const sample = velocitySamples[i];
+      oldest = sample;
+      if (newest.ts - sample.ts >= 80) break;
+    }
+    const dt = Math.max(1, newest.ts - oldest.ts);
+    const v = (newest.y - oldest.y) / dt;
+    return Number.isFinite(v) ? v : fallback;
+  };
   const setBackToFirstVisible = (visible) => {
     const btn = panel.querySelector("[data-sheet-back-first]");
     if (!btn) return;
@@ -1546,10 +1568,12 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   /** Медленное отпускание — остаёмся на текущем translate (листаем объекты). Быстрый свайп — инерция до остановки. */
   const finishMobileSheetRelease = (s, normalizedT, vy, g) => {
     const gen = sheetDragInterruptGen;
-    const V_STAY = 0.21;
+    const V_STAY = 0.14;
+    const MAX_FLING_V = 2.6;
+    const DECEL_PER_MS = 0.998;
     s.classList.remove("left-panel--sheet-live");
     const ty0 = clampSheetT(normalizedT, g);
-    if (gestureStartedFromPeek && ty0 < g.yPeek - 10) {
+    if (gestureStartedFromPeek && ty0 < g.yPeek - 10 && Math.abs(vy) < 0.45) {
       // Первый подъём из свёрнутого: мягко фиксируем в "стартовом" положении, не даём улетать в самый верх.
       const mid = clampSheetT(g.yHalf, g);
       setPanelTranslateY(s, mid, true, 300);
@@ -1566,29 +1590,27 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       return;
     }
     let t = ty0;
-    let v = vy * 0.78;
+    let v = Math.max(-MAX_FLING_V, Math.min(MAX_FLING_V, vy * 0.92));
     let lastTs = performance.now();
     const tStart = lastTs;
     const step = (now) => {
       if (sheetDragInterruptGen !== gen) return;
-      const dt = Math.min(44, Math.max(0, now - lastTs));
+      const dt = Math.min(28, Math.max(0, now - lastTs));
       lastTs = now;
       t += v * dt;
       if (t < g.yMin) {
         t = g.yMin;
-        v *= 0.42;
+        v *= 0.46;
       } else if (t > g.yPeek) {
         t = g.yPeek;
-        v *= 0.42;
+        v *= 0.46;
       }
       setPanelTranslateY(s, t, false);
       commitSheetState(t, g);
       if (state.panelCollapsed) state.panelSheetT = g.yPeek;
       else state.panelSheetT = t;
-      const speed = Math.abs(v);
-      const friction = speed > 1.4 ? 0.988 : speed > 0.8 ? 0.984 : 0.979;
-      v *= Math.pow(friction, dt / 16.67);
-      if (Math.abs(v) < 0.048) {
+      v *= Math.pow(DECEL_PER_MS, dt);
+      if (Math.abs(v) < 0.032) {
         const settle = clampSheetT(t, g);
         setPanelTranslateY(s, settle, false);
         commitSheetState(settle, g);
@@ -1596,7 +1618,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
         else state.panelSheetT = settle;
         return;
       }
-      if (now - tStart > 5200) {
+      if (now - tStart > 4800) {
         const settle = clampSheetT(t, g);
         setPanelTranslateY(s, settle, false);
         commitSheetState(settle, g);
@@ -1629,7 +1651,9 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     gestureStartedFromPeek = state.panelCollapsed || Math.abs(frozen - (gestureGeometry?.yPeek ?? frozen)) < 10;
     lastMoveY = e.clientY;
     lastMoveTs = performance.now();
+    pushVelocitySample(lastMoveY, lastMoveTs);
     velocityY = 0;
+    velocitySamples = velocitySamples.slice(-3);
     dragMaxAbsDy = 0;
     mode = "decide";
     activeId = e.pointerId;
@@ -1678,7 +1702,9 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const now = performance.now();
     const dt = Math.max(1, now - lastMoveTs);
     const vy = (e.clientY - lastMoveY) / dt;
-    velocityY = velocityY * 0.28 + vy * 0.72;
+    pushVelocitySample(e.clientY, now);
+    const vWindow = estimateGestureVelocity(vy);
+    velocityY = velocityY * 0.22 + vWindow * 0.78;
     lastMoveY = e.clientY;
     lastMoveTs = now;
   };
@@ -1713,9 +1739,11 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       const nowUp = performance.now();
       const dtUp = Math.max(1, nowUp - lastMoveTs);
       const vyLast = (e.clientY - lastMoveY) / dtUp;
+      pushVelocitySample(e.clientY, nowUp);
+      const vWindow = estimateGestureVelocity(vyLast);
       const vyRelease = Number.isFinite(vyLast)
-        ? velocityY * 0.34 + vyLast * 0.66
-        : velocityY;
+        ? vWindow * 0.68 + vyLast * 0.32
+        : vWindow;
       const rawT = getPanelTranslateY(s);
       const normalizedT = clampSheetT(rawT, g);
       finishMobileSheetRelease(s, normalizedT, vyRelease, g);
