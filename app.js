@@ -411,11 +411,15 @@ function normalizeCianListingUrl(inputUrl) {
 function looksLikeCianAntiBotPage(html) {
   const text = String(html || "").toLowerCase();
   if (!text) return false;
+  const title = (text.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || "").trim();
+  const isRobotTitle = /вы не робот|are you a robot|captcha/i.test(title);
+  const hasRobotPhrase =
+    text.includes("подтвердите, что запросы отправляли вы, а не робот") ||
+    text.includes("запросы с вашего устройства похожи на автоматические") ||
+    text.includes("requests from your device look automated");
   return (
-    text.includes("вы не робот") ||
-    text.includes("подтвердите, что запросы отправляли вы") ||
-    text.includes("requests from your device look automated") ||
-    text.includes("captcha")
+    isRobotTitle ||
+    hasRobotPhrase
   );
 }
 
@@ -1275,17 +1279,19 @@ app.post("/api/my/properties/parse-cian", auth, async (req, res) => {
       signal: controller.signal
     });
     const html = await response.text();
-    if (looksLikeCianAntiBotPage(html)) {
+    if (!response.ok || !html) {
+      return res.status(502).json({ message: "Не удалось получить данные по ссылке Циан." });
+    }
+    const antiBot = looksLikeCianAntiBotPage(html);
+    const parsed = parseCianListingFromHtml(html, normalized.canonicalUrl);
+    const hasUsefulData = Boolean(parsed.address || parsed.description || parsed.price || parsed.area || parsed.floor);
+    if (!hasUsefulData && antiBot) {
       return res.status(429).json({
         message:
           "Циан показал страницу антибота «Вы не робот». Автозаполнение по этой ссылке сейчас недоступно."
       });
     }
-    if (!response.ok || !html) {
-      return res.status(502).json({ message: "Не удалось получить данные по ссылке Циан." });
-    }
-    const parsed = parseCianListingFromHtml(html, normalized.canonicalUrl);
-    if (!parsed.address && !parsed.description && !parsed.price && !parsed.area) {
+    if (!hasUsefulData) {
       return res.status(422).json({ message: "Не удалось распознать данные объявления. Проверьте ссылку." });
     }
     if (normalized.listingId && !parsed.title) {
