@@ -1311,14 +1311,16 @@ function getSheetGeometry(panel) {
       : firstBottomFromTrackTop - Math.max(8, mb);
     const cards = scrollEl.querySelectorAll("article.card, .card");
     const secondCard = cards[1] || null;
-    // Старт: опускаем шторку ниже, чтобы край второй карточки не был виден.
-    const minFloor = Math.ceil(Math.min(actionsBottomFromTrackTop - 28, firstBottomFromTrackTop - 20));
+    // Единый кросс-браузерный baseline:
+    // 1) кнопки 1-й карточки должны быть над fixed-футером,
+    // 2) 2-я карточка на старте не должна подглядывать.
+    const minFloor = Math.ceil(actionsBottomFromTrackTop + 8 + navOverlapEffective);
     const secondTopFromTrack = secondCard
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
-    const gapBefore2ndCard = yandexMobile ? 62 : chromeIOS ? 84 : altIOS ? 76 : 72;
+    const gapBefore2ndCard = 20;
     const hi = secondCard ? Math.max(minFloor, secondTopFromTrack - gapBefore2ndCard) : H;
-    const aimStart = Math.round(baseUsable * (yandexMobile ? 0.44 : chromeIOS ? 0.38 : 0.40));
+    const aimStart = Math.round(baseUsable * 0.52);
     let merged = Math.min(hi, Math.max(minFloor, Math.min(aimStart, hi)));
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
@@ -1328,8 +1330,8 @@ function getSheetGeometry(panel) {
     targetOpenVis = Math.min(H, merged);
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
-    const floorList = Math.round(headStrip + Math.max(24, cardH - 28));
-    const aimStart = Math.round(baseUsable * (yandexMobile ? 0.44 : chromeIOS ? 0.38 : 0.40));
+    const floorList = Math.round(headStrip + cardH + navOverlapEffective + 8);
+    const aimStart = Math.round(baseUsable * 0.52);
     targetOpenVis = Math.min(H, Math.max(floorList, Math.min(aimStart, H)));
   }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));
