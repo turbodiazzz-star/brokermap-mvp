@@ -1695,7 +1695,7 @@ textarea {
   .demo-page .map-layout--app-sheet .sheet-back-to-first {
     position: absolute;
     right: 14px;
-    bottom: calc(var(--mobile-bottom-nav-height, 72px) + max(22px, env(safe-area-inset-bottom, 0px) + 14px));
+    bottom: calc(var(--mobile-bottom-nav-height, 72px) + var(--mobile-browser-extra-bottom, 0px) + max(22px, env(safe-area-inset-bottom, 0px) + 14px));
     width: 42px;
     height: 42px;
     border-radius: 999px;

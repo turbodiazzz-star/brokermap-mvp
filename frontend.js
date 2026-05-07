@@ -1116,6 +1116,19 @@ function mobileViewportInnerHeight() {
   return Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
 }
 
+function mobileBrowserExtraBottomPad() {
+  if (!window.matchMedia("(max-width: 900px)").matches) return 0;
+  const ua = String(navigator.userAgent || "");
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isAltIOSBrowser = /CriOS|YaBrowser|Yowser|FxiOS|EdgiOS|OPiOS/i.test(ua);
+  const vv = window.visualViewport;
+  const browserUiBottom = vv
+    ? Math.max(0, Math.round((window.innerHeight || 0) - (vv.height + vv.offsetTop)))
+    : 0;
+  const uaPad = isIOS && isAltIOSBrowser ? 22 : 0;
+  return Math.min(34, Math.max(browserUiBottom, uaPad));
+}
+
 function ensureMobileSheetVisualViewportReflow() {
   if (typeof window === "undefined" || window.__bmVVSheetBound === "1") return;
   const vv = window.visualViewport;
@@ -1150,6 +1163,7 @@ function refreshMobileSheetLayoutVars(panel) {
     ? Math.max(48, Math.round(navEl.getBoundingClientRect().height || navEl.offsetHeight || 56))
     : 56;
   root.style.setProperty("--mobile-bottom-nav-height", `${navH}px`);
+  root.style.setProperty("--mobile-browser-extra-bottom", `${mobileBrowserExtraBottomPad()}px`);
 
   let topGap = 104;
   if ((panel && panel.closest(".demo-page")) || document.querySelector("#demoLeftPanel")) {
@@ -1231,7 +1245,9 @@ function getSheetGeometry(panel) {
   const panelRect = panel.getBoundingClientRect();
   const navRect = bottomNav ? bottomNav.getBoundingClientRect() : null;
   const navOverlapPanel = navRect ? Math.max(0, Math.round(panelRect.bottom - navRect.top)) : 0;
-  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 2 + navOverlapPanel);
+  const browserExtraBottom = mobileBrowserExtraBottomPad();
+  const navOverlapEffective = navOverlapPanel + browserExtraBottom;
+  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 2 + navOverlapEffective);
   if (scrollEl) {
     const firstInScroll = scrollEl.firstElementChild;
     const topContent =
@@ -1245,7 +1261,7 @@ function getSheetGeometry(panel) {
       peekCollapsedPx = Math.min(peekCollapsedPx, capChromeOnly);
     }
   }
-  const minPeekCollapsed = Math.max(56, Math.ceil(headBottomFromTrack - 4 + navOverlapPanel));
+  const minPeekCollapsed = Math.max(56, Math.ceil(headBottomFromTrack - 4 + navOverlapEffective));
   peekCollapsedPx = Math.max(minPeekCollapsed, Math.min(126, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
@@ -1277,7 +1293,7 @@ function getSheetGeometry(panel) {
     const gapBefore2ndCard = 62;
     const hi = secondCard ? Math.max(lo, secondTopFromTrack - gapBefore2ndCard) : H;
     const navTapPad = Math.min(38, Math.round(navH * 0.44));
-    const openUiPad = Math.min(34, navOverlapPanel + 10);
+    const openUiPad = Math.min(44, navOverlapEffective + 12);
     const floorCard = Math.ceil(firstBottomFromTrackTop + 20) + navTapPad + openUiPad;
     const aimStart = Math.round(baseUsable * 0.57);
     let merged = Math.min(hi, Math.max(floorCard, Math.min(aimStart, hi)));
@@ -1294,7 +1310,7 @@ function getSheetGeometry(panel) {
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
     const navTapPad = Math.min(40, Math.round(navH * 0.45));
-    const openUiPad = Math.min(34, navOverlapPanel + 10);
+    const openUiPad = Math.min(44, navOverlapEffective + 12);
     const floorList = Math.round(headStrip + cardH + 16) + navTapPad + openUiPad;
     const aimStart = Math.round(baseUsable * 0.615);
     targetOpenVis = Math.min(H, Math.max(floorList, Math.min(aimStart, H)));
