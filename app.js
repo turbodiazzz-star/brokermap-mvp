@@ -927,71 +927,86 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 app.post("/api/auth/register", async (req, res) => {
-  const { firstName, lastName, name, email, password, phone, agency, inn, marketingConsent, agree, accountType } = req.body;
-  const normalizedType = accountType === "agency_owner" ? "agency_owner" : "broker";
-  if (!email || !password || !firstName || !lastName || !phone || !agency) {
-    return res.status(400).json({ message: "Заполните все обязательные поля регистрации" });
-  }
-  if (!/^\+7\d{10}$/.test(String(phone))) {
-    return res.status(400).json({ message: "Телефон должен быть в формате +7 и 10 цифр" });
-  }
-  if (!agree) {
-    return res.status(400).json({ message: "Нужно согласие на обработку данных" });
-  }
-  if (findUserByEmail(email)) {
-    return res.status(409).json({ message: "Пользователь с таким email уже есть" });
-  }
-  const passwordHash = await bcrypt.hash(password, 10);
-  const id = `u-${Date.now()}`;
-  const normalizedEmail = String(email || "").trim().toLowerCase();
-  const role = isAdminEmail(normalizedEmail) ? "admin" : "user";
-  const user = {
-    id,
-    name: name || `${firstName} ${lastName}`.trim(),
-    email: normalizedEmail,
-    passwordHash,
-    firstName,
-    lastName,
-    agency,
-    inn: String(inn || "").trim(),
-    phone,
-    marketingConsent: Boolean(marketingConsent),
-    telegram: "",
-    whatsapp: "",
-    vk: "",
-    max: "",
-    role,
-    accountType: normalizedType,
-    agencyOwnerId: null,
-    brokerLimit: normalizedType === "agency_owner" ? 100 : 0,
-    emailVerified: false,
-    createdAt: new Date().toISOString()
-  };
-  createUserRecord(user);
-  const verifyToken = signActionToken(
-    { action: "verify_email", userId: user.id, email: user.email },
-    "24h"
-  );
-  const verifyLink = `${APP_BASE_URL}/api/auth/verify-email?token=${encodeURIComponent(verifyToken)}`;
   try {
-    await sendEmail({
-      to: user.email,
-      subject: "Подтвердите email в BrokerMap",
-      text: `Подтвердите email: ${verifyLink}`,
-      html: `<p>Подтвердите email для входа в BrokerMap:</p><p><a href="${htmlEscape(verifyLink)}">Подтвердить email</a></p>`
-    });
+    const { firstName, lastName, name, email, password, phone, agency, inn, marketingConsent, agree, accountType } = req.body;
+    const normalizedType = accountType === "agency_owner" ? "agency_owner" : "broker";
+    const normalizedEmail = String(email || "").trim().toLowerCase();
+    const normalizedFirstName = String(firstName || "").trim();
+    const normalizedLastName = String(lastName || "").trim();
+    const normalizedAgency = String(agency || "").trim();
+    const normalizedPhone = String(phone || "").trim();
+    if (!normalizedEmail || !password || !normalizedFirstName || !normalizedLastName || !normalizedPhone || !normalizedAgency) {
+      return res.status(400).json({ message: "Заполните все обязательные поля регистрации" });
+    }
+    if (!/^\+7\d{10}$/.test(normalizedPhone)) {
+      return res.status(400).json({ message: "Телефон должен быть в формате +7 и 10 цифр" });
+    }
+    if (!agree) {
+      return res.status(400).json({ message: "Нужно согласие на обработку данных" });
+    }
+    if (findUserByEmail(normalizedEmail)) {
+      return res.status(409).json({ message: "Пользователь с таким email уже есть" });
+    }
+    const passwordHash = await bcrypt.hash(password, 10);
+    const id = `u-${Date.now()}`;
+    const role = isAdminEmail(normalizedEmail) ? "admin" : "user";
+    const user = {
+      id,
+      name: String(name || "").trim() || `${normalizedFirstName} ${normalizedLastName}`.trim(),
+      email: normalizedEmail,
+      passwordHash,
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
+      agency: normalizedAgency,
+      inn: String(inn || "").trim(),
+      phone: normalizedPhone,
+      marketingConsent: Boolean(marketingConsent),
+      telegram: "",
+      whatsapp: "",
+      vk: "",
+      max: "",
+      role,
+      accountType: normalizedType,
+      agencyOwnerId: null,
+      brokerLimit: normalizedType === "agency_owner" ? 100 : 0,
+      emailVerified: false,
+      createdAt: new Date().toISOString()
+    };
+    createUserRecord(user);
+    const verifyToken = signActionToken(
+      { action: "verify_email", userId: user.id, email: user.email },
+      "24h"
+    );
+    const verifyLink = `${APP_BASE_URL}/api/auth/verify-email?token=${encodeURIComponent(verifyToken)}`;
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: "Подтвердите email в BrokerMap",
+        text: `Подтвердите email: ${verifyLink}`,
+        html: `<p>Подтвердите email для входа в BrokerMap:</p><p><a href="${htmlEscape(verifyLink)}">Подтвердить email</a></p>`
+      });
+      return res.json({
+        requiresEmailVerification: true,
+        message: "Мы отправили письмо для подтверждения email. Откройте ссылку из письма. Если письма нет, проверьте папку Спам."
+      });
+    } catch (error) {
+      // Fallback: if SMTP is unavailable, don't block registration.
+      markUserEmailVerified(user.id);
+      const fallbackUser = findUserById(user.id) || { ...user, emailVerified: true };
+      const token = signUserToken(fallbackUser);
+      setAuthCookie(res, token);
+      console.error("[mail] register verification send failed, fallback enabled:", error?.message || error);
+      return res.status(200).json({
+        token,
+        user: publicUser(fallbackUser),
+        message:
+          "Аккаунт создан, но письмо подтверждения сейчас недоступно. Мы вошли вас автоматически — можно продолжать работу."
+      });
+    }
   } catch (error) {
-    // Do not leave "half-created" users when email delivery is unavailable.
-    deleteUserById(user.id);
-    console.error("[mail] register verification send failed:", error?.message || error);
-    return res.status(502).json({
-      message: "Не удалось отправить письмо подтверждения. Проверьте настройки почты и попробуйте снова."
-    });
+    console.error("[auth/register] unexpected error:", error?.message || error);
+    return res.status(500).json({ message: "Не удалось завершить регистрацию. Попробуйте еще раз." });
   }
-  return res.json({
-    requiresEmailVerification: true,
-    message: "Мы отправили письмо для подтверждения email. Откройте ссылку из письма. Если письма нет, проверьте папку Спам."
-  });
 });
 
 app.post("/api/auth/login", async (req, res) => {

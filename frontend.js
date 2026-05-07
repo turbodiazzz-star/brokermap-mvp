@@ -475,7 +475,12 @@ async function api(url, options = {}) {
   if (state.token) {
     headers.Authorization = `Bearer ${state.token}`;
   }
-  const response = await fetch(url, { ...options, headers, credentials: "include" });
+  let response;
+  try {
+    response = await fetch(url, { ...options, headers, credentials: "include" });
+  } catch (_networkError) {
+    throw new Error("Не удалось выполнить запрос. Проверьте подключение и попробуйте еще раз.");
+  }
   const contentType = String(response.headers.get("content-type") || "").toLowerCase();
   let data = {};
   let rawText = "";
