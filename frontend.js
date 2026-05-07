@@ -402,7 +402,19 @@ async function api(url, options = {}) {
     headers.Authorization = `Bearer ${state.token}`;
   }
   const response = await fetch(url, { ...options, headers, credentials: "include" });
-  const data = await response.json().catch(() => ({}));
+  const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+  let data = {};
+  let rawText = "";
+  if (contentType.includes("application/json")) {
+    data = await response.json().catch(() => ({}));
+  } else {
+    rawText = await response.text().catch(() => "");
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      data = {};
+    }
+  }
   if (!response.ok) {
     if (response.status === 401 && state.token) {
       logout();
@@ -411,9 +423,13 @@ async function api(url, options = {}) {
       location.hash = "#/auth";
     }
     if (response.status === 403) {
-      throw new Error(data.message || "Нет доступа");
+      throw new Error(data.message || rawText || "Нет доступа");
     }
-    throw new Error(data.message || "Ошибка запроса");
+    const strippedText = String(rawText || "")
+      .replace(/<[^>]*>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    throw new Error(data.message || strippedText || `Ошибка запроса (${response.status})`);
   }
   return data;
 }
