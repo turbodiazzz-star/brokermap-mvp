@@ -1318,13 +1318,17 @@ function getSheetGeometry(panel) {
     // Жесткий UX-контракт:
     // 1) кнопки первой карточки полностью видны;
     // 2) вторая карточка на старте не видна совсем (0px).
-    const minForFirstButtons = Math.ceil(actionsBottomFromTrackTop + 8 + navOverlapEffective);
-    const maxWithoutSecondPeek = secondCard ? Math.ceil(secondTopFromTrack - 10) : H;
-    const aimStart = Math.round(baseUsable * 0.50);
+    // Для iOS Chrome/Yandex добавляем небольшой стабильный запас,
+    // т.к. их нижний UI часто перекрывает больше, чем показывает viewport.
+    const altButtonsPad = altIOS ? 16 : 0;
+    const minForFirstButtons = Math.ceil(actionsBottomFromTrackTop + 8 + navOverlapPanel + browserExtraBottom + altButtonsPad);
+    const maxWithoutSecondPeek = secondCard ? Math.ceil(secondTopFromTrack - 22) : H;
+    const aimStart = Math.round(baseUsable * 0.47);
     let merged = Math.max(minForFirstButtons, Math.min(aimStart, maxWithoutSecondPeek));
-    if (secondCard && minForFirstButtons > maxWithoutSecondPeek) {
-      // На очень низких экранах приоритет — не показывать 2-ю карточку.
-      merged = maxWithoutSecondPeek;
+    if (secondCard && merged > maxWithoutSecondPeek) {
+      // При конфликте стараемся держать ближе к кнопкам первой карточки,
+      // но не поднимать так высоко, чтобы явно показать вторую.
+      merged = Math.max(minForFirstButtons - 8, maxWithoutSecondPeek);
     }
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
@@ -1334,8 +1338,8 @@ function getSheetGeometry(panel) {
     targetOpenVis = Math.min(H, Math.max(0, merged));
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
-    const floorList = Math.round(headStrip + cardH + navOverlapEffective + 8);
-    const aimStart = Math.round(baseUsable * 0.52);
+    const floorList = Math.round(headStrip + cardH + navOverlapPanel + browserExtraBottom + (altIOS ? 12 : 8));
+    const aimStart = Math.round(baseUsable * 0.47);
     targetOpenVis = Math.min(H, Math.max(floorList, Math.min(aimStart, H)));
   }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));
