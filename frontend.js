@@ -1181,7 +1181,8 @@ function getSheetGeometry(panel) {
    * Свёрнуто: граница под блоком «ручка + заголовок» (padding снизу заголовка — в CSS для моб. app-sheet всегда).
    * Обрезка по верху списка: не показывать превью карточки (cap по first content).
    */
-  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 1);
+  const navOverlayPad = Math.min(18, Math.round(navH * 0.22));
+  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 1 + navOverlayPad);
   if (scrollEl) {
     const firstInScroll = scrollEl.firstElementChild;
     const topContent =
@@ -1191,11 +1192,11 @@ function getSheetGeometry(panel) {
           ? firstInScroll.offsetTop + scrollEl.offsetTop + scrollPad
           : Infinity;
     if (Number.isFinite(topContent) && topContent < Infinity) {
-      const capChromeOnly = Math.floor(topContent - 4);
+      const capChromeOnly = Math.floor(topContent - 6);
       peekCollapsedPx = Math.min(peekCollapsedPx, capChromeOnly);
     }
   }
-  peekCollapsedPx = Math.max(52, Math.min(112, peekCollapsedPx));
+  peekCollapsedPx = Math.max(64, Math.min(118, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
 
@@ -1343,7 +1344,7 @@ function resetMobileSheetLandingState() {
 /** Лёгкое «резиновое» сопротивление у краёв жеста (как шторки iOS). */
 function sheetDragRubberTranslate(t, g) {
   if (!g) return t;
-  const k = 0.32;
+  const k = 0.58;
   if (t < g.yMin) return g.yMin + (t - g.yMin) * k;
   if (t > g.yMax) return g.yMax + (t - g.yMax) * k;
   return t;
@@ -1401,7 +1402,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   /** Медленное отпускание — остаёмся на текущем translate (листаем объекты). Быстрый свайп — инерция до остановки. */
   const finishMobileSheetRelease = (s, normalizedT, vy, g) => {
     const gen = sheetDragInterruptGen;
-    const V_STAY = 0.32;
+    const V_STAY = 0.12;
     s.classList.remove("left-panel--sheet-live");
     const ty0 = clampSheetT(normalizedT, g);
     if (gestureStartedFromPeek && ty0 < g.yPeek - 10) {
@@ -1421,7 +1422,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       return;
     }
     let t = ty0;
-    let v = vy * 0.64;
+    let v = vy * 1.06;
     let lastTs = performance.now();
     const tStart = lastTs;
     const step = (now) => {
@@ -1440,7 +1441,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       commitSheetState(t, g);
       if (state.panelCollapsed) state.panelSheetT = g.yPeek;
       else state.panelSheetT = t;
-      v *= Math.pow(0.972, dt / 16.67);
+      v *= Math.pow(0.986, dt / 16.67);
       if (Math.abs(v) < 0.048) {
         const settle = clampSheetT(t, g);
         setPanelTranslateY(s, settle, false);
