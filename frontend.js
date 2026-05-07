@@ -1410,9 +1410,11 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       state.panelSheetOpenOffset = 0;
     }
     const lay = layout();
-    if (lay && lastCollapsedUi !== atPeek) {
+    if (lay) {
       if (atPeek) lay.classList.add("collapsed");
       else lay.classList.remove("collapsed");
+    }
+    if (lastCollapsedUi !== atPeek) {
       lastCollapsedUi = atPeek;
     }
   };
@@ -1552,10 +1554,8 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     if (snappedInner < g.yPeek - 4) {
       state.panelCollapsed = false;
       const lay = layout();
-      if (lay && lastCollapsedUi) {
-        lay.classList.remove("collapsed");
-        lastCollapsedUi = false;
-      }
+      lay?.classList.remove("collapsed");
+      if (lastCollapsedUi) lastCollapsedUi = false;
     }
 
     const now = performance.now();
