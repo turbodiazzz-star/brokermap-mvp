@@ -227,7 +227,11 @@ function stripHtmlTags(text) {
 }
 
 function toPositiveNumberOrNull(value) {
-  const num = Number(String(value ?? "").replace(",", "."));
+  const num = Number(
+    String(value ?? "")
+      .replace(/[₽\s\u00A0]/g, "")
+      .replace(",", ".")
+  );
   if (!Number.isFinite(num) || num <= 0) return null;
   return num;
 }
@@ -272,8 +276,9 @@ function pickAddressText(node) {
 }
 
 function parseCianListingFromHtml(html, url) {
+  const htmlText = String(html || "");
   const scripts = Array.from(
-    String(html || "").matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
+    htmlText.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
   ).map((m) => m[1]);
   const jsonLdNodes = [];
   for (const rawScript of scripts) {
@@ -304,7 +309,8 @@ function parseCianListingFromHtml(html, url) {
     matchFirstNumberByPatterns(html, [
       /"totalArea"\s*:\s*"?([\d.,]+)"?/i,
       /"area"\s*:\s*"?([\d.,]+)"?/i,
-      /Площадь[^0-9]{0,24}([\d.,]+)/i
+      /Площадь[^0-9]{0,24}([\d.,]+)/i,
+      /([\d.,]+)\s*м²/i
     ]);
 
   const price =
@@ -312,7 +318,8 @@ function parseCianListingFromHtml(html, url) {
     toPositiveNumberOrNull(offerNode.priceSpecification?.price) ||
     matchFirstNumberByPatterns(html, [
       /"priceRur"\s*:\s*"?([\d.,]+)"?/i,
-      /"price"\s*:\s*"?([\d.,]+)"?/i
+      /"price"\s*:\s*"?([\d.,]+)"?/i,
+      /([\d\s]{5,})\s*₽/i
     ]);
 
   const floor =
@@ -321,20 +328,23 @@ function parseCianListingFromHtml(html, url) {
     matchFirstNumberByPatterns(html, [
       /"floorNumber"\s*:\s*"?(\d+)"?/i,
       /"floor"\s*:\s*"?(\d+)"?/i,
-      /(\d+)\s*(?:из|\/)\s*\d+/i
+      /(\d+)\s*(?:из|\/)\s*\d+/i,
+      /Этаж[^0-9]{0,18}(\d+)/i
     ]);
 
   const totalFloors = matchFirstNumberByPatterns(html, [
     /"floorsCount"\s*:\s*"?(\d+)"?/i,
     /"buildingFloors"\s*:\s*"?(\d+)"?/i,
-    /\d+\s*(?:из|\/)\s*(\d+)/i
+    /\d+\s*(?:из|\/)\s*(\d+)/i,
+    /Этажность[^0-9]{0,18}(\d+)/i
   ]);
 
   const bedrooms =
     toPositiveNumberOrNull(candidate.numberOfRooms) ||
     matchFirstNumberByPatterns(html, [
       /"roomsCount"\s*:\s*"?(\d+)"?/i,
-      /"bedrooms"\s*:\s*"?(\d+)"?/i
+      /"bedrooms"\s*:\s*"?(\d+)"?/i,
+      /(\d+)\s*-\s*комн/i
     ]);
 
   const ceilingHeight = matchFirstNumberByPatterns(html, [
@@ -360,14 +370,28 @@ function parseCianListingFromHtml(html, url) {
       decodeHtmlEntities(
         html.match(/"geo":{"type":"Point","coordinates":\[[^\]]+\],"address":"([^"]+)"/i)?.[1] ||
           html.match(/"address":"([^"]+)"/i)?.[1] ||
-          ""
+          "" 
       )
+    ) ||
+    normalizeWhitespace(
+      decodeHtmlEntities(
+        htmlText.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] || ""
+      )
+        .replace(/\s*[-–].*$/g, "")
+        .replace(/^\d+\s*-\s*комн\.?\s+кв\.\s*,?\s*/i, "")
     );
 
   const title =
     normalizeWhitespace(stripHtmlTags(candidate.name || candidate.headline || "")) ||
-    normalizeWhitespace(stripHtmlTags(html.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || ""));
-  const description = normalizeWhitespace(stripHtmlTags(candidate.description || ""));
+    normalizeWhitespace(stripHtmlTags(htmlText.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || "")) ||
+    normalizeWhitespace(
+      decodeHtmlEntities(htmlText.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1] || "")
+    );
+  const description =
+    normalizeWhitespace(stripHtmlTags(candidate.description || "")) ||
+    normalizeWhitespace(
+      decodeHtmlEntities(htmlText.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i)?.[1] || "")
+    );
 
   return {
     source: "cian",
@@ -381,8 +405,8 @@ function parseCianListingFromHtml(html, url) {
     totalFloors,
     ceilingHeight,
     metroWalkMinutes,
-    lat,
-    lon,
+    lat: lat || null,
+    lon: lon || null,
     description
   };
 }
