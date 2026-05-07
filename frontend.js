@@ -1428,7 +1428,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const ty0 = clampSheetT(normalizedT, g);
     if (Number.isFinite(vy) && Math.abs(vy) >= V_FAST) {
       // Резкий свайп: быстрый предсказуемый снап (быстрее и стабильнее по fps, чем длинная инерция).
-      const snapTarget = vy > 0 ? g.yPeek : g.yHalf;
+      const snapTarget = vy > 0 ? g.yPeek : Math.min(g.yHalf - 8, g.yMin + 24);
       const snapT = clampSheetT(snapTarget, g);
       setPanelTranslateY(s, snapT, true, 220);
       commitSheetState(snapT, g);
