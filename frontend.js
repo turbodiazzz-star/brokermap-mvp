@@ -1277,7 +1277,8 @@ function getSheetGeometry(panel) {
     const gapBefore2ndCard = 62;
     const hi = secondCard ? Math.max(lo, secondTopFromTrack - gapBefore2ndCard) : H;
     const navTapPad = Math.min(38, Math.round(navH * 0.44));
-    const floorCard = Math.ceil(firstBottomFromTrackTop + 20) + navTapPad;
+    const openUiPad = Math.min(34, navOverlapPanel + 10);
+    const floorCard = Math.ceil(firstBottomFromTrackTop + 20) + navTapPad + openUiPad;
     const aimStart = Math.round(baseUsable * 0.57);
     let merged = Math.min(hi, Math.max(floorCard, Math.min(aimStart, hi)));
     if (secondCard) {
@@ -1293,7 +1294,8 @@ function getSheetGeometry(panel) {
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
     const navTapPad = Math.min(40, Math.round(navH * 0.45));
-    const floorList = Math.round(headStrip + cardH + 16) + navTapPad;
+    const openUiPad = Math.min(34, navOverlapPanel + 10);
+    const floorList = Math.round(headStrip + cardH + 16) + navTapPad + openUiPad;
     const aimStart = Math.round(baseUsable * 0.615);
     targetOpenVis = Math.min(H, Math.max(floorList, Math.min(aimStart, H)));
   }
