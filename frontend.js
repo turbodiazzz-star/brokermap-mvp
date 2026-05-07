@@ -1181,8 +1181,10 @@ function getSheetGeometry(panel) {
    * Свёрнуто: граница под блоком «ручка + заголовок» (padding снизу заголовка — в CSS для моб. app-sheet всегда).
    * Обрезка по верху списка: не показывать превью карточки (cap по first content).
    */
-  const navOverlayPad = Math.min(18, Math.round(navH * 0.22));
-  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 1 + navOverlayPad);
+  // В Android-браузере фикс-навбар визуально "съедает" низ полоски сильнее, чем сообщает его высота.
+  // Держим дополнительный запас, чтобы текст заголовка не уходил под футер в полностью свёрнутом состоянии.
+  const navOverlayPad = Math.min(30, Math.round(navH * 0.34) + 6);
+  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 2 + navOverlayPad);
   if (scrollEl) {
     const firstInScroll = scrollEl.firstElementChild;
     const topContent =
@@ -1196,7 +1198,7 @@ function getSheetGeometry(panel) {
       peekCollapsedPx = Math.min(peekCollapsedPx, capChromeOnly);
     }
   }
-  peekCollapsedPx = Math.max(64, Math.min(118, peekCollapsedPx));
+  peekCollapsedPx = Math.max(82, Math.min(132, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
 
