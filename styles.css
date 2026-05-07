@@ -664,6 +664,20 @@ body.view-map #app {
   padding: 10px 12px 12px;
 }
 
+.card.card--feed.card--tappable {
+  cursor: pointer;
+  transition: transform 130ms ease, box-shadow 170ms ease, filter 170ms ease;
+}
+
+.card.card--feed.card--tappable:hover {
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+.card.card--feed.card--tappable:active {
+  transform: translateY(1px) scale(0.992);
+  filter: brightness(0.99);
+}
+
 .card-media {
   position: relative;
 }

@@ -829,7 +829,7 @@ function cardMarkup(property) {
   const commissionRub = (Number(property.price || 0) * pct) / 100;
   const premium = property.commissionPartner >= 4;
   return `
-    <article class="card card--feed ${premium ? "premium" : ""}" data-card-open-id="${escapeHtml(property.id)}">
+    <article class="card card--feed card--tappable ${premium ? "premium" : ""}" data-card-open-id="${escapeHtml(property.id)}">
       <div class="card-media">
         <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
         ${propertyFeedPhotoDots(property)}
@@ -843,9 +843,6 @@ function cardMarkup(property) {
         <div class="card-spec">${escapeHtml(propertySpecSummaryLine(property))}</div>
         <div class="card-address muted">${escapeHtml(property.address || "")}</div>
         ${propertyMetroHtml(property)}
-        <p class="card-actions"><button class="btn primary full open-object" type="button" data-id="${escapeHtml(
-          property.id
-        )}">Подробнее</button></p>
       </div>
     </article>
   `;
@@ -965,7 +962,7 @@ function demoCardMarkup(item) {
   const commissionRub = (Number(item.price || 0) * pct) / 100;
   const premium = item.commissionPartner >= 4;
   return `
-    <article class="card card--feed ${premium ? "premium" : ""}" data-card-open-id="${escapeHtml(item.id)}">
+    <article class="card card--feed card--tappable ${premium ? "premium" : ""}" data-card-open-id="${escapeHtml(item.id)}">
       <div class="card-media">
         <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
         ${propertyFeedPhotoDots(item)}
@@ -979,10 +976,7 @@ function demoCardMarkup(item) {
         <div class="card-spec">${escapeHtml(propertySpecSummaryLine(item))}</div>
         <div class="card-address muted">${escapeHtml(item.address || "")}</div>
         ${propertyMetroHtml(item)}
-        <p class="card-actions card-actions--split">
-          <button class="btn full open-demo-contacts" type="button">Открыть контакты</button>
-          <button class="btn primary full open-demo-object" type="button" data-id="${escapeHtml(item.id)}">Подробнее</button>
-        </p>
+        <p class="card-actions"><button class="btn full open-demo-contacts" type="button">Открыть контакты</button></p>
       </div>
     </article>
   `;
