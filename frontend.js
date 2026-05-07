@@ -1181,17 +1181,11 @@ function getSheetGeometry(panel) {
    * Свёрнуто: граница под блоком «ручка + заголовок» (padding снизу заголовка — в CSS для моб. app-sheet всегда).
    * Обрезка по верху списка: не показывать превью карточки (cap по first content).
    */
-  // Кросс-браузер: часть экрана может быть перекрыта системным/браузерным нижним UI
-  // (Safari/Chrome/Yandex считают viewport по-разному). Учитываем фактическую "съеденную" зону.
-  const vv = window.visualViewport;
-  const browserUiBottom = vv
-    ? Math.max(0, Math.round((window.innerHeight || 0) - (vv.height + vv.offsetTop)))
-    : 0;
-  const navOverlayPad = Math.max(
-    Math.min(30, Math.round(navH * 0.34) + 6),
-    Math.min(26, browserUiBottom + 6)
-  );
-  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 2 + navOverlayPad);
+  // Кросс-браузер: берём реальное перекрытие панели fixed-футером, а не эвристику по viewport.
+  const panelRect = panel.getBoundingClientRect();
+  const navRect = bottomNav ? bottomNav.getBoundingClientRect() : null;
+  const navOverlapPanel = navRect ? Math.max(0, Math.round(panelRect.bottom - navRect.top)) : 0;
+  let peekCollapsedPx = Math.ceil(headBottomFromTrack + 2 + navOverlapPanel);
   if (scrollEl) {
     const firstInScroll = scrollEl.firstElementChild;
     const topContent =
@@ -1205,8 +1199,8 @@ function getSheetGeometry(panel) {
       peekCollapsedPx = Math.min(peekCollapsedPx, capChromeOnly);
     }
   }
-  const minPeekCollapsed = 78 + Math.min(20, browserUiBottom);
-  peekCollapsedPx = Math.max(minPeekCollapsed, Math.min(132, peekCollapsedPx));
+  const minPeekCollapsed = Math.max(56, Math.ceil(headBottomFromTrack - 4 + navOverlapPanel));
+  peekCollapsedPx = Math.max(minPeekCollapsed, Math.min(126, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
 
