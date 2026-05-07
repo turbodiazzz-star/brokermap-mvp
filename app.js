@@ -539,7 +539,11 @@ async function generatePresentationPdf(property) {
   const filePath = path.join(PDFS_DIR, filename);
   const doc = new PDFDocument({ size: "A4", margin: 48 });
   const unicodeFontPath = resolvePdfFontPath();
-  const mainPhotoAsset = await resolvePropertyPhotoForPdf(Array.isArray(property.photos) ? property.photos[0] : null);
+  const photoUrls = Array.isArray(property.photos) ? property.photos.map((p) => String(p || "").trim()).filter(Boolean) : [];
+  const resolvedPhotoAssets = (await Promise.all(photoUrls.map((url) => resolvePropertyPhotoForPdf(url)))).filter(
+    (asset) => asset?.imageSource
+  );
+  const mainPhotoAsset = resolvedPhotoAssets[0] || null;
 
   await new Promise((resolve, reject) => {
     const stream = fs.createWriteStream(filePath);
@@ -633,6 +637,35 @@ async function generatePresentationPdf(property) {
       y += descHeight + 10;
     }
 
+    const galleryAssets = resolvedPhotoAssets.slice(1);
+    if (galleryAssets.length) {
+      doc.addPage();
+      y = pageTop;
+      doc.fillColor("#1f2a44").fontSize(20).text("Фотогалерея", pageLeft, y, { width: pageWidth });
+      y = doc.y + 12;
+      for (let i = 0; i < galleryAssets.length; i += 1) {
+        const photo = galleryAssets[i];
+        if (!photo?.imageSource) continue;
+        try {
+          const image = doc.openImage(photo.imageSource);
+          const maxPhotoHeight = 260;
+          const scale = Math.min(pageWidth / image.width, maxPhotoHeight / image.height);
+          const drawWidth = image.width * scale;
+          const drawHeight = image.height * scale;
+          if (y + drawHeight + 26 > pageBottom) {
+            doc.addPage();
+            y = pageTop;
+          }
+          const imageX = pageLeft + (pageWidth - drawWidth) / 2;
+          doc.roundedRect(pageLeft, y, pageWidth, drawHeight).fillAndStroke("#f6f8fc", "#e5eaf5");
+          doc.image(photo.imageSource, imageX, y, { width: drawWidth, height: drawHeight });
+          y += drawHeight + 18;
+        } catch {
+          /* ignore image read errors */
+        }
+      }
+    }
+
     doc.end();
   });
 
@@ -660,7 +693,7 @@ function normalizeDemoPresentationProperty(input = {}) {
     commissionPartner: Number(input.commissionPartner || 0) || 0,
     description: String(input.description || ""),
     contacts: {},
-    photos: Array.isArray(input.photos) ? input.photos.slice(0, 1).map((p) => String(p || "")) : []
+    photos: Array.isArray(input.photos) ? input.photos.slice(0, 20).map((p) => String(p || "")) : []
   };
 }
 
