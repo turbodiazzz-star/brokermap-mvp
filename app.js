@@ -605,6 +605,31 @@ async function generatePresentationPdf(property) {
   return `/uploads/pdfs/${filename}`;
 }
 
+function normalizeDemoPresentationProperty(input = {}) {
+  const rawId = String(input.id || "").trim();
+  const cleanId = rawId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || `demo-${Date.now()}`;
+  return {
+    id: cleanId,
+    title: String(input.title || "Демо объект"),
+    address: String(input.address || "Москва"),
+    price: Number(input.price || 0) || 0,
+    area: toOptionalNumber(input.area),
+    bedrooms: toOptionalNumber(input.bedrooms),
+    floor: toOptionalNumber(input.floor),
+    totalFloors: toOptionalNumber(input.totalFloors),
+    ceilingHeight: toOptionalNumber(input.ceilingHeight),
+    finishing: normalizeFinishing(input.finishing),
+    readiness: normalizeReadiness(input.readiness),
+    housingStatus: normalizeHousingStatus(input.housingStatus),
+    metroWalkMinutes: toOptionalNumber(input.metroWalkMinutes),
+    commissionTotal: Number(input.commissionTotal || 0) || 0,
+    commissionPartner: Number(input.commissionPartner || 0) || 0,
+    description: String(input.description || ""),
+    contacts: {},
+    photos: Array.isArray(input.photos) ? input.photos.slice(0, 1).map((p) => String(p || "")) : []
+  };
+}
+
 const COOKIE_NAME = "authToken";
 
 function getTokenFromRequest(req) {
@@ -1819,6 +1844,27 @@ app.post("/api/my/properties/:id/generate-pdf", auth, async (req, res) => {
   property.pdfUrl = await generatePresentationPdf(property);
   updatePropertyRow(property);
   return res.json({ pdfUrl: property.pdfUrl });
+});
+
+app.post("/api/demo/presentation", async (req, res) => {
+  try {
+    const property = normalizeDemoPresentationProperty(req.body?.property || req.body || {});
+    const pdfUrl = await generatePresentationPdf(property);
+    const fileName = path.basename(String(pdfUrl || ""));
+    if (!fileName) {
+      return res.status(500).json({ message: "Не удалось подготовить PDF" });
+    }
+    const filePath = path.join(PDFS_DIR, fileName);
+    if (!filePath.startsWith(PDFS_DIR) || !fs.existsSync(filePath)) {
+      return res.status(500).json({ message: "Файл PDF не найден" });
+    }
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Content-Disposition", `attachment; filename="presentation-${property.id}.pdf"`);
+    return res.sendFile(filePath);
+  } catch (_error) {
+    return res.status(500).json({ message: "Не удалось подготовить PDF" });
+  }
 });
 
 app.delete("/api/my/properties/:id", auth, (req, res) => {
