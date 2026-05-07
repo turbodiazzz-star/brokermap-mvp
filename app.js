@@ -193,6 +193,200 @@ function normalizeHousingStatus(value) {
   return "flat";
 }
 
+function decodeHtmlEntities(text) {
+  const src = String(text || "");
+  if (!src) return "";
+  const named = src
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ");
+  return named.replace(/&#(\d+);/g, (_m, code) => {
+    const cp = Number(code);
+    if (!Number.isFinite(cp)) return _m;
+    try {
+      return String.fromCodePoint(cp);
+    } catch {
+      return _m;
+    }
+  });
+}
+
+function normalizeWhitespace(text) {
+  return String(text || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripHtmlTags(text) {
+  return normalizeWhitespace(decodeHtmlEntities(String(text || "").replace(/<[^>]*>/g, " ")));
+}
+
+function toPositiveNumberOrNull(value) {
+  const num = Number(String(value ?? "").replace(",", "."));
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return num;
+}
+
+function matchFirstNumberByPatterns(source, patterns) {
+  const text = String(source || "");
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m) continue;
+    const num = toPositiveNumberOrNull(m[1]);
+    if (num != null) return num;
+  }
+  return null;
+}
+
+function flattenJsonLdNodes(node, out = []) {
+  if (!node) return out;
+  if (Array.isArray(node)) {
+    node.forEach((item) => flattenJsonLdNodes(item, out));
+    return out;
+  }
+  if (typeof node !== "object") return out;
+  out.push(node);
+  if (Array.isArray(node["@graph"])) {
+    node["@graph"].forEach((item) => flattenJsonLdNodes(item, out));
+  }
+  return out;
+}
+
+function pickAddressText(node) {
+  if (!node) return "";
+  if (typeof node === "string") return normalizeWhitespace(node);
+  const parts = [
+    node.streetAddress,
+    node.addressLocality,
+    node.addressRegion,
+    node.postalCode
+  ]
+    .map((v) => normalizeWhitespace(v))
+    .filter(Boolean);
+  return parts.join(", ");
+}
+
+function parseCianListingFromHtml(html, url) {
+  const scripts = Array.from(
+    String(html || "").matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)
+  ).map((m) => m[1]);
+  const jsonLdNodes = [];
+  for (const rawScript of scripts) {
+    const cleaned = decodeHtmlEntities(String(rawScript || "").trim());
+    if (!cleaned) continue;
+    try {
+      const parsed = JSON.parse(cleaned);
+      flattenJsonLdNodes(parsed, jsonLdNodes);
+    } catch {
+      /* ignore broken script block */
+    }
+  }
+  const normalizedUrl = String(url || "").trim();
+  const candidate =
+    jsonLdNodes.find((n) => {
+      const t = String(n?.["@type"] || "").toLowerCase();
+      return t.includes("apartment") || t.includes("product") || t.includes("offer");
+    }) || jsonLdNodes[0] || {};
+
+  const offerNode =
+    candidate.offers ||
+    jsonLdNodes.find((n) => String(n?.["@type"] || "").toLowerCase().includes("offer")) ||
+    {};
+
+  const area =
+    toPositiveNumberOrNull(candidate.floorSize?.value) ||
+    toPositiveNumberOrNull(candidate.area?.value) ||
+    matchFirstNumberByPatterns(html, [
+      /"totalArea"\s*:\s*"?([\d.,]+)"?/i,
+      /"area"\s*:\s*"?([\d.,]+)"?/i,
+      /Площадь[^0-9]{0,24}([\d.,]+)/i
+    ]);
+
+  const price =
+    toPositiveNumberOrNull(offerNode.price) ||
+    toPositiveNumberOrNull(offerNode.priceSpecification?.price) ||
+    matchFirstNumberByPatterns(html, [
+      /"priceRur"\s*:\s*"?([\d.,]+)"?/i,
+      /"price"\s*:\s*"?([\d.,]+)"?/i
+    ]);
+
+  const floor =
+    toPositiveNumberOrNull(candidate.floorLevel?.value) ||
+    toPositiveNumberOrNull(candidate.floorLevel) ||
+    matchFirstNumberByPatterns(html, [
+      /"floorNumber"\s*:\s*"?(\d+)"?/i,
+      /"floor"\s*:\s*"?(\d+)"?/i,
+      /(\d+)\s*(?:из|\/)\s*\d+/i
+    ]);
+
+  const totalFloors = matchFirstNumberByPatterns(html, [
+    /"floorsCount"\s*:\s*"?(\d+)"?/i,
+    /"buildingFloors"\s*:\s*"?(\d+)"?/i,
+    /\d+\s*(?:из|\/)\s*(\d+)/i
+  ]);
+
+  const bedrooms =
+    toPositiveNumberOrNull(candidate.numberOfRooms) ||
+    matchFirstNumberByPatterns(html, [
+      /"roomsCount"\s*:\s*"?(\d+)"?/i,
+      /"bedrooms"\s*:\s*"?(\d+)"?/i
+    ]);
+
+  const ceilingHeight = matchFirstNumberByPatterns(html, [
+    /"ceilingHeight"\s*:\s*"?([\d.,]+)"?/i,
+    /Высота потолков[^0-9]{0,24}([\d.,]+)/i
+  ]);
+
+  const metroWalkMinutes = matchFirstNumberByPatterns(html, [
+    /"undergroundTime"\s*:\s*"?(\d+)"?/i,
+    /Пешком[^0-9]{0,16}(\d+)\s*мин/i
+  ]);
+
+  const lat =
+    toPositiveNumberOrNull(candidate.geo?.latitude) ||
+    matchFirstNumberByPatterns(html, [/\"lat\"\s*:\s*([0-9.]+)/i]);
+  const lon =
+    toPositiveNumberOrNull(candidate.geo?.longitude) ||
+    matchFirstNumberByPatterns(html, [/\"lng\"\s*:\s*([0-9.]+)/i, /\"lon\"\s*:\s*([0-9.]+)/i]);
+
+  const address =
+    normalizeWhitespace(pickAddressText(candidate.address)) ||
+    normalizeWhitespace(
+      decodeHtmlEntities(
+        html.match(/"geo":{"type":"Point","coordinates":\[[^\]]+\],"address":"([^"]+)"/i)?.[1] ||
+          html.match(/"address":"([^"]+)"/i)?.[1] ||
+          ""
+      )
+    );
+
+  const title =
+    normalizeWhitespace(stripHtmlTags(candidate.name || candidate.headline || "")) ||
+    normalizeWhitespace(stripHtmlTags(html.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || ""));
+  const description = normalizeWhitespace(stripHtmlTags(candidate.description || ""));
+
+  return {
+    source: "cian",
+    sourceUrl: normalizedUrl,
+    title: title || address || "",
+    address: address || "",
+    price,
+    area,
+    bedrooms,
+    floor,
+    totalFloors,
+    ceilingHeight,
+    metroWalkMinutes,
+    lat,
+    lon,
+    description
+  };
+}
+
 function housingStatusLabel(value) {
   const map = { flat: "Квартира", apartments: "Апартаменты" };
   return map[value] || map.flat;
@@ -1009,6 +1203,53 @@ app.get("/api/properties/:id", auth, (req, res) => {
 
 app.get("/api/my/properties", auth, (req, res) => {
   return res.json(listPropertiesByOwner(req.userId));
+});
+
+app.post("/api/my/properties/parse-cian", auth, async (req, res) => {
+  if (typeof fetch !== "function") {
+    return res.status(500).json({ message: "Сервер не поддерживает загрузку по ссылке." });
+  }
+  const rawUrl = String(req.body?.url || "").trim();
+  if (!rawUrl) {
+    return res.status(400).json({ message: "Добавьте ссылку на объявление Циан." });
+  }
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(rawUrl);
+  } catch {
+    return res.status(400).json({ message: "Некорректная ссылка." });
+  }
+  const hostname = parsedUrl.hostname.toLowerCase();
+  if (!hostname.endsWith("cian.ru")) {
+    return res.status(400).json({ message: "Поддерживаются только ссылки cian.ru." });
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch(parsedUrl.toString(), {
+      method: "GET",
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8"
+      },
+      signal: controller.signal
+    });
+    const html = await response.text();
+    if (!response.ok || !html) {
+      return res.status(502).json({ message: "Не удалось получить данные по ссылке Циан." });
+    }
+    const parsed = parseCianListingFromHtml(html, parsedUrl.toString());
+    if (!parsed.address && !parsed.description && !parsed.price && !parsed.area) {
+      return res.status(422).json({ message: "Не удалось распознать данные объявления. Проверьте ссылку." });
+    }
+    return res.json(parsed);
+  } catch (_error) {
+    return res.status(502).json({ message: "Не удалось обработать ссылку Циан. Попробуйте позже." });
+  } finally {
+    clearTimeout(timeout);
+  }
 });
 
 app.get("/api/admin/summary", auth, requireAdmin, (_req, res) => {

@@ -4750,6 +4750,14 @@ async function renderCabinetPage(openForm = false) {
             </div>
             <input type="hidden" name="lat" id="latInput" />
             <input type="hidden" name="lon" id="lonInput" />
+            <div class="field-block field-span-2">
+              <label class="field-label" for="cianUrlInput">Ссылка на Циан (без фото)</label>
+              <div class="address-row">
+                <input id="cianUrlInput" type="url" placeholder="https://www.cian.ru/sale/flat/..." />
+                <button class="btn" type="button" id="parseCianBtn">Заполнить</button>
+              </div>
+              <div id="cianParseStatus" class="note"></div>
+            </div>
             <div class="field-block">
               <label class="field-label" for="priceInput">Цена</label>
               <input id="priceInput" name="price" type="text" inputmode="numeric" required />
@@ -4868,6 +4876,34 @@ async function renderCabinetPage(openForm = false) {
   document.getElementById("closeCabinetPanel").addEventListener("click", () => {
     location.hash = "#/";
   });
+  document.getElementById("parseCianBtn")?.addEventListener("click", async () => {
+    const urlInput = document.getElementById("cianUrlInput");
+    const statusEl = cianParseStatus();
+    const btn = document.getElementById("parseCianBtn");
+    if (!urlInput || !btn) return;
+    const url = String(urlInput.value || "").trim();
+    if (!url) {
+      if (statusEl) statusEl.textContent = "Вставьте ссылку на объявление Циан.";
+      return;
+    }
+    if (statusEl) statusEl.textContent = "Считываю данные объявления...";
+    btn.disabled = true;
+    try {
+      const parsed = await api("/api/my/properties/parse-cian", {
+        method: "POST",
+        body: JSON.stringify({ url })
+      });
+      applyParsedCianToForm(parsed);
+      if (statusEl) {
+        statusEl.textContent =
+          "Данные заполнены. Фото не импортируются. Проверьте поля и при необходимости скорректируйте.";
+      }
+    } catch (error) {
+      if (statusEl) statusEl.textContent = error?.message || "Не удалось распознать ссылку.";
+    } finally {
+      btn.disabled = false;
+    }
+  });
   document.getElementById("openCabinetProfile")?.addEventListener("click", () => {
     location.hash = "#/cabinet/profile";
   });
@@ -4876,6 +4912,55 @@ async function renderCabinetPage(openForm = false) {
   let existingPhotoUrls = [];
   let removedPhotoUrls = [];
   const MAX_PHOTOS_PER_OBJECT = 5;
+  const cianParseStatus = () => document.getElementById("cianParseStatus");
+
+  const applyParsedCianToForm = (parsed) => {
+    const form = document.getElementById("propertyForm");
+    if (!form || !parsed || typeof parsed !== "object") return;
+    if (parsed.title && form.elements.title) {
+      form.elements.title.value = parsed.title;
+    }
+    if (parsed.address) {
+      form.elements.address.value = parsed.address;
+    }
+    if (parsed.price != null) {
+      form.elements.price.value = formatSpacedNumber(String(Math.round(Number(parsed.price))));
+    }
+    if (parsed.area != null) {
+      const areaStr = String(parsed.area).replace(".", ",");
+      form.elements.area.value = areaStr;
+    }
+    if (parsed.bedrooms != null) {
+      form.elements.bedrooms.value = formatSpacedNumber(String(Math.round(Number(parsed.bedrooms))));
+    }
+    if (parsed.floor != null) {
+      form.elements.floor.value = formatSpacedNumber(String(Math.round(Number(parsed.floor))));
+    }
+    if (parsed.totalFloors != null) {
+      form.elements.totalFloors.value = formatSpacedNumber(String(Math.round(Number(parsed.totalFloors))));
+    }
+    if (parsed.ceilingHeight != null) {
+      form.elements.ceilingHeight.value = Number(parsed.ceilingHeight).toFixed(1).replace(/\.0$/, "");
+    }
+    if (parsed.metroWalkMinutes != null) {
+      form.elements.metroWalkMinutes.value = formatSpacedNumber(String(Math.round(Number(parsed.metroWalkMinutes))));
+    }
+    if (parsed.description) {
+      form.elements.description.value = parsed.description;
+    }
+    if (parsed.lat != null && parsed.lon != null) {
+      form.elements.lat.value = String(parsed.lat);
+      form.elements.lon.value = String(parsed.lon);
+      document.getElementById("addressHint").innerHTML = `Точка определена: <strong>${escapeHtml(
+        Number(parsed.lat).toFixed(6)
+      )}, ${escapeHtml(Number(parsed.lon).toFixed(6))}</strong>`;
+    } else {
+      form.elements.lat.value = "";
+      form.elements.lon.value = "";
+      document.getElementById("addressHint").textContent =
+        "Проверьте адрес и выберите подсказку, чтобы подтвердить точку на карте.";
+    }
+  };
 
   const renderPhotoState = () => {
     const existingWrap = document.getElementById("existingPhotosWrap");
@@ -4951,6 +5036,8 @@ async function renderCabinetPage(openForm = false) {
     document.getElementById("propertyFormTitle").textContent = "Новый объект";
     document.getElementById("propertySubmitBtn").textContent = "Сохранить объект";
     document.getElementById("propertyForm").reset();
+    if (document.getElementById("cianUrlInput")) document.getElementById("cianUrlInput").value = "";
+    if (cianParseStatus()) cianParseStatus().textContent = "";
     document.getElementById("photosInput").required = false;
     renderPhotoState();
     document.getElementById("propertyFormModal")?.classList.add("open");
@@ -4969,6 +5056,8 @@ async function renderCabinetPage(openForm = false) {
     renderPhotoState();
     document.getElementById("propertyFormModal")?.classList.add("open");
     const form = document.getElementById("propertyForm");
+    if (document.getElementById("cianUrlInput")) document.getElementById("cianUrlInput").value = "";
+    if (cianParseStatus()) cianParseStatus().textContent = "";
     form.elements.address.value = property.address || "";
     form.elements.price.value = formatSpacedNumber(property.price || "");
     form.elements.area.value = String(property.area ?? "").replace(".", ",");
