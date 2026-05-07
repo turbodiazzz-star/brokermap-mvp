@@ -477,6 +477,40 @@ function resolvePropertyPhotoPath(photoUrl) {
   return null;
 }
 
+async function resolvePropertyPhotoForPdf(photoUrl) {
+  if (!photoUrl || typeof photoUrl !== "string") return null;
+  const localPath = resolvePropertyPhotoPath(photoUrl);
+  if (localPath) {
+    return { imageSource: localPath };
+  }
+  try {
+    const u = new URL(photoUrl);
+    if (!/^https?:$/i.test(u.protocol)) return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 9000);
+    let resp;
+    try {
+      resp = await fetch(u.toString(), {
+        method: "GET",
+        redirect: "follow",
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!resp.ok) return null;
+    const contentType = String(resp.headers.get("content-type") || "").toLowerCase();
+    if (!contentType.startsWith("image/")) return null;
+    const contentLength = Number(resp.headers.get("content-length") || 0);
+    if (Number.isFinite(contentLength) && contentLength > 8 * 1024 * 1024) return null;
+    const arr = await resp.arrayBuffer();
+    if (!arr.byteLength || arr.byteLength > 8 * 1024 * 1024) return null;
+    return { imageSource: Buffer.from(arr) };
+  } catch {
+    return null;
+  }
+}
+
 function normalizePdfText(value) {
   const text = String(value ?? "");
   if (!text) return "";
@@ -505,6 +539,7 @@ async function generatePresentationPdf(property) {
   const filePath = path.join(PDFS_DIR, filename);
   const doc = new PDFDocument({ size: "A4", margin: 48 });
   const unicodeFontPath = resolvePdfFontPath();
+  const mainPhotoAsset = await resolvePropertyPhotoForPdf(Array.isArray(property.photos) ? property.photos[0] : null);
 
   await new Promise((resolve, reject) => {
     const stream = fs.createWriteStream(filePath);
@@ -520,23 +555,22 @@ async function generatePresentationPdf(property) {
     const titleText = normalizePdfText(property.title || "Объект недвижимости");
     const addressText = normalizePdfText(property.address || "Адрес не указан");
     const descriptionText = normalizePdfText(property.description || "");
-    const mainPhotoPath = resolvePropertyPhotoPath(Array.isArray(property.photos) ? property.photos[0] : null);
     const pageLeft = doc.page.margins.left;
     const pageTop = doc.page.margins.top;
     const pageWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
     const pageBottom = doc.page.height - doc.page.margins.bottom;
     let y = pageTop;
 
-    if (mainPhotoPath) {
+    if (mainPhotoAsset?.imageSource) {
       try {
-        const image = doc.openImage(mainPhotoPath);
+        const image = doc.openImage(mainPhotoAsset.imageSource);
         const maxPhotoHeight = 300;
         const scale = Math.min(pageWidth / image.width, maxPhotoHeight / image.height);
         const drawWidth = image.width * scale;
         const drawHeight = image.height * scale;
         const imageX = pageLeft + (pageWidth - drawWidth) / 2;
         doc.roundedRect(pageLeft, y, pageWidth, drawHeight).fillAndStroke("#f6f8fc", "#e5eaf5");
-        doc.image(mainPhotoPath, imageX, y, { width: drawWidth, height: drawHeight });
+        doc.image(mainPhotoAsset.imageSource, imageX, y, { width: drawWidth, height: drawHeight });
         y += drawHeight + 18;
       } catch {
         /* ignore image read errors */
