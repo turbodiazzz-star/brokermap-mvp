@@ -4751,11 +4751,12 @@ async function renderCabinetPage(openForm = false) {
             <input type="hidden" name="lat" id="latInput" />
             <input type="hidden" name="lon" id="lonInput" />
             <div class="field-block field-span-2">
-              <label class="field-label" for="cianUrlInput">Ссылка на Циан (без фото)</label>
+              <label class="field-label" for="cianUrlInput">Ссылка на Циан (без фото, локальный разбор)</label>
               <div class="address-row">
                 <input id="cianUrlInput" type="url" placeholder="https://www.cian.ru/sale/flat/..." />
-                <button class="btn" type="button" id="parseCianBtn">Заполнить</button>
+                <button class="btn" type="button" id="parseCianBtn">Заполнить из текста</button>
               </div>
+              <p><textarea id="cianRawInput" placeholder="Вставьте сюда текст объявления Циан (Ctrl/Cmd+C → Ctrl/Cmd+V)"></textarea></p>
               <div id="cianParseStatus" class="note"></div>
             </div>
             <div class="field-block">
@@ -4876,35 +4877,33 @@ async function renderCabinetPage(openForm = false) {
   document.getElementById("closeCabinetPanel").addEventListener("click", () => {
     location.hash = "#/";
   });
-  document.getElementById("parseCianBtn")?.addEventListener("click", async () => {
+  document.getElementById("parseCianBtn")?.addEventListener("click", () => {
     const urlInput = document.getElementById("cianUrlInput");
+    const rawInput = document.getElementById("cianRawInput");
     const statusEl = cianParseStatus();
     const btn = document.getElementById("parseCianBtn");
-    if (!urlInput || !btn) return;
-    const url = String(urlInput.value || "").trim();
-    if (!url) {
-      if (statusEl) statusEl.textContent = "Вставьте ссылку на объявление Циан.";
+    if (!btn) return;
+    const url = String(urlInput?.value || "").trim();
+    const rawText = String(rawInput?.value || "").trim();
+    if (!rawText) {
+      if (statusEl) statusEl.textContent = "Вставьте текст объявления Циан в поле ниже.";
       return;
     }
-    if (statusEl) statusEl.textContent = "Считываю данные объявления...";
+    if (statusEl) statusEl.textContent = "Разбираю текст объявления локально...";
     btn.disabled = true;
     try {
-      const parsed = await api("/api/my/properties/parse-cian", {
-        method: "POST",
-        body: JSON.stringify({ url })
-      });
+      const parsed = parseCianTextLocally(rawText, url);
+      const hasUseful = Boolean(parsed.price || parsed.area || parsed.bedrooms || parsed.floor || parsed.address);
+      if (!hasUseful) {
+        throw new Error("Не удалось распознать поля из текста. Вставьте больше текста объявления.");
+      }
       applyParsedCianToForm(parsed);
       if (statusEl) {
         statusEl.textContent =
-          "Данные заполнены. Фото не импортируются. Проверьте поля и при необходимости скорректируйте.";
+          "Данные заполнены локально. Фото не импортируются. Проверьте поля и при необходимости скорректируйте.";
       }
     } catch (error) {
-      if (statusEl) {
-        const msg = String(error?.message || "Не удалось распознать ссылку.");
-        statusEl.textContent = msg.includes("Вы не робот")
-          ? `${msg} Попробуйте открыть объявление в браузере и подтвердить, что вы не робот, затем повторите.`
-          : msg;
-      }
+      if (statusEl) statusEl.textContent = String(error?.message || "Не удалось распознать текст объявления.");
     } finally {
       btn.disabled = false;
     }
@@ -4917,7 +4916,62 @@ async function renderCabinetPage(openForm = false) {
   let existingPhotoUrls = [];
   let removedPhotoUrls = [];
   const MAX_PHOTOS_PER_OBJECT = 5;
-  const cianParseStatus = () => document.getElementById("cianParseStatus");
+  function cianParseStatus() {
+    return document.getElementById("cianParseStatus");
+  }
+
+  const parseLocalNumber = (value) => {
+    const num = Number(
+      String(value || "")
+        .replace(/[₽\s\u00A0]/g, "")
+        .replace(",", ".")
+    );
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const parseCianTextLocally = (rawText, cianUrl = "") => {
+    const text = String(rawText || "").replace(/\r/g, "");
+    const lines = text
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const firstLine = lines[0] || "";
+    const readBy = (patterns) => {
+      for (const re of patterns) {
+        const m = text.match(re);
+        if (m && m[1] != null) return m[1];
+      }
+      return null;
+    };
+    const priceRaw = readBy([/([\d\s]{5,})\s*₽/i, /цена[^0-9]{0,18}([\d\s]+)/i, /стоимость[^0-9]{0,18}([\d\s]+)/i]);
+    const areaRaw = readBy([/([\d.,]+)\s*м²/i, /площадь[^0-9]{0,18}([\d.,]+)/i]);
+    const roomsRaw = readBy([/(\d+)\s*-\s*комн/i, /комнат[^0-9]{0,18}(\d+)/i]);
+    const floorAndFloors = text.match(/(\d+)\s*(?:из|\/)\s*(\d+)/i);
+    const floorRaw = floorAndFloors?.[1] || readBy([/этаж[^0-9]{0,18}(\d+)/i]);
+    const floorsRaw = floorAndFloors?.[2] || readBy([/этажей[^0-9]{0,18}(\d+)/i, /этажность[^0-9]{0,18}(\d+)/i]);
+    const ceilRaw = readBy([/высота потолков[^0-9]{0,18}([\d.,]+)/i, /потолк[^0-9]{0,18}([\d.,]+)/i]);
+    const metroRaw = readBy([/пешком[^0-9]{0,12}(\d+)\s*мин/i, /до метро[^0-9]{0,12}(\d+)\s*мин/i]);
+    const addressRaw =
+      readBy([/(Москва[^.\n]{8,160})/i, /(Санкт-?Петербург[^.\n]{8,160})/i]) ||
+      firstLine.match(/^(Москва|Санкт-?Петербург).*/i)?.[0] ||
+      "";
+    return {
+      source: "cian-local-text",
+      sourceUrl: String(cianUrl || "").trim(),
+      title: firstLine,
+      address: addressRaw,
+      price: parseLocalNumber(priceRaw),
+      area: parseLocalNumber(areaRaw),
+      bedrooms: parseLocalNumber(roomsRaw),
+      floor: parseLocalNumber(floorRaw),
+      totalFloors: parseLocalNumber(floorsRaw),
+      ceilingHeight: parseLocalNumber(ceilRaw),
+      metroWalkMinutes: parseLocalNumber(metroRaw),
+      lat: null,
+      lon: null,
+      description: text
+    };
+  };
 
   const applyParsedCianToForm = (parsed) => {
     const form = document.getElementById("propertyForm");
@@ -5042,6 +5096,7 @@ async function renderCabinetPage(openForm = false) {
     document.getElementById("propertySubmitBtn").textContent = "Сохранить объект";
     document.getElementById("propertyForm").reset();
     if (document.getElementById("cianUrlInput")) document.getElementById("cianUrlInput").value = "";
+    if (document.getElementById("cianRawInput")) document.getElementById("cianRawInput").value = "";
     if (cianParseStatus()) cianParseStatus().textContent = "";
     document.getElementById("photosInput").required = false;
     renderPhotoState();
@@ -5062,6 +5117,7 @@ async function renderCabinetPage(openForm = false) {
     document.getElementById("propertyFormModal")?.classList.add("open");
     const form = document.getElementById("propertyForm");
     if (document.getElementById("cianUrlInput")) document.getElementById("cianUrlInput").value = "";
+    if (document.getElementById("cianRawInput")) document.getElementById("cianRawInput").value = "";
     if (cianParseStatus()) cianParseStatus().textContent = "";
     form.elements.address.value = property.address || "";
     form.elements.price.value = formatSpacedNumber(property.price || "");
