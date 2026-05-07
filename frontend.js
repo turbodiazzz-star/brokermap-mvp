@@ -1300,17 +1300,15 @@ function getSheetGeometry(panel) {
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
     /** Большой зазор перед второй карточкой — иначе торчит превью во «втором» ряду (овал на скрине). */
-    const gapBefore2ndCard = altIOS ? 38 : 56;
+    const gapBefore2ndCard = altIOS ? 34 : 48;
     const hi = secondCard ? Math.max(lo, secondTopFromTrack - gapBefore2ndCard) : H;
     const navTapPad = Math.min(38, Math.round(navH * 0.44));
     const openUiPad = Math.min(58, navOverlapPanel + 12 + (altIOS ? Math.max(18, browserExtraBottom + 8) : 0));
     const floorCard = Math.ceil(firstBottomFromTrackTop + 20) + navTapPad + openUiPad;
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.625 : 0.57));
-    let merged = Math.min(hi, Math.max(floorCard, Math.min(aimStart, hi)));
-    if (secondCard) {
-      const hardCeil = secondTopFromTrack - gapBefore2ndCard - 4;
-      merged = Math.min(merged, hardCeil);
-    }
+    const aimStart = Math.round(baseUsable * (altIOS ? 0.69 : 0.64));
+    // Критично: на старте первая карточка (включая кнопки) должна быть видна целиком.
+    // Поэтому floorCard — жёсткий минимум, даже если это частично открывает 2-ю карточку.
+    let merged = Math.max(floorCard, Math.min(aimStart, hi));
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
       const footerTop = listFooter.offsetTop + scrollEl.offsetTop + scrollPad;
