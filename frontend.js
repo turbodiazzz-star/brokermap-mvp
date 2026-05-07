@@ -1534,6 +1534,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const track = panel.querySelector("[data-sheet-track]");
     if (!track || !track.contains(e.target)) return;
     if (e.target.closest("button.close-left-panel")) return;
+    if (e.target.closest("[data-sheet-back-first]")) return;
     if (e.target.closest("a[href], input, textarea, select, label")) return;
 
     const s = sheetNode();
@@ -1684,6 +1685,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     const s = sheetNode();
     const g = getSheetGeometry(panel);
     if (!s || !g) return;
+    sheetDragInterruptGen += 1;
     const target = clampSheetT(g.yHalf, g);
     const from = clampSheetT(getPanelTranslateY(s), g);
     animateSheetToY(
