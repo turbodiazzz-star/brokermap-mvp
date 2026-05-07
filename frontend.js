@@ -1410,11 +1410,9 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       state.panelSheetOpenOffset = 0;
     }
     const lay = layout();
-    if (lay) {
+    if (lay && lastCollapsedUi !== atPeek) {
       if (atPeek) lay.classList.add("collapsed");
       else lay.classList.remove("collapsed");
-    }
-    if (lastCollapsedUi !== atPeek) {
       lastCollapsedUi = atPeek;
     }
   };
@@ -1423,8 +1421,19 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   const finishMobileSheetRelease = (s, normalizedT, vy, g) => {
     const gen = sheetDragInterruptGen;
     const V_STAY = 0.12;
+    const V_FAST = 1.0;
     s.classList.remove("left-panel--sheet-live");
     const ty0 = clampSheetT(normalizedT, g);
+    if (Number.isFinite(vy) && Math.abs(vy) >= V_FAST) {
+      // Резкий свайп: быстрый предсказуемый снап (быстрее и стабильнее по fps, чем длинная инерция).
+      const snapTarget = vy > 0 ? g.yPeek : g.yHalf;
+      const snapT = clampSheetT(snapTarget, g);
+      setPanelTranslateY(s, snapT, true, 220);
+      commitSheetState(snapT, g);
+      if (state.panelCollapsed) state.panelSheetT = g.yPeek;
+      else state.panelSheetT = snapT;
+      return;
+    }
     if (gestureStartedFromPeek && ty0 < g.yPeek - 10) {
       // Первый подъём из свёрнутого: мягко фиксируем в "стартовом" положении, не даём улетать в самый верх.
       const mid = clampSheetT(g.yHalf, g);
@@ -1504,7 +1513,6 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     lastMoveTs = performance.now();
     velocityY = 0;
     dragMaxAbsDy = 0;
-    gestureStartedFromPeek = false;
     mode = "decide";
     activeId = e.pointerId;
   };
@@ -1544,14 +1552,16 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     if (snappedInner < g.yPeek - 4) {
       state.panelCollapsed = false;
       const lay = layout();
-      lay?.classList.remove("collapsed");
-      if (lastCollapsedUi) lastCollapsedUi = false;
+      if (lay && lastCollapsedUi) {
+        lay.classList.remove("collapsed");
+        lastCollapsedUi = false;
+      }
     }
 
     const now = performance.now();
     const dt = Math.max(1, now - lastMoveTs);
     const vy = (e.clientY - lastMoveY) / dt;
-    velocityY = velocityY * 0.25 + vy * 0.75;
+    velocityY = velocityY * 0.18 + vy * 0.82;
     lastMoveY = e.clientY;
     lastMoveTs = now;
   };
