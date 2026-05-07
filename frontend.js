@@ -1293,17 +1293,20 @@ function getSheetGeometry(panel) {
     const mb = Math.ceil(parseFloat(cs.marginBottom) || 0);
     const firstBottomFromTrackTop =
       firstCard.offsetTop + scrollEl.offsetTop + scrollPad + firstCard.offsetHeight + mb;
+    const actionsEl = firstCard.querySelector(".card-actions");
+    const actionsBottomFromTrackTop = actionsEl
+      ? firstCard.offsetTop + scrollEl.offsetTop + scrollPad + actionsEl.offsetTop + actionsEl.offsetHeight
+      : firstBottomFromTrackTop - Math.max(8, mb);
     const cards = scrollEl.querySelectorAll("article.card, .card");
     const secondCard = cards[1] || null;
-    // Старт: показываем первую карточку полностью, но без "подглядывания" второй.
-    // Не завышаем floor на всю высоту браузерных панелей.
-    const minFloor = Math.ceil(firstBottomFromTrackTop + 2);
+    // Старт: показываем первую карточку до кнопок, но без подглядывания второй.
+    const minFloor = Math.ceil(actionsBottomFromTrackTop + 6);
     const secondTopFromTrack = secondCard
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
-    const gapBefore2ndCard = altIOS ? 76 : 68;
+    const gapBefore2ndCard = altIOS ? 58 : 54;
     const hi = secondCard ? Math.max(minFloor, secondTopFromTrack - gapBefore2ndCard) : H;
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.49 : 0.47));
+    const aimStart = Math.round(baseUsable * (altIOS ? 0.46 : 0.45));
     let merged = Math.min(hi, Math.max(minFloor, Math.min(aimStart, hi)));
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
@@ -1314,7 +1317,7 @@ function getSheetGeometry(panel) {
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
     const floorList = Math.round(headStrip + cardH + 4);
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.49 : 0.47));
+    const aimStart = Math.round(baseUsable * (altIOS ? 0.46 : 0.45));
     targetOpenVis = Math.min(H, Math.max(floorList, Math.min(aimStart, H)));
   }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));
