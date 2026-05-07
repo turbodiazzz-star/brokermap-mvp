@@ -1301,9 +1301,9 @@ function getSheetGeometry(panel) {
     const secondTopFromTrack = secondCard
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
-    const gapBefore2ndCard = altIOS ? 52 : 46;
+    const gapBefore2ndCard = altIOS ? 76 : 68;
     const hi = secondCard ? Math.max(minFloor, secondTopFromTrack - gapBefore2ndCard) : H;
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.53 : 0.51));
+    const aimStart = Math.round(baseUsable * (altIOS ? 0.49 : 0.47));
     let merged = Math.min(hi, Math.max(minFloor, Math.min(aimStart, hi)));
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
@@ -1314,7 +1314,7 @@ function getSheetGeometry(panel) {
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
     const floorList = Math.round(headStrip + cardH + 4);
-    const aimStart = Math.round(baseUsable * (altIOS ? 0.53 : 0.51));
+    const aimStart = Math.round(baseUsable * (altIOS ? 0.49 : 0.47));
     targetOpenVis = Math.min(H, Math.max(floorList, Math.min(aimStart, H)));
   }
   const halfT = Math.max(0, Math.round(H - targetOpenVis));
