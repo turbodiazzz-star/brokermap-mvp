@@ -861,11 +861,13 @@ body.view-map #app {
   cursor: pointer;
 }
 
-#galleryPrevBtn {
+#galleryPrevBtn,
+#cardGalleryPrevBtn {
   left: 18px;
 }
 
-#galleryNextBtn {
+#galleryNextBtn,
+#cardGalleryNextBtn {
   right: 18px;
 }
 
@@ -2040,11 +2042,13 @@ textarea {
     height: 40px;
   }
 
-  #galleryPrevBtn {
+  #galleryPrevBtn,
+  #cardGalleryPrevBtn {
     left: 8px;
   }
 
-  #galleryNextBtn {
+  #galleryNextBtn,
+  #cardGalleryNextBtn {
     right: 8px;
   }
 

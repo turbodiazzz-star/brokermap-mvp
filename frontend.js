@@ -10,6 +10,8 @@ const state = {
   panelSheetT: null,
   /** На сколько px лист раскрыт выше свёрнутого yPeek (для стабильной высоты при смене списка). */
   panelSheetOpenOffset: null,
+  /** Пользователь вручную двигал шторку в текущем экране. */
+  panelSheetUserMoved: false,
   panelSheetInitialized: false,
   panelCollapsedBeforeCabinet: null,
   panelSheetTBeforeCabinet: null,
@@ -827,9 +829,9 @@ function cardMarkup(property) {
   const commissionRub = (Number(property.price || 0) * pct) / 100;
   const premium = property.commissionPartner >= 4;
   return `
-    <article class="card card--feed ${premium ? "premium" : ""}">
+    <article class="card card--feed ${premium ? "premium" : ""}" data-card-id="${escapeHtml(property.id)}">
       <div class="card-media">
-        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
+        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" data-card-gallery="1" data-gallery-index="0" data-id="${escapeHtml(property.id)}" />
         ${propertyFeedPhotoDots(property)}
       </div>
       <div class="card-badges">
@@ -963,9 +965,9 @@ function demoCardMarkup(item) {
   const commissionRub = (Number(item.price || 0) * pct) / 100;
   const premium = item.commissionPartner >= 4;
   return `
-    <article class="card card--feed ${premium ? "premium" : ""}">
+    <article class="card card--feed ${premium ? "premium" : ""}" data-card-id="${escapeHtml(item.id)}">
       <div class="card-media">
-        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
+        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" data-card-gallery="1" data-gallery-index="0" data-id="${escapeHtml(item.id)}" />
         ${propertyFeedPhotoDots(item)}
       </div>
       <div class="card-badges">
@@ -997,6 +999,89 @@ function bindDemoCardButtons(root = document) {
       goToAuthFromGuestDemo("#/auth-register");
     });
   });
+}
+
+function getCardGalleryPropertyById(id) {
+  const sid = String(id || "").trim();
+  if (!sid) return null;
+  const inPrimary = (state.properties || []).find((p) => String(p?.id || "") === sid);
+  if (inPrimary) return inPrimary;
+  const inDemo = (state.demoAllProperties || []).find((p) => String(p?.id || "") === sid);
+  if (inDemo) return inDemo;
+  return null;
+}
+
+function ensureCardGalleryLightbox() {
+  let lightbox = document.getElementById("cardGalleryLightbox");
+  if (lightbox) return lightbox;
+  lightbox = document.createElement("div");
+  lightbox.className = "gallery-lightbox";
+  lightbox.id = "cardGalleryLightbox";
+  lightbox.innerHTML = `
+    <button class="gallery-lightbox-close" id="cardGalleryCloseBtn" aria-label="Закрыть">×</button>
+    <button class="gallery-lightbox-nav" id="cardGalleryPrevBtn" aria-label="Предыдущее фото">‹</button>
+    <img id="cardGalleryLightboxImage" class="gallery-lightbox-image" src="${PLACEHOLDER_IMAGE_URL}" alt="Фото объекта" />
+    <button class="gallery-lightbox-nav" id="cardGalleryNextBtn" aria-label="Следующее фото">›</button>
+    <div class="gallery-lightbox-counter" id="cardGalleryCounter">1 / 1</div>
+  `;
+  document.body.appendChild(lightbox);
+  return lightbox;
+}
+
+function openCardGallery(photos, startIndex = 0) {
+  const safePhotos = (photos || []).length ? photos : [PLACEHOLDER_IMAGE_URL];
+  const lightbox = ensureCardGalleryLightbox();
+  const image = document.getElementById("cardGalleryLightboxImage");
+  const counter = document.getElementById("cardGalleryCounter");
+  const closeBtn = document.getElementById("cardGalleryCloseBtn");
+  const prevBtn = document.getElementById("cardGalleryPrevBtn");
+  const nextBtn = document.getElementById("cardGalleryNextBtn");
+  if (!image || !counter || !closeBtn || !prevBtn || !nextBtn) return;
+  if (lightbox.dataset.bound !== "1") {
+    const close = () => {
+      lightbox.classList.remove("open");
+      document.body.classList.remove("modal-open");
+    };
+    closeBtn.addEventListener("click", close);
+    lightbox.addEventListener("click", (event) => {
+      if (event.target === lightbox) close();
+    });
+    lightbox.dataset.bound = "1";
+  }
+  let index = Math.max(0, Math.min(Number(startIndex) || 0, safePhotos.length - 1));
+  const render = () => {
+    image.src = optimizePhotoSrc(safePhotos[index] || PLACEHOLDER_IMAGE_URL, "gallery");
+    counter.textContent = `${index + 1} / ${safePhotos.length}`;
+    prevBtn.style.display = safePhotos.length > 1 ? "inline-flex" : "none";
+    nextBtn.style.display = safePhotos.length > 1 ? "inline-flex" : "none";
+  };
+  prevBtn.onclick = () => {
+    index = (index - 1 + safePhotos.length) % safePhotos.length;
+    render();
+  };
+  nextBtn.onclick = () => {
+    index = (index + 1) % safePhotos.length;
+    render();
+  };
+  render();
+  lightbox.classList.add("open");
+  document.body.classList.add("modal-open");
+}
+
+function bindCardGallery(root = document) {
+  if (!root || root.dataset.cardGalleryBound === "1") return;
+  root.addEventListener("click", (event) => {
+    const img = event.target.closest("img[data-card-gallery='1']");
+    if (!img || !root.contains(img)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const id = String(img.dataset.id || img.closest("[data-card-id]")?.dataset.cardId || "").trim();
+    const property = getCardGalleryPropertyById(id);
+    if (!property) return;
+    const startIndex = Number(img.dataset.galleryIndex || 0);
+    openCardGallery(property.photos || [], startIndex);
+  });
+  root.dataset.cardGalleryBound = "1";
 }
 
 function leftPanelHandleHtml(handleAreaId) {
@@ -1320,13 +1405,15 @@ function getSheetGeometry(panel) {
     // 2) вторая карточка на старте не видна совсем (0px).
     // Для iOS Chrome/Yandex добавляем небольшой стабильный запас,
     // т.к. их нижний UI часто перекрывает больше, чем показывает viewport.
-    const minForFirstButtons = Math.ceil(actionsBottomFromTrackTop - 18 + Math.min(10, navOverlapEffective));
+    const minForFirstButtons = Math.ceil(actionsBottomFromTrackTop - 14 + Math.min(14, navOverlapEffective));
     const maxWithoutSecondPeek = secondCard ? Math.ceil(secondTopFromTrack - 40) : H;
-    const aimStart = Math.round(baseUsable * 0.43);
+    const aimStart = Math.round(baseUsable * 0.45);
+    const browserStartBonus = altIOS ? (yandexMobile ? 22 : chromeIOS ? 18 : 14) : 0;
     let merged = Math.min(maxWithoutSecondPeek, Math.max(minForFirstButtons, Math.min(aimStart, maxWithoutSecondPeek)));
     if (secondCard && minForFirstButtons > maxWithoutSecondPeek) {
       merged = maxWithoutSecondPeek;
     }
+    merged = Math.min(maxWithoutSecondPeek, merged + browserStartBonus);
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
       const footerTop = listFooter.offsetTop + scrollEl.offsetTop + scrollPad;
@@ -1424,6 +1511,7 @@ function resetMobileSheetLandingState() {
   state.panelSheetInitialized = false;
   state.panelSheetT = null;
   state.panelSheetOpenOffset = null;
+  state.panelSheetUserMoved = false;
   state.panelCollapsed = false;
   state.mapViewportListSig = "";
   state.demoViewportListSig = "";
@@ -1634,6 +1722,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     if (!s || !g) return;
 
     dragMaxAbsDy = Math.max(dragMaxAbsDy, Math.abs(e.clientY - startY));
+    if (dragMaxAbsDy > 10) state.panelSheetUserMoved = true;
     e.preventDefault();
     const tRaw = startSheetT + (e.clientY - startY);
     const tRub = sheetDragRubberTranslate(tRaw, g);
@@ -1721,7 +1810,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     "click",
     (ev) => {
       if (panel.dataset.sheetJustDragged !== "1") return;
-      if (ev.target.closest(".open-object, .open-demo-object")) {
+      if (ev.target.closest(".open-object, .open-demo-object, [data-card-gallery='1']")) {
         ev.preventDefault();
         ev.stopPropagation();
       }
@@ -1751,6 +1840,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
         const y = clampSheetT(yFinal, g);
         commitSheetState(y, g);
         state.panelSheetT = y;
+        state.panelSheetUserMoved = true;
       }
     );
   });
@@ -1856,6 +1946,7 @@ function bindMobileBottomNavActions() {
         state.panelCollapsed = false;
         state.panelSheetT = null;
         state.panelSheetOpenOffset = null;
+        state.panelSheetUserMoved = false;
         state.panelSheetInitialized = false;
         state.panelCollapsedBeforeCabinet = null;
         state.panelSheetTBeforeCabinet = null;
@@ -1919,6 +2010,8 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
       let t;
       if (state.panelCollapsed) {
         t = clampSheetT(g.yPeek, g);
+      } else if (!state.panelSheetUserMoved) {
+        t = clampSheetT(g.yHalf, g);
       } else if (state.panelSheetT != null && Number.isFinite(state.panelSheetT)) {
         const hasOffset = Number.isFinite(state.panelSheetOpenOffset);
         const fromOffset = hasOffset ? g.yPeek - Number(state.panelSheetOpenOffset) : state.panelSheetT;
@@ -1958,6 +2051,7 @@ function scheduleMobileSheetReflow(panel, layout, opts = {}) {
       state.panelSheetInitialized = false;
       state.panelSheetT = null;
       state.panelSheetOpenOffset = null;
+      state.panelSheetUserMoved = false;
     }
     mobileSheetSettleAfterRender(panel, layout, false);
   };
@@ -1976,6 +2070,7 @@ function resetMobileSheetForMapReady() {
   state.panelSheetInitialized = false;
   state.panelSheetT = null;
   state.panelSheetOpenOffset = null;
+  state.panelSheetUserMoved = false;
 }
 
 function mapCollapseLeftPanel() {
@@ -2024,6 +2119,7 @@ function openMapLeftPanel() {
   state.panelCollapsed = false;
   state.panelSheetT = null;
   state.panelSheetOpenOffset = null;
+  state.panelSheetUserMoved = false;
   state.mapLeftPanelMode = null;
   state.mapViewportListSig = "";
   state.mapAreaListSig = "";
@@ -2126,6 +2222,7 @@ function renderDemoPanel(list, title, opts = {}) {
   else {
     state.panelSheetT = null;
     state.panelSheetOpenOffset = null;
+    state.panelSheetUserMoved = false;
     if (window.matchMedia("(max-width: 900px)").matches) {
       state.panelSheetInitialized = false;
     }
@@ -2142,6 +2239,7 @@ function renderDemoPanel(list, title, opts = {}) {
     demoCollapseLeftPanel();
   });
   bindDemoCardButtons(panel);
+  bindCardGallery(panel);
   primeMobileSheetAfterPanelHtml(panel);
   bindSheetReflowOnImages(panel, "demoMapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"), false);
@@ -2430,6 +2528,7 @@ function renderPublicDemoPage() {
     state.panelCollapsed = false;
     state.panelSheetT = null;
     state.panelSheetOpenOffset = null;
+    state.panelSheetUserMoved = false;
     state.demoLeftPanelMode = null;
     state.demoViewportListSig = "";
     state.demoAreaListSig = "";
@@ -2664,6 +2763,7 @@ function renderMapPage() {
     state.panelCollapsed = false;
     state.panelSheetT = null;
     state.panelSheetOpenOffset = null;
+    state.panelSheetUserMoved = false;
     clearAreaFilter();
     renderMapPage();
   });
@@ -2720,6 +2820,7 @@ function renderAreaSelectionPanel(list) {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  bindCardGallery(panel);
   bindSheetReflowOnImages(panel, "mapLayout");
   primeMobileSheetAfterPanelHtml(panel);
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
@@ -2769,6 +2870,7 @@ function renderViewportPanel() {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  bindCardGallery(panel);
   bindSheetReflowOnImages(panel, "mapLayout");
   primeMobileSheetAfterPanelHtml(panel);
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
@@ -3176,6 +3278,7 @@ function showGroup(properties) {
   state.mapLeftPanelMode = "group";
   state.panelSheetT = null;
   state.panelSheetOpenOffset = null;
+  state.panelSheetUserMoved = false;
   if (window.matchMedia("(max-width: 900px)").matches) {
     state.panelSheetInitialized = false;
   }
@@ -3200,6 +3303,7 @@ function showGroup(properties) {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
+  bindCardGallery(panel);
   bindSheetReflowOnImages(panel, "mapLayout");
   scheduleMobileSheetReflow(panel, document.getElementById("mapLayout"));
   requestAnimationFrame(() => {
