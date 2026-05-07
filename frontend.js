@@ -56,7 +56,11 @@ const state = {
   /** увеличивать, чтобы сбросить кэш демо после смены логики точек/адресов */
   demoDataVersion: 0,
   /** При входе/регистрации с демо-карты или карточки демо — куда вернуться после закрытия оверлея */
-  authOverlayReturnHash: null
+  authOverlayReturnHash: null,
+  /** Снимок положения шторки перед переходом в карточку объекта. */
+  sheetReturnState: null,
+  /** Однократный пропуск resetMobileSheetLandingState для восстановления положения после возврата. */
+  skipSheetLandingResetOnce: false
 };
 
 function emptyFilters() {
@@ -985,7 +989,11 @@ function demoCardMarkup(item) {
 function bindDemoCardButtons(root = document) {
   root.querySelectorAll(".open-demo-object").forEach((btn) => {
     btn.addEventListener("click", () => {
-      location.hash = `#/demo/property/${encodeURIComponent(btn.dataset.id)}`;
+      captureSheetReturnStateFromPanel(root, true);
+      navigateToSheetCard(
+        `#/demo/property/${encodeURIComponent(btn.dataset.id)}`,
+        btn.closest("article.card.card--feed")
+      );
     });
   });
   root.querySelectorAll(".open-demo-contacts").forEach((btn) => {
@@ -1035,6 +1043,55 @@ function endSheetRouteTransition() {
   overlay?.classList.remove("visible");
 }
 
+function captureSheetReturnStateFromPanel(panel, isDemo) {
+  if (!panel || !window.matchMedia("(max-width: 900px)").matches) return;
+  const sheet = getSheetNode(panel);
+  if (!sheet) return;
+  const layout = panel.closest(".map-layout");
+  const geometry = getSheetGeometry(panel);
+  let y = getPanelTranslateY(sheet);
+  if (geometry && Number.isFinite(y)) {
+    y = clampSheetT(y, geometry);
+  }
+  const collapsed = Boolean(state.panelCollapsed || layout?.classList.contains("collapsed"));
+  state.sheetReturnState = {
+    isDemo: Boolean(isDemo),
+    targetHash: "#/",
+    panelCollapsed: collapsed,
+    panelSheetT: Number.isFinite(y) ? y : null,
+    panelSheetOpenOffset:
+      geometry && Number.isFinite(y)
+        ? Math.max(0, Math.round(geometry.yPeek - y))
+        : Number.isFinite(state.panelSheetOpenOffset)
+          ? state.panelSheetOpenOffset
+          : collapsed
+            ? 0
+            : null,
+    panelSheetUserMoved: Boolean(state.panelSheetUserMoved),
+    panelSheetInitialized: true
+  };
+}
+
+function consumeSheetReturnState(isDemo) {
+  const snap = state.sheetReturnState;
+  if (!snap || Boolean(snap.isDemo) !== Boolean(isDemo)) return null;
+  state.sheetReturnState = null;
+  return snap;
+}
+
+function applySheetReturnState(snapshot) {
+  if (!snapshot) return;
+  state.panelCollapsed = Boolean(snapshot.panelCollapsed);
+  state.panelSheetT = Number.isFinite(snapshot.panelSheetT) ? snapshot.panelSheetT : null;
+  state.panelSheetOpenOffset = Number.isFinite(snapshot.panelSheetOpenOffset)
+    ? snapshot.panelSheetOpenOffset
+    : state.panelCollapsed
+      ? 0
+      : null;
+  state.panelSheetUserMoved = Boolean(snapshot.panelSheetUserMoved);
+  state.panelSheetInitialized = Boolean(snapshot.panelSheetInitialized);
+}
+
 function navigateToSheetCard(hash, cardEl) {
   beginSheetRouteTransition(cardEl);
   window.setTimeout(() => {
@@ -1059,6 +1116,7 @@ function bindSheetCardOpenByTap(root, opts = {}) {
       const id = String(card.dataset.cardOpenId || "").trim();
       if (!id) return;
       const target = isDemo ? `#/demo/property/${encodeURIComponent(id)}` : `#/property/${encodeURIComponent(id)}`;
+      captureSheetReturnStateFromPanel(root, isDemo);
       navigateToSheetCard(target, card);
     });
   });
@@ -1488,6 +1546,10 @@ function rememberSheetPosition(panel) {
 /** Старт / возврат на карту или демо: всегда применяем «пол-экрана», не тянем старый translate с пустой панели. */
 function resetMobileSheetLandingState() {
   if (!window.matchMedia("(max-width: 900px)").matches) return;
+  if (state.skipSheetLandingResetOnce) {
+    state.skipSheetLandingResetOnce = false;
+    return;
+  }
   state.panelSheetInitialized = false;
   state.panelSheetT = null;
   state.panelSheetOpenOffset = null;
@@ -2635,7 +2697,12 @@ function renderDemoPropertyPage(id) {
     </div>
   `;
   document.getElementById("backToDemoBtn")?.addEventListener("click", () => {
-    location.hash = "#/";
+    const snap = consumeSheetReturnState(true);
+    if (snap) {
+      applySheetReturnState(snap);
+      state.skipSheetLandingResetOnce = true;
+    }
+    location.hash = (snap && snap.targetHash) || "#/";
   });
   document.getElementById("demoToAuthBtn")?.addEventListener("click", () => {
     goToAuthFromGuestDemo("#/auth-register");
@@ -2879,7 +2946,8 @@ function renderAreaSelectionPanel(list) {
   });
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
-      location.hash = `#/property/${btn.dataset.id}`;
+      captureSheetReturnStateFromPanel(panel, false);
+      navigateToSheetCard(`#/property/${btn.dataset.id}`, btn.closest("article.card.card--feed"));
     });
   });
   bindSheetCardOpenByTap(panel, { isDemo: false });
@@ -2929,7 +2997,8 @@ function renderViewportPanel() {
   });
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
-      location.hash = `#/property/${btn.dataset.id}`;
+      captureSheetReturnStateFromPanel(panel, false);
+      navigateToSheetCard(`#/property/${btn.dataset.id}`, btn.closest("article.card.card--feed"));
     });
   });
   bindSheetCardOpenByTap(panel, { isDemo: false });
@@ -3362,7 +3431,8 @@ function showGroup(properties) {
   ensureMapDrawControls();
   panel.querySelectorAll(".open-object").forEach((btn) => {
     btn.addEventListener("click", () => {
-      location.hash = `#/property/${btn.dataset.id}`;
+      captureSheetReturnStateFromPanel(panel, false);
+      navigateToSheetCard(`#/property/${btn.dataset.id}`, btn.closest("article.card.card--feed"));
     });
   });
   bindSheetCardOpenByTap(panel, { isDemo: false });
@@ -3690,7 +3760,12 @@ async function renderPropertyPage(id) {
   `;
   bindBrandHomeButton();
   document.getElementById("goBack").addEventListener("click", () => {
-    location.hash = "#/";
+    const snap = consumeSheetReturnState(false);
+    if (snap) {
+      applySheetReturnState(snap);
+      state.skipSheetLandingResetOnce = true;
+    }
+    location.hash = (snap && snap.targetHash) || "#/";
   });
   document.getElementById("generatePdfBtn")?.addEventListener("click", async () => {
     const button = document.getElementById("generatePdfBtn");
@@ -4751,12 +4826,11 @@ async function renderCabinetPage(openForm = false) {
             <input type="hidden" name="lat" id="latInput" />
             <input type="hidden" name="lon" id="lonInput" />
             <div class="field-block field-span-2">
-              <label class="field-label" for="cianUrlInput">Ссылка на Циан (без фото, локальный разбор)</label>
+              <label class="field-label" for="cianUrlInput">Ссылка на Циан (без фото)</label>
               <div class="address-row">
                 <input id="cianUrlInput" type="url" placeholder="https://www.cian.ru/sale/flat/..." />
-                <button class="btn" type="button" id="parseCianBtn">Заполнить из текста</button>
+                <button class="btn" type="button" id="parseCianBtn">Заполнить</button>
               </div>
-              <p><textarea id="cianRawInput" placeholder="Вставьте сюда текст объявления Циан (Ctrl/Cmd+C → Ctrl/Cmd+V)"></textarea></p>
               <div id="cianParseStatus" class="note"></div>
             </div>
             <div class="field-block">
@@ -4877,33 +4951,35 @@ async function renderCabinetPage(openForm = false) {
   document.getElementById("closeCabinetPanel").addEventListener("click", () => {
     location.hash = "#/";
   });
-  document.getElementById("parseCianBtn")?.addEventListener("click", () => {
+  document.getElementById("parseCianBtn")?.addEventListener("click", async () => {
     const urlInput = document.getElementById("cianUrlInput");
-    const rawInput = document.getElementById("cianRawInput");
     const statusEl = cianParseStatus();
     const btn = document.getElementById("parseCianBtn");
-    if (!btn) return;
-    const url = String(urlInput?.value || "").trim();
-    const rawText = String(rawInput?.value || "").trim();
-    if (!rawText) {
-      if (statusEl) statusEl.textContent = "Вставьте текст объявления Циан в поле ниже.";
+    if (!urlInput || !btn) return;
+    const url = String(urlInput.value || "").trim();
+    if (!url) {
+      if (statusEl) statusEl.textContent = "Вставьте ссылку на объявление Циан.";
       return;
     }
-    if (statusEl) statusEl.textContent = "Разбираю текст объявления локально...";
+    if (statusEl) statusEl.textContent = "Считываю данные объявления...";
     btn.disabled = true;
     try {
-      const parsed = parseCianTextLocally(rawText, url);
-      const hasUseful = Boolean(parsed.price || parsed.area || parsed.bedrooms || parsed.floor || parsed.address);
-      if (!hasUseful) {
-        throw new Error("Не удалось распознать поля из текста. Вставьте больше текста объявления.");
-      }
+      const parsed = await api("/api/my/properties/parse-cian", {
+        method: "POST",
+        body: JSON.stringify({ url })
+      });
       applyParsedCianToForm(parsed);
       if (statusEl) {
         statusEl.textContent =
-          "Данные заполнены локально. Фото не импортируются. Проверьте поля и при необходимости скорректируйте.";
+          "Данные заполнены. Фото не импортируются. Проверьте поля и при необходимости скорректируйте.";
       }
     } catch (error) {
-      if (statusEl) statusEl.textContent = String(error?.message || "Не удалось распознать текст объявления.");
+      if (statusEl) {
+        const msg = String(error?.message || "Не удалось распознать ссылку.");
+        statusEl.textContent = msg.includes("Вы не робот")
+          ? `${msg} Попробуйте открыть объявление в браузере и подтвердить, что вы не робот, затем повторите.`
+          : msg;
+      }
     } finally {
       btn.disabled = false;
     }
@@ -4920,58 +4996,6 @@ async function renderCabinetPage(openForm = false) {
     return document.getElementById("cianParseStatus");
   }
 
-  const parseLocalNumber = (value) => {
-    const num = Number(
-      String(value || "")
-        .replace(/[₽\s\u00A0]/g, "")
-        .replace(",", ".")
-    );
-    return Number.isFinite(num) ? num : null;
-  };
-
-  const parseCianTextLocally = (rawText, cianUrl = "") => {
-    const text = String(rawText || "").replace(/\r/g, "");
-    const lines = text
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean);
-    const firstLine = lines[0] || "";
-    const readBy = (patterns) => {
-      for (const re of patterns) {
-        const m = text.match(re);
-        if (m && m[1] != null) return m[1];
-      }
-      return null;
-    };
-    const priceRaw = readBy([/([\d\s]{5,})\s*₽/i, /цена[^0-9]{0,18}([\d\s]+)/i, /стоимость[^0-9]{0,18}([\d\s]+)/i]);
-    const areaRaw = readBy([/([\d.,]+)\s*м²/i, /площадь[^0-9]{0,18}([\d.,]+)/i]);
-    const roomsRaw = readBy([/(\d+)\s*-\s*комн/i, /комнат[^0-9]{0,18}(\d+)/i]);
-    const floorAndFloors = text.match(/(\d+)\s*(?:из|\/)\s*(\d+)/i);
-    const floorRaw = floorAndFloors?.[1] || readBy([/этаж[^0-9]{0,18}(\d+)/i]);
-    const floorsRaw = floorAndFloors?.[2] || readBy([/этажей[^0-9]{0,18}(\d+)/i, /этажность[^0-9]{0,18}(\d+)/i]);
-    const ceilRaw = readBy([/высота потолков[^0-9]{0,18}([\d.,]+)/i, /потолк[^0-9]{0,18}([\d.,]+)/i]);
-    const metroRaw = readBy([/пешком[^0-9]{0,12}(\d+)\s*мин/i, /до метро[^0-9]{0,12}(\d+)\s*мин/i]);
-    const addressRaw =
-      readBy([/(Москва[^.\n]{8,160})/i, /(Санкт-?Петербург[^.\n]{8,160})/i]) ||
-      firstLine.match(/^(Москва|Санкт-?Петербург).*/i)?.[0] ||
-      "";
-    return {
-      source: "cian-local-text",
-      sourceUrl: String(cianUrl || "").trim(),
-      title: firstLine,
-      address: addressRaw,
-      price: parseLocalNumber(priceRaw),
-      area: parseLocalNumber(areaRaw),
-      bedrooms: parseLocalNumber(roomsRaw),
-      floor: parseLocalNumber(floorRaw),
-      totalFloors: parseLocalNumber(floorsRaw),
-      ceilingHeight: parseLocalNumber(ceilRaw),
-      metroWalkMinutes: parseLocalNumber(metroRaw),
-      lat: null,
-      lon: null,
-      description: text
-    };
-  };
 
   const applyParsedCianToForm = (parsed) => {
     const form = document.getElementById("propertyForm");
@@ -5096,7 +5120,6 @@ async function renderCabinetPage(openForm = false) {
     document.getElementById("propertySubmitBtn").textContent = "Сохранить объект";
     document.getElementById("propertyForm").reset();
     if (document.getElementById("cianUrlInput")) document.getElementById("cianUrlInput").value = "";
-    if (document.getElementById("cianRawInput")) document.getElementById("cianRawInput").value = "";
     if (cianParseStatus()) cianParseStatus().textContent = "";
     document.getElementById("photosInput").required = false;
     renderPhotoState();
@@ -5117,7 +5140,6 @@ async function renderCabinetPage(openForm = false) {
     document.getElementById("propertyFormModal")?.classList.add("open");
     const form = document.getElementById("propertyForm");
     if (document.getElementById("cianUrlInput")) document.getElementById("cianUrlInput").value = "";
-    if (document.getElementById("cianRawInput")) document.getElementById("cianRawInput").value = "";
     if (cianParseStatus()) cianParseStatus().textContent = "";
     form.elements.address.value = property.address || "";
     form.elements.price.value = formatSpacedNumber(property.price || "");
