@@ -829,9 +829,9 @@ function cardMarkup(property) {
   const commissionRub = (Number(property.price || 0) * pct) / 100;
   const premium = property.commissionPartner >= 4;
   return `
-    <article class="card card--feed ${premium ? "premium" : ""}" data-card-id="${escapeHtml(property.id)}">
+    <article class="card card--feed ${premium ? "premium" : ""}">
       <div class="card-media">
-        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" data-card-gallery="1" data-gallery-index="0" data-id="${escapeHtml(property.id)}" />
+        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(property.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
         ${propertyFeedPhotoDots(property)}
       </div>
       <div class="card-badges">
@@ -965,9 +965,9 @@ function demoCardMarkup(item) {
   const commissionRub = (Number(item.price || 0) * pct) / 100;
   const premium = item.commissionPartner >= 4;
   return `
-    <article class="card card--feed ${premium ? "premium" : ""}" data-card-id="${escapeHtml(item.id)}">
+    <article class="card card--feed ${premium ? "premium" : ""}">
       <div class="card-media">
-        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" data-card-gallery="1" data-gallery-index="0" data-id="${escapeHtml(item.id)}" />
+        <img class="card-media__img" ${imgLazyAttrs({ feedCard: true })} src="${photoUrlWithFallback(item.photos?.[0])}" onerror="${photoOnErrorAttr()}" alt="" />
         ${propertyFeedPhotoDots(item)}
       </div>
       <div class="card-badges">
@@ -999,96 +999,6 @@ function bindDemoCardButtons(root = document) {
       goToAuthFromGuestDemo("#/auth-register");
     });
   });
-}
-
-function getCardGalleryPropertyById(id) {
-  const sid = String(id || "").trim();
-  if (!sid) return null;
-  const inPrimary = (state.properties || []).find((p) => String(p?.id || "") === sid);
-  if (inPrimary) return inPrimary;
-  const inDemo = (state.demoAllProperties || []).find((p) => String(p?.id || "") === sid);
-  if (inDemo) return inDemo;
-  return null;
-}
-
-function ensureCardGalleryLightbox() {
-  let lightbox = document.getElementById("cardGalleryLightbox");
-  if (lightbox) return lightbox;
-  lightbox = document.createElement("div");
-  lightbox.className = "gallery-lightbox";
-  lightbox.id = "cardGalleryLightbox";
-  lightbox.innerHTML = `
-    <button class="gallery-lightbox-close" id="cardGalleryCloseBtn" aria-label="Закрыть">×</button>
-    <button class="gallery-lightbox-nav" id="cardGalleryPrevBtn" aria-label="Предыдущее фото">‹</button>
-    <img id="cardGalleryLightboxImage" class="gallery-lightbox-image" src="${PLACEHOLDER_IMAGE_URL}" alt="Фото объекта" />
-    <button class="gallery-lightbox-nav" id="cardGalleryNextBtn" aria-label="Следующее фото">›</button>
-    <div class="gallery-lightbox-counter" id="cardGalleryCounter">1 / 1</div>
-  `;
-  document.body.appendChild(lightbox);
-  return lightbox;
-}
-
-function openCardGallery(photos, startIndex = 0) {
-  const safePhotos = (photos || []).length ? photos : [PLACEHOLDER_IMAGE_URL];
-  const lightbox = ensureCardGalleryLightbox();
-  const image = document.getElementById("cardGalleryLightboxImage");
-  const counter = document.getElementById("cardGalleryCounter");
-  const closeBtn = document.getElementById("cardGalleryCloseBtn");
-  const prevBtn = document.getElementById("cardGalleryPrevBtn");
-  const nextBtn = document.getElementById("cardGalleryNextBtn");
-  if (!image || !counter || !closeBtn || !prevBtn || !nextBtn) return;
-  if (lightbox.dataset.bound !== "1") {
-    const close = () => {
-      lightbox.classList.remove("open");
-      document.body.classList.remove("modal-open");
-    };
-    closeBtn.addEventListener("click", close);
-    lightbox.addEventListener("click", (event) => {
-      if (event.target === lightbox) close();
-    });
-    lightbox.dataset.bound = "1";
-  }
-  let index = Math.max(0, Math.min(Number(startIndex) || 0, safePhotos.length - 1));
-  const render = () => {
-    image.src = optimizePhotoSrc(safePhotos[index] || PLACEHOLDER_IMAGE_URL, "gallery");
-    counter.textContent = `${index + 1} / ${safePhotos.length}`;
-    prevBtn.style.display = safePhotos.length > 1 ? "inline-flex" : "none";
-    nextBtn.style.display = safePhotos.length > 1 ? "inline-flex" : "none";
-  };
-  prevBtn.onclick = () => {
-    index = (index - 1 + safePhotos.length) % safePhotos.length;
-    render();
-  };
-  nextBtn.onclick = () => {
-    index = (index + 1) % safePhotos.length;
-    render();
-  };
-  render();
-  lightbox.classList.add("open");
-  document.body.classList.add("modal-open");
-}
-
-function bindCardGallery(_root = document) {
-  if (window.__bmCardGalleryGlobalBound === "1") return;
-  window.__bmCardGalleryGlobalBound = "1";
-  document.addEventListener(
-    "click",
-    (event) => {
-      const img = event.target?.closest?.("img[data-card-gallery='1']");
-      if (!img) return;
-      const panel = img.closest("#leftPanel, #demoLeftPanel");
-      if (!panel) return;
-      if (panel.dataset.sheetJustDragged === "1") return;
-      event.preventDefault();
-      event.stopPropagation();
-      const id = String(img.dataset.id || img.closest("[data-card-id]")?.dataset.cardId || "").trim();
-      const property = getCardGalleryPropertyById(id);
-      if (!property) return;
-      const startIndex = Number(img.dataset.galleryIndex || 0);
-      openCardGallery(property.photos || [], startIndex);
-    },
-    true
-  );
 }
 
 function leftPanelHandleHtml(handleAreaId) {
@@ -1371,12 +1281,12 @@ function getSheetGeometry(panel) {
           ? firstInScroll.offsetTop + scrollEl.offsetTop + scrollPad
           : Infinity;
     if (Number.isFinite(topContent) && topContent < Infinity) {
-      const capChromeOnly = Math.floor(topContent - 6);
+      const capChromeOnly = Math.floor(topContent - 14);
       peekCollapsedPx = Math.min(peekCollapsedPx, capChromeOnly);
     }
   }
-  const minPeekCollapsed = Math.max(56, Math.ceil(headBottomFromTrack - 4 + navOverlapEffective));
-  peekCollapsedPx = Math.max(minPeekCollapsed, Math.min(126, peekCollapsedPx));
+  const minPeekCollapsed = Math.max(54, Math.ceil(headBottomFromTrack - 10 + navOverlapEffective));
+  peekCollapsedPx = Math.max(minPeekCollapsed, Math.min(120, peekCollapsedPx));
 
   const peekT = Math.max(0, Math.round(H - peekCollapsedPx));
 
@@ -1823,7 +1733,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
     "click",
     (ev) => {
       if (panel.dataset.sheetJustDragged !== "1") return;
-      if (ev.target.closest(".open-object, .open-demo-object, [data-card-gallery='1']")) {
+      if (ev.target.closest(".open-object, .open-demo-object")) {
         ev.preventDefault();
         ev.stopPropagation();
       }
@@ -2252,7 +2162,6 @@ function renderDemoPanel(list, title, opts = {}) {
     demoCollapseLeftPanel();
   });
   bindDemoCardButtons(panel);
-  bindCardGallery(panel);
   primeMobileSheetAfterPanelHtml(panel);
   bindSheetReflowOnImages(panel, "demoMapLayout");
   mobileSheetSettleAfterRender(panel, document.getElementById("demoMapLayout"), false);
@@ -2596,7 +2505,7 @@ function renderDemoPropertyPage(id) {
                   `<img class="gallery__img" ${imgLazyAttrs({ priority: gi === 0 ? "high" : undefined })} src="${photoUrlWithFallback(
                     photo,
                     { gallery: true }
-                  )}" onerror="${photoOnErrorAttr()}" alt="Фото демо-объекта" />`
+                  )}" onerror="${photoOnErrorAttr()}" alt="Фото демо-объекта" data-gallery-index="${gi}" />`
               )
               .join("")}
           </div>
@@ -2623,6 +2532,13 @@ function renderDemoPropertyPage(id) {
       </div>
     </section>
     ${mobileBottomNavHtml("search")}
+    <div class="gallery-lightbox" id="galleryLightbox">
+      <button class="gallery-lightbox-close" id="galleryCloseBtn" aria-label="Закрыть">×</button>
+      <button class="gallery-lightbox-nav" id="galleryPrevBtn" aria-label="Предыдущее фото">‹</button>
+      <img id="galleryLightboxImage" class="gallery-lightbox-image" ${imgLazyAttrs({ priority: "high" })} src="${photoUrlWithFallback(galleryPhotos[0], { gallery: true })}" alt="Фото демо-объекта" />
+      <button class="gallery-lightbox-nav" id="galleryNextBtn" aria-label="Следующее фото">›</button>
+      <div class="gallery-lightbox-counter" id="galleryCounter">1 / ${galleryPhotos.length}</div>
+    </div>
   `;
   document.getElementById("backToDemoBtn")?.addEventListener("click", () => {
     location.hash = "#/";
@@ -2635,6 +2551,44 @@ function renderDemoPropertyPage(id) {
   });
   bindMobileBottomNavActions();
   updateMobileNavMetrics();
+  let currentGalleryIndex = 0;
+  const lightbox = document.getElementById("galleryLightbox");
+  const lightboxImage = document.getElementById("galleryLightboxImage");
+  const galleryCounter = document.getElementById("galleryCounter");
+  const updateLightbox = () => {
+    if (!lightboxImage || !galleryCounter) return;
+    lightboxImage.src = optimizePhotoSrc(galleryPhotos[currentGalleryIndex] || PLACEHOLDER_IMAGE_URL, "gallery");
+    galleryCounter.textContent = `${currentGalleryIndex + 1} / ${galleryPhotos.length}`;
+  };
+  const openLightbox = (index) => {
+    if (!lightbox) return;
+    currentGalleryIndex = index;
+    updateLightbox();
+    lightbox.classList.add("open");
+  };
+  const closeLightbox = () => {
+    if (!lightbox) return;
+    lightbox.classList.remove("open");
+  };
+  const showPrev = () => {
+    currentGalleryIndex = (currentGalleryIndex - 1 + galleryPhotos.length) % galleryPhotos.length;
+    updateLightbox();
+  };
+  const showNext = () => {
+    currentGalleryIndex = (currentGalleryIndex + 1) % galleryPhotos.length;
+    updateLightbox();
+  };
+  app.querySelectorAll(".gallery img").forEach((img) => {
+    img.addEventListener("click", () => {
+      openLightbox(Number(img.dataset.galleryIndex || 0));
+    });
+  });
+  document.getElementById("galleryCloseBtn")?.addEventListener("click", closeLightbox);
+  document.getElementById("galleryPrevBtn")?.addEventListener("click", showPrev);
+  document.getElementById("galleryNextBtn")?.addEventListener("click", showNext);
+  lightbox?.addEventListener("click", (event) => {
+    if (event.target === lightbox) closeLightbox();
+  });
 }
 
 function renderMapPage() {
@@ -2833,7 +2787,6 @@ function renderAreaSelectionPanel(list) {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
-  bindCardGallery(panel);
   bindSheetReflowOnImages(panel, "mapLayout");
   primeMobileSheetAfterPanelHtml(panel);
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
@@ -2883,7 +2836,6 @@ function renderViewportPanel() {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
-  bindCardGallery(panel);
   bindSheetReflowOnImages(panel, "mapLayout");
   primeMobileSheetAfterPanelHtml(panel);
   mobileSheetSettleAfterRender(panel, document.getElementById("mapLayout"), false);
@@ -3316,7 +3268,6 @@ function showGroup(properties) {
       location.hash = `#/property/${btn.dataset.id}`;
     });
   });
-  bindCardGallery(panel);
   bindSheetReflowOnImages(panel, "mapLayout");
   scheduleMobileSheetReflow(panel, document.getElementById("mapLayout"));
   requestAnimationFrame(() => {

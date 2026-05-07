@@ -673,7 +673,6 @@ body.view-map #app {
   width: 100%;
   height: 172px;
   object-fit: cover;
-  cursor: zoom-in;
 }
 
 .card-photo-dots {
