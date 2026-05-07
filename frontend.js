@@ -1311,23 +1311,27 @@ function getSheetGeometry(panel) {
       : firstBottomFromTrackTop - Math.max(8, mb);
     const cards = scrollEl.querySelectorAll("article.card, .card");
     const secondCard = cards[1] || null;
-    // Единый кросс-браузерный baseline:
-    // 1) кнопки 1-й карточки должны быть над fixed-футером,
-    // 2) 2-я карточка на старте не должна подглядывать.
-    const minFloor = Math.ceil(actionsBottomFromTrackTop + 8 + navOverlapEffective);
     const secondTopFromTrack = secondCard
       ? secondCard.offsetTop + scrollEl.offsetTop + scrollPad
       : Infinity;
-    const gapBefore2ndCard = 20;
-    const hi = secondCard ? Math.max(minFloor, secondTopFromTrack - gapBefore2ndCard) : H;
-    const aimStart = Math.round(baseUsable * 0.52);
-    let merged = Math.min(hi, Math.max(minFloor, Math.min(aimStart, hi)));
+
+    // Жесткий UX-контракт:
+    // 1) кнопки первой карточки полностью видны;
+    // 2) вторая карточка на старте не видна совсем (0px).
+    const minForFirstButtons = Math.ceil(actionsBottomFromTrackTop + 8 + navOverlapEffective);
+    const maxWithoutSecondPeek = secondCard ? Math.ceil(secondTopFromTrack - 10) : H;
+    const aimStart = Math.round(baseUsable * 0.50);
+    let merged = Math.max(minForFirstButtons, Math.min(aimStart, maxWithoutSecondPeek));
+    if (secondCard && minForFirstButtons > maxWithoutSecondPeek) {
+      // На очень низких экранах приоритет — не показывать 2-ю карточку.
+      merged = maxWithoutSecondPeek;
+    }
     const listFooter = scrollEl.querySelector(".left-panel-list-footer");
     if (listFooter) {
       const footerTop = listFooter.offsetTop + scrollEl.offsetTop + scrollPad;
-      merged = Math.min(merged, Math.max(minFloor, footerTop - 10));
+      merged = Math.min(merged, footerTop - 10);
     }
-    targetOpenVis = Math.min(H, merged);
+    targetOpenVis = Math.min(H, Math.max(0, merged));
   } else {
     const headStrip = scrollEl ? Math.round(scrollEl.offsetTop + scrollPad) : chromeOnlyH;
     const floorList = Math.round(headStrip + cardH + navOverlapEffective + 8);
@@ -1480,8 +1484,18 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
       setBackToFirstVisible(false);
       return;
     }
-    const threshold = clampSheetT(g.yHalf - (isAltIOSBrowser() ? 18 : 34), g);
-    setBackToFirstVisible(y <= threshold);
+    const scrollEl = panel.querySelector("[data-sheet-scroll]");
+    const secondCard = scrollEl?.querySelectorAll("article.card, .card")?.[1] || null;
+    if (!scrollEl || !secondCard) {
+      setBackToFirstVisible(false);
+      return;
+    }
+    const secondTopFromTrack = secondCard.offsetTop + scrollEl.offsetTop;
+    const openVis = Math.max(0, g.h - y);
+    const panelRect = panel.getBoundingClientRect();
+    const secondTopViewport = panelRect.bottom - openVis + secondTopFromTrack;
+    const midViewport = mobileViewportInnerHeight() / 2;
+    setBackToFirstVisible(secondTopViewport <= midViewport);
   };
 
   const commitSheetState = (y, g) => {
