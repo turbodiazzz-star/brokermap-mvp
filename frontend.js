@@ -148,6 +148,59 @@ function normalizeTelegramNickname(value) {
   return trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
 }
 
+const MAX_PROPERTY_UPLOAD_TOTAL_BYTES = 900 * 1024;
+const TARGET_PHOTO_MAX_BYTES = 220 * 1024;
+const PHOTO_MAX_DIMENSION_PX = 1600;
+
+function fileNameWithJpgExt(name) {
+  const base = String(name || "photo")
+    .replace(/\.[^.]*$/, "")
+    .replace(/[^\w.-]+/g, "_")
+    .slice(0, 64);
+  return `${base || "photo"}.jpg`;
+}
+
+function loadImageElementFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Не удалось обработать изображение"));
+      img.src = String(reader.result || "");
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function compressImageForUpload(file, targetBytes = TARGET_PHOTO_MAX_BYTES) {
+  if (!(file instanceof File) || !file.type.startsWith("image/")) return file;
+  if (file.size <= targetBytes) return file;
+  const img = await loadImageElementFromFile(file);
+  const ratio = Math.min(1, PHOTO_MAX_DIMENSION_PX / Math.max(img.naturalWidth || 1, img.naturalHeight || 1));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round((img.naturalWidth || 1) * ratio));
+  canvas.height = Math.max(1, Math.round((img.naturalHeight || 1) * ratio));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return file;
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+  let chosenBlob = null;
+  const qualities = [0.86, 0.8, 0.74, 0.68, 0.62, 0.56, 0.5, 0.44];
+  for (const q of qualities) {
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", q));
+    if (!blob) continue;
+    chosenBlob = blob;
+    if (blob.size <= targetBytes) break;
+  }
+  if (!chosenBlob) return file;
+  return new File([chosenBlob], fileNameWithJpgExt(file.name), {
+    type: "image/jpeg",
+    lastModified: Date.now()
+  });
+}
+
 function finishingLabel(value) {
   if (value === true) return "С отделкой";
   if (value === false) return "Бетон";
@@ -503,6 +556,9 @@ async function api(url, options = {}) {
     }
     if (response.status === 403) {
       throw new Error(data.message || rawText || "Нет доступа");
+    }
+    if (response.status === 413) {
+      throw new Error("Файлы слишком большие. Уменьшите размер фото или загрузите меньше файлов.");
     }
     const strippedText = String(rawText || "")
       .replace(/<[^>]*>/g, " ")
@@ -5565,7 +5621,7 @@ async function renderCabinetPage(openForm = false) {
     });
   };
 
-  const addPendingPhotos = (fileList) => {
+  const addPendingPhotos = async (fileList) => {
     const files = Array.from(fileList || []).filter((file) => file.type.startsWith("image/"));
     if (!files.length) return;
     const slotsLeft = MAX_PHOTOS_PER_OBJECT - existingPhotoUrls.length - pendingPhotoFiles.length;
@@ -5573,12 +5629,25 @@ async function renderCabinetPage(openForm = false) {
       document.getElementById("cabinetStatus").textContent = "Можно хранить не более 5 фото на объект.";
       return;
     }
-    pendingPhotoFiles.push(...files.slice(0, slotsLeft));
-    if (files.length > slotsLeft) {
-      document.getElementById("cabinetStatus").textContent = "Добавлены не все файлы: максимум 5 фото на объект.";
-    } else {
-      document.getElementById("cabinetStatus").textContent = "";
+    const selected = files.slice(0, slotsLeft);
+    const prepared = [];
+    for (const file of selected) {
+      try {
+        prepared.push(await compressImageForUpload(file));
+      } catch (_error) {
+        prepared.push(file);
+      }
     }
+    const currentTotalBytes = pendingPhotoFiles.reduce((sum, f) => sum + Number(f.size || 0), 0);
+    const nextTotalBytes = currentTotalBytes + prepared.reduce((sum, f) => sum + Number(f.size || 0), 0);
+    if (nextTotalBytes > MAX_PROPERTY_UPLOAD_TOTAL_BYTES) {
+      document.getElementById("cabinetStatus").textContent =
+        "Слишком тяжелые фото для загрузки. Уменьшите количество или выберите файлы меньше.";
+      return;
+    }
+    pendingPhotoFiles.push(...prepared);
+    document.getElementById("cabinetStatus").textContent =
+      files.length > slotsLeft ? "Добавлены не все файлы: максимум 5 фото на объект." : "";
     renderPhotoState();
   };
 
@@ -5739,8 +5808,8 @@ async function renderCabinetPage(openForm = false) {
   });
 
   const photosInput = document.getElementById("photosInput");
-  photosInput?.addEventListener("change", (event) => {
-    addPendingPhotos(event.target.files);
+  photosInput?.addEventListener("change", async (event) => {
+    await addPendingPhotos(event.target.files);
     event.target.value = "";
   });
 
@@ -5758,8 +5827,8 @@ async function renderCabinetPage(openForm = false) {
         photoDropZone.classList.remove("active");
       });
     });
-    photoDropZone.addEventListener("drop", (event) => {
-      addPendingPhotos(event.dataTransfer?.files || []);
+    photoDropZone.addEventListener("drop", async (event) => {
+      await addPendingPhotos(event.dataTransfer?.files || []);
     });
   }
 }
