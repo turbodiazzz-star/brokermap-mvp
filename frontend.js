@@ -5201,6 +5201,7 @@ async function renderCabinetProfilePage() {
   bindBrandHomeButton();
   bindMobileBottomNavActions();
   updateMobileNavMetrics();
+  document.getElementById("toMapBtn")?.addEventListener("click", () => (location.hash = "#/"));
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
   document.getElementById("adminBtn")?.addEventListener("click", () => (location.hash = "#/admin"));
   document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
@@ -5459,6 +5460,7 @@ async function renderCabinetPage(openForm = false) {
   bindBrandHomeButton();
   bindMobileBottomNavActions();
   updateMobileNavMetrics();
+  document.getElementById("toMapBtn")?.addEventListener("click", () => (location.hash = "#/"));
   const closePropertyFormModal = () => {
     document.getElementById("propertyFormModal")?.classList.remove("open");
   };
