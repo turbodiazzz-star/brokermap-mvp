@@ -137,6 +137,13 @@ function createPropertyId() {
   return `p-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
 }
 
+function createUserId() {
+  if (typeof crypto.randomUUID === "function") {
+    return `u-${crypto.randomUUID()}`;
+  }
+  return `u-${Date.now()}-${Math.round(Math.random() * 1e9)}`;
+}
+
 function toOptionalNumber(value) {
   if (value === "" || value === undefined || value === null) return null;
   const num = Number(value);
@@ -948,7 +955,7 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(409).json({ message: "Пользователь с таким email уже есть" });
     }
     const passwordHash = await bcrypt.hash(password, 10);
-    const id = `u-${Date.now()}`;
+    const id = createUserId();
     const role = isAdminEmail(normalizedEmail) ? "admin" : "user";
     const user = {
       id,
@@ -972,7 +979,18 @@ app.post("/api/auth/register", async (req, res) => {
       emailVerified: false,
       createdAt: new Date().toISOString()
     };
-    createUserRecord(user);
+    try {
+      createUserRecord(user);
+    } catch (dbError) {
+      const msg = String(dbError?.message || "");
+      if (/unique/i.test(msg) && /email/i.test(msg)) {
+        return res.status(409).json({ message: "Пользователь с таким email уже есть" });
+      }
+      if (/unique/i.test(msg) && /\bid\b/i.test(msg)) {
+        return res.status(500).json({ message: "Не удалось завершить регистрацию. Попробуйте еще раз." });
+      }
+      throw dbError;
+    }
     const verifyToken = signActionToken(
       { action: "verify_email", userId: user.id, email: user.email },
       "24h"
@@ -990,17 +1008,11 @@ app.post("/api/auth/register", async (req, res) => {
         message: "Мы отправили письмо для подтверждения email. Откройте ссылку из письма. Если письма нет, проверьте папку Спам."
       });
     } catch (error) {
-      // Fallback: if SMTP is unavailable, don't block registration.
-      markUserEmailVerified(user.id);
-      const fallbackUser = findUserById(user.id) || { ...user, emailVerified: true };
-      const token = signUserToken(fallbackUser);
-      setAuthCookie(res, token);
-      console.error("[mail] register verification send failed, fallback enabled:", error?.message || error);
-      return res.status(200).json({
-        token,
-        user: publicUser(fallbackUser),
-        message:
-          "Аккаунт создан, но письмо подтверждения сейчас недоступно. Мы вошли вас автоматически — можно продолжать работу."
+      // Keep registration atomic if we cannot deliver verification email.
+      deleteUserById(user.id);
+      console.error("[mail] register verification send failed:", error?.message || error);
+      return res.status(502).json({
+        message: "Не удалось отправить письмо подтверждения. Проверьте настройки почты и попробуйте снова."
       });
     }
   } catch (error) {
