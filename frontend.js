@@ -350,12 +350,21 @@ function propertyMetroLabel(property) {
   return nearestMoscowMetroName(lat, lon);
 }
 
+function propertyMetroWalkMinutesNumber(property) {
+  const n = Number(property?.metroWalkMinutes);
+  return Number.isFinite(n) ? n : null;
+}
+
+function shouldShowMetroInfo(property) {
+  const walk = propertyMetroWalkMinutesNumber(property);
+  return walk == null || walk <= 60;
+}
+
 function propertyMetroHtml(property) {
+  if (!shouldShowMetroInfo(property)) return "";
   const metro = propertyMetroLabel(property).trim();
-  const walk =
-    property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
-      ? `${Number(property.metroWalkMinutes)} мин пешком`
-      : "";
+  const walkMinutes = propertyMetroWalkMinutesNumber(property);
+  const walk = walkMinutes != null ? `${walkMinutes} мин пешком` : "";
   if (!metro && !walk) return "";
   const line = [metro, walk].filter(Boolean).join(" · ");
   return `<div class="card-metro"><span class="card-metro__dot" aria-hidden="true"></span><span class="card-metro__name">${escapeHtml(
@@ -1287,7 +1296,9 @@ function closeSheetPropertyPopup() {
 function renderSheetPropertyPopupBody(property, options = {}) {
   const isDemo = options.isDemo === true;
   const galleryPhotos = (property?.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
-  const metroLine = property ? propertyMetroLabel(property) : "";
+  const showMetroInfo = shouldShowMetroInfo(property);
+  const metroLine = showMetroInfo && property ? propertyMetroLabel(property) : "";
+  const metroWalkMinutes = showMetroInfo ? propertyMetroWalkMinutesNumber(property) : null;
   const telValue = normalizePhoneForTel(property?.contacts?.phone || "");
   const tg = telegramContactLink(property?.contacts?.telegram || "");
   return `
@@ -1312,11 +1323,7 @@ function renderSheetPropertyPopupBody(property, options = {}) {
           <h3>${money(property?.price)} ₽</h3>
           <p><strong>Адрес:</strong> ${escapeHtml(property?.address || "-")}</p>
           ${metroLine ? `<p><strong>Метро:</strong> ${escapeHtml(metroLine)}</p>` : ""}
-          ${
-            property?.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
-              ? `<p><strong>Пешком до метро:</strong> ${Number(property.metroWalkMinutes)} мин</p>`
-              : ""
-          }
+          ${metroWalkMinutes != null ? `<p><strong>Пешком до метро:</strong> ${metroWalkMinutes} мин</p>` : ""}
           <p><strong>Статус жилья:</strong> ${housingStatusLabel(property?.housingStatus)}</p>
           <p><strong>Дата публикации:</strong> ${escapeHtml(formatPublishedDateRu(property?.publishedAt || property?.createdAt))}</p>
           <p><strong>Площадь:</strong> ${escapeHtml(property?.area || "-")} м²</p>
@@ -3171,7 +3178,9 @@ function renderDemoPropertyPage(id) {
   }
   const property = state.demoAllProperties.find((item) => item.id === id) || state.demoAllProperties[0];
   const galleryPhotos = (property.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
-  const demoMetroLine = propertyMetroLabel(property);
+  const showMetroInfo = shouldShowMetroInfo(property);
+  const demoMetroLine = showMetroInfo ? propertyMetroLabel(property) : "";
+  const demoMetroWalkMinutes = showMetroInfo ? propertyMetroWalkMinutesNumber(property) : null;
   app.innerHTML = `
     <section class="page">
       <p><button class="btn" id="backToDemoBtn">← Назад к демо-карте</button></p>
@@ -3195,11 +3204,7 @@ function renderDemoPropertyPage(id) {
           <h3>${money(property.price)} ₽</h3>
           <p><strong>Адрес:</strong> ${property.address}</p>
           ${demoMetroLine ? `<p><strong>Метро:</strong> ${escapeHtml(demoMetroLine)}</p>` : ""}
-          ${
-            property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
-              ? `<p><strong>Пешком до метро:</strong> ${Number(property.metroWalkMinutes)} мин</p>`
-              : ""
-          }
+          ${demoMetroWalkMinutes != null ? `<p><strong>Пешком до метро:</strong> ${demoMetroWalkMinutes} мин</p>` : ""}
           <p><strong>Статус жилья:</strong> ${housingStatusLabel(property.housingStatus)}</p>
           <p><strong>Дата публикации:</strong> ${escapeHtml(formatPublishedDateRu(property.publishedAt || property.createdAt))}</p>
           <p><strong>Площадь:</strong> ${property.area} м²</p>
@@ -4276,7 +4281,9 @@ async function renderPropertyPage(id) {
   const galleryPhotos = (property.photos || []).length
     ? property.photos
     : [PLACEHOLDER_IMAGE_URL];
-  const metroLine = propertyMetroLabel(property);
+  const showMetroInfo = shouldShowMetroInfo(property);
+  const metroLine = showMetroInfo ? propertyMetroLabel(property) : "";
+  const metroWalkMinutes = showMetroInfo ? propertyMetroWalkMinutesNumber(property) : null;
   const tg = telegramContactLink(property?.contacts?.telegram || "");
   app.innerHTML = `
     ${topbar({ hideFilters: window.matchMedia("(max-width: 900px)").matches })}
@@ -4299,11 +4306,7 @@ async function renderPropertyPage(id) {
           <h3>${money(property.price)} ₽</h3>
           <p><strong>Адрес:</strong> ${property.address}</p>
           ${metroLine ? `<p><strong>Метро:</strong> ${escapeHtml(metroLine)}</p>` : ""}
-          ${
-            property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
-              ? `<p><strong>Пешком до метро:</strong> ${Number(property.metroWalkMinutes)} мин</p>`
-              : ""
-          }
+          ${metroWalkMinutes != null ? `<p><strong>Пешком до метро:</strong> ${metroWalkMinutes} мин</p>` : ""}
           <p><strong>Статус жилья:</strong> ${housingStatusLabel(property.housingStatus)}</p>
           <p><strong>Дата публикации:</strong> ${escapeHtml(formatPublishedDateRu(property.publishedAt || property.createdAt))}</p>
           <p><strong>Площадь:</strong> ${property.area} м²</p>
