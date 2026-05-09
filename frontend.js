@@ -453,12 +453,12 @@ async function shareDemoPresentationPdf(property) {
 }
 
 function formatRussianPhoneMasked(value) {
-  const digits = String(value || "").replace(/\D/g, "").slice(0, 10);
+  const digits = String(value || "").replace(/\D/g, "").slice(-10);
   if (!digits) return "";
-  if (digits.length <= 3) return `(${digits}`;
-  if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-  if (digits.length <= 8) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 8)}-${digits.slice(8, 10)}`;
+  if (digits.length <= 3) return `+7 (${digits}`;
+  if (digits.length <= 6) return `+7 (${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  if (digits.length <= 8) return `+7 (${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits.slice(6)}`;
+  return `+7 (${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits.slice(6, 8)} ${digits.slice(8, 10)}`;
 }
 
 const PLACEHOLDER_IMAGE_URL = `data:image/svg+xml,${encodeURIComponent(
@@ -4507,8 +4507,7 @@ function authFormsInnerHtml() {
             <input id="firstName" placeholder="Имя (обязательно)" autocomplete="given-name" />
             <input id="email" placeholder="Email (обязательно)" type="email" autocomplete="email" />
             <div class="phone-group">
-              <span>+7</span>
-              <input id="phone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
+              <input id="phone" placeholder="+7 (999) 123 45 67" maxlength="18" inputmode="numeric" autocomplete="tel-national" />
             </div>
             <input id="password" placeholder="Пароль (мин 6)" type="password" autocomplete="new-password" />
             <label class="field-label" for="registerTelegram">Telegram (необязательно)</label>
@@ -4786,7 +4785,7 @@ function attachAuthDomListeners(demoOverlay) {
   };
   const validateRegisterPhone = () => {
     const phoneEl = document.getElementById("phone");
-    const digits = toDigits(phoneEl?.value || "");
+    const digits = toDigits(phoneEl?.value || "").slice(-10);
     if (digits.length !== 10) {
       setFieldError(phoneEl, "Телефон: 10 цифр после +7");
       return false;
@@ -4820,7 +4819,10 @@ function attachAuthDomListeners(demoOverlay) {
   document.getElementById("loginPassword")?.addEventListener("input", () =>
     validateNonEmpty("loginPassword", "Введите пароль")
   );
-  document.getElementById("phone")?.addEventListener("input", validateRegisterPhone);
+  document.getElementById("phone")?.addEventListener("input", (event) => {
+    event.target.value = formatRussianPhoneMasked(event.target.value);
+    validateRegisterPhone();
+  });
   document.getElementById("password")?.addEventListener("input", () => validatePasswordField("password", 6));
   document.getElementById("firstName")?.addEventListener("input", () => validateNonEmpty("firstName", "Введите имя"));
   document.getElementById("lastName")?.addEventListener("input", () => validateNonEmpty("lastName", "Введите фамилию"));
@@ -5041,8 +5043,13 @@ async function renderAgencyInvitePage(token) {
           <input id="invitePassword" type="password" placeholder="минимум 6 символов" autocomplete="new-password" />
           <label class="field-label" for="invitePhone">Телефон</label>
           <div class="phone-group">
-            <span>+7</span>
-            <input id="invitePhone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
+            <input
+              id="invitePhone"
+              placeholder="+7 (999) 123 45 67"
+              maxlength="18"
+              inputmode="numeric"
+              autocomplete="tel-national"
+            />
           </div>
           <label class="checkbox-line">
             <input type="checkbox" id="inviteAgree" />
@@ -5113,7 +5120,7 @@ async function renderAgencyInvitePage(token) {
     return ok;
   };
   const validateInvitePhone = () => {
-    const phone = `+7${toDigits(phoneEl?.value || "")}`;
+    const phone = normalizeRussianPhone(phoneEl?.value || "");
     const ok = /^\+7\d{10}$/.test(phone);
     if (!ok) setInviteFieldError(phoneEl, "Введите 10 цифр после +7");
     else clearInviteFieldError(phoneEl);
@@ -5132,7 +5139,7 @@ async function renderAgencyInvitePage(token) {
     const firstName = firstNameEl?.value.trim() || "";
     const lastName = lastNameEl?.value.trim() || "";
     const password = passwordEl?.value || "";
-    const phone = `+7${toDigits(phoneEl?.value || "")}`;
+    const phone = normalizeRussianPhone(phoneEl?.value || "");
     const agree = Boolean(agreeEl?.checked);
     const marketingConsent = document.getElementById("inviteMarketing")?.checked;
     const valid =
@@ -5176,7 +5183,7 @@ async function renderAgencyInvitePage(token) {
 }
 
 function collectAuth() {
-  const phoneDigits = toDigits(document.getElementById("phone").value);
+  const phone = normalizeRussianPhone(document.getElementById("phone").value);
   return {
     accountType: document.getElementById("accountType").value === "agency_owner" ? "agency_owner" : "broker",
     firstName: document.getElementById("firstName").value.trim(),
@@ -5184,7 +5191,7 @@ function collectAuth() {
     name: `${document.getElementById("firstName").value.trim()} ${document.getElementById("lastName").value.trim()}`.trim(),
     email: document.getElementById("email").value.trim(),
     password: document.getElementById("password").value,
-    phone: `+7${phoneDigits}`,
+    phone,
     telegram: normalizeTelegramNickname(document.getElementById("registerTelegram")?.value || ""),
     agency: document.getElementById("agency").value.trim(),
     inn: "",
@@ -5230,10 +5237,7 @@ async function renderCabinetProfilePage() {
   } catch {
     /* use state.user */
   }
-  const phoneDigits =
-    me.phone && String(me.phone).startsWith("+7") && String(me.phone).length >= 12
-      ? toDigits(String(me.phone).slice(3))
-      : toDigits(String(me.phone || ""));
+  const phoneMasked = formatRussianPhoneMasked(me.phone || "");
   const accountLabel = me.isAgencyOwner ? "Владелец агентства" : "Брокер";
   app.innerHTML = `
     ${topbar({ slim: true })}
@@ -5260,8 +5264,14 @@ async function renderCabinetProfilePage() {
             <div class="field-block field-span-2">
               <label class="field-label" for="profilePhone">Телефон</label>
               <div class="phone-group">
-                <span>+7</span>
-                <input id="profilePhone" maxlength="10" inputmode="numeric" value="${escapeHtml(phoneDigits)}" autocomplete="tel-national" />
+                <input
+                  id="profilePhone"
+                  maxlength="18"
+                  inputmode="numeric"
+                  value="${escapeHtml(phoneMasked)}"
+                  placeholder="+7 (999) 123 45 67"
+                  autocomplete="tel-national"
+                />
               </div>
             </div>
             <div class="field-block field-span-2">
@@ -5269,24 +5279,8 @@ async function renderCabinetProfilePage() {
               <input id="profileAgency" required value="${escapeHtml(me.agency || "")}" />
             </div>
             <div class="field-block field-span-2">
-              <label class="field-label" for="profileInn">ИНН (необязательно)</label>
-              <input id="profileInn" value="${escapeHtml(me.inn || "")}" />
-            </div>
-            <div class="field-block">
-              <label class="field-label" for="profileTelegram">Telegram</label>
+              <label class="field-label" for="profileTelegram">Telegram (необязательно)</label>
               <input id="profileTelegram" value="${escapeHtml(me.telegram || "")}" placeholder="@nickname" />
-            </div>
-            <div class="field-block">
-              <label class="field-label" for="profileWhatsapp">WhatsApp</label>
-              <input id="profileWhatsapp" value="${escapeHtml(me.whatsapp || "")}" />
-            </div>
-            <div class="field-block">
-              <label class="field-label" for="profileVk">ВКонтакте</label>
-              <input id="profileVk" value="${escapeHtml(me.vk || "")}" />
-            </div>
-            <div class="field-block">
-              <label class="field-label" for="profileMax">MAX</label>
-              <input id="profileMax" value="${escapeHtml(me.max || "")}" />
             </div>
             <div class="field-block field-span-2">
               <label class="checkbox-line">
@@ -5337,27 +5331,79 @@ async function renderCabinetProfilePage() {
       if (btn) btn.disabled = false;
     }
   });
+  const profileFieldErrorId = (inputId) => `profile${String(inputId || "")}Error`;
+  const clearProfileFieldError = (inputEl) => {
+    if (!inputEl) return;
+    inputEl.classList.remove("input-invalid");
+    const err = document.getElementById(profileFieldErrorId(inputEl.id));
+    if (err) err.remove();
+  };
+  const setProfileFieldError = (inputEl, message) => {
+    if (!inputEl) return;
+    inputEl.classList.add("input-invalid");
+    const id = profileFieldErrorId(inputEl.id);
+    let err = document.getElementById(id);
+    if (!err) {
+      err = document.createElement("p");
+      err.id = id;
+      err.className = "field-error-text";
+      const anchor = inputEl.closest(".phone-group") || inputEl;
+      anchor.insertAdjacentElement("afterend", err);
+    }
+    err.textContent = message;
+  };
+  const validateProfileNonEmpty = (inputId, message) => {
+    const inputEl = document.getElementById(inputId);
+    if (!String(inputEl?.value || "").trim()) {
+      setProfileFieldError(inputEl, message);
+      return false;
+    }
+    clearProfileFieldError(inputEl);
+    return true;
+  };
+  const validateProfilePhone = () => {
+    const phoneEl = document.getElementById("profilePhone");
+    const digits = toDigits(phoneEl?.value || "").slice(-10);
+    const ok = digits.length === 10;
+    if (!ok) setProfileFieldError(phoneEl, "Телефон: 10 цифр после +7");
+    else clearProfileFieldError(phoneEl);
+    return ok;
+  };
+  document.getElementById("profileFirstName")?.addEventListener("input", () =>
+    validateProfileNonEmpty("profileFirstName", "Введите имя")
+  );
+  document.getElementById("profileLastName")?.addEventListener("input", () =>
+    validateProfileNonEmpty("profileLastName", "Введите фамилию")
+  );
+  document.getElementById("profileAgency")?.addEventListener("input", () =>
+    validateProfileNonEmpty("profileAgency", "Укажите агентство или ФИО ИП/самозанятого")
+  );
+  document.getElementById("profilePhone")?.addEventListener("input", (event) => {
+    event.target.value = formatRussianPhoneMasked(event.target.value);
+    validateProfilePhone();
+  });
   document.getElementById("cabinetProfileForm")?.addEventListener("submit", async (e) => {
     e.preventDefault();
     const status = document.getElementById("profileFormStatus");
     if (status) status.textContent = "";
-    const phone = `+7${toDigits(document.getElementById("profilePhone")?.value || "")}`;
+    const valid =
+      validateProfileNonEmpty("profileFirstName", "Введите имя") &&
+      validateProfileNonEmpty("profileLastName", "Введите фамилию") &&
+      validateProfileNonEmpty("profileAgency", "Укажите агентство или ФИО ИП/самозанятого") &&
+      validateProfilePhone();
+    if (!valid) {
+      if (status) status.textContent = "Проверьте поля формы: есть некорректные данные";
+      return;
+    }
+    const phone = normalizeRussianPhone(document.getElementById("profilePhone")?.value || "");
     const payload = {
       firstName: document.getElementById("profileFirstName")?.value.trim() || "",
       lastName: document.getElementById("profileLastName")?.value.trim() || "",
       phone,
       agency: document.getElementById("profileAgency")?.value.trim() || "",
-      inn: document.getElementById("profileInn")?.value.trim() || "",
-      telegram: document.getElementById("profileTelegram")?.value.trim() || "",
-      whatsapp: document.getElementById("profileWhatsapp")?.value.trim() || "",
-      vk: document.getElementById("profileVk")?.value.trim() || "",
-      max: document.getElementById("profileMax")?.value.trim() || "",
+      telegram: normalizeTelegramNickname(document.getElementById("profileTelegram")?.value.trim() || ""),
       marketingConsent: Boolean(document.getElementById("profileMarketing")?.checked)
     };
-    if (!/^\+7\d{10}$/.test(phone)) {
-      if (status) status.textContent = "Телефон: 10 цифр после +7";
-      return;
-    }
     try {
       const data = await api("/api/me/profile", { method: "PATCH", body: JSON.stringify(payload) });
       state.user = data.user;
@@ -6515,6 +6561,54 @@ async function renderAgencyPage() {
 
   let editingAgencyPropertyId = "";
   const closeAgencyEditModal = () => document.getElementById("agencyPropEditModal")?.classList.remove("open");
+  const geocodeAgencyEditAddress = async (rawAddress) => {
+    const address = String(rawAddress || "").trim();
+    if (!address) return null;
+    if (!window.ymaps) {
+      throw new Error("Карты еще загружаются. Повторите сохранение через пару секунд.");
+    }
+    await new Promise((resolve) => ymaps.ready(resolve));
+    const MOSCOW_BOUNDS = [
+      [55.45, 37.2],
+      [56.05, 37.95]
+    ];
+    const pickPoint = async (query) => {
+      const result = await ymaps.geocode(query, {
+        results: 1,
+        boundedBy: MOSCOW_BOUNDS,
+        strictBounds: false
+      });
+      const obj = result.geoObjects.get(0);
+      if (!obj) return null;
+      const [lat, lon] = obj.geometry.getCoordinates();
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      return {
+        lat,
+        lon,
+        address: obj.getAddressLine() || address
+      };
+    };
+    let point = await pickPoint(address);
+    if (
+      !point ||
+      point.lat < MOSCOW_BOUNDS[0][0] ||
+      point.lat > MOSCOW_BOUNDS[1][0] ||
+      point.lon < MOSCOW_BOUNDS[0][1] ||
+      point.lon > MOSCOW_BOUNDS[1][1]
+    ) {
+      point = await pickPoint(`Москва, ${address}`);
+    }
+    if (
+      !point ||
+      point.lat < MOSCOW_BOUNDS[0][0] ||
+      point.lat > MOSCOW_BOUNDS[1][0] ||
+      point.lon < MOSCOW_BOUNDS[0][1] ||
+      point.lon > MOSCOW_BOUNDS[1][1]
+    ) {
+      throw new Error("Не удалось определить корректную точку в Москве. Выберите более точный московский адрес.");
+    }
+    return point;
+  };
   document.getElementById("agencyPropEditCloseBtn")?.addEventListener("click", closeAgencyEditModal);
   document.getElementById("agencyPropEditModal")?.addEventListener("click", (event) => {
     if (event.target?.id === "agencyPropEditModal") closeAgencyEditModal();
@@ -6547,11 +6641,25 @@ async function renderAgencyPage() {
     if (statusEl) statusEl.textContent = "";
     try {
       const source = await api(`/api/properties/${encodeURIComponent(editingAgencyPropertyId)}`);
+      const rawEditedAddress = String(document.getElementById("agencyPropEditAddress").value || "").trim();
+      const sourceAddress = String(source.address || "").trim();
+      let nextAddress = rawEditedAddress || sourceAddress || "";
+      let nextLat = source.lat;
+      let nextLon = source.lon;
+      if (nextAddress && nextAddress !== sourceAddress) {
+        const point = await geocodeAgencyEditAddress(nextAddress);
+        if (!point) {
+          throw new Error("Не удалось определить координаты по адресу.");
+        }
+        nextAddress = point.address || nextAddress;
+        nextLat = point.lat;
+        nextLon = point.lon;
+      }
       const formData = new FormData();
       formData.set("title", source.title || source.address || "Объект");
-      formData.set("address", document.getElementById("agencyPropEditAddress").value || source.address || "");
-      formData.set("lat", String(source.lat ?? ""));
-      formData.set("lon", String(source.lon ?? ""));
+      formData.set("address", nextAddress);
+      formData.set("lat", String(nextLat ?? ""));
+      formData.set("lon", String(nextLon ?? ""));
       formData.set("price", toRawNumberString(document.getElementById("agencyPropEditPrice").value || source.price));
       formData.set("area", normalizeDecimalInput(document.getElementById("agencyPropEditArea").value || source.area));
       formData.set("bedrooms", toRawNumberString(document.getElementById("agencyPropEditBedrooms").value || source.bedrooms));
