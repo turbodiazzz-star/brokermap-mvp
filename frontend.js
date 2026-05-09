@@ -154,10 +154,31 @@ function normalizeTelegramNickname(value) {
 function telegramContactLink(value) {
   const normalized = normalizeTelegramNickname(value);
   if (!normalized) return null;
+  const username = normalized.slice(1);
   return {
     handle: normalized,
-    url: `https://t.me/${encodeURIComponent(normalized.slice(1))}`
+    deepUrl: `tg://resolve?domain=${encodeURIComponent(username)}`,
+    fallbackUrl: `https://t.me/${encodeURIComponent(username)}`
   };
+}
+
+function bindTelegramDeepLinks(scope = document) {
+  scope.querySelectorAll("[data-telegram-deep-link]").forEach((link) => {
+    if (link.dataset.telegramBound === "1") return;
+    link.dataset.telegramBound = "1";
+    link.addEventListener("click", (event) => {
+      const deepUrl = String(link.getAttribute("data-telegram-deep-link") || "").trim();
+      const fallbackUrl = String(link.getAttribute("data-telegram-fallback-link") || "").trim();
+      if (!deepUrl) return;
+      event.preventDefault();
+      window.location.href = deepUrl;
+      if (fallbackUrl) {
+        window.setTimeout(() => {
+          window.location.href = fallbackUrl;
+        }, 900);
+      }
+    });
+  });
 }
 
 const MAX_PROPERTY_UPLOAD_TOTAL_BYTES = 900 * 1024;
@@ -1304,7 +1325,9 @@ function renderSheetPropertyPopupBody(property, options = {}) {
                  <p><strong>Телефон:</strong> ${escapeHtml(property?.contacts?.phone || "-")}</p>
                  <p><strong>Telegram:</strong> ${
                    tg
-                     ? `<a href="${escapeHtml(tg.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(tg.handle)}</a>`
+                     ? `<a href="${escapeHtml(tg.deepUrl)}" data-telegram-deep-link="${escapeHtml(
+                         tg.deepUrl
+                       )}" data-telegram-fallback-link="${escapeHtml(tg.fallbackUrl)}">${escapeHtml(tg.handle)}</a>`
                      : "-"
                  }</p>
                  <p><a class="btn primary full contact-call-btn" href="tel:${escapeHtml(telValue)}">Связаться с брокером</a></p>`
@@ -1327,6 +1350,7 @@ function renderSheetPropertyPopupBody(property, options = {}) {
 
 function bindSheetPropertyPopupBehavior(popupEl, property, options = {}) {
   if (!popupEl || !property) return;
+  bindTelegramDeepLinks(popupEl);
   const isDemo = options.isDemo === true;
   const galleryPhotos = (property.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
   let currentGalleryIndex = 0;
@@ -4287,7 +4311,9 @@ async function renderPropertyPage(id) {
           <p><strong>Телефон:</strong> ${property.contacts.phone || "-"}</p>
           <p><strong>Telegram:</strong> ${
             tg
-              ? `<a href="${escapeHtml(tg.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(tg.handle)}</a>`
+              ? `<a href="${escapeHtml(tg.deepUrl)}" data-telegram-deep-link="${escapeHtml(
+                  tg.deepUrl
+                )}" data-telegram-fallback-link="${escapeHtml(tg.fallbackUrl)}">${escapeHtml(tg.handle)}</a>`
               : "-"
           }</p>
           <p>
@@ -4308,6 +4334,7 @@ async function renderPropertyPage(id) {
     </div>
   `;
   bindBrandHomeButton();
+  bindTelegramDeepLinks(app);
   document.getElementById("goBack").addEventListener("click", () => {
     const snap = consumeSheetReturnState(false);
     if (snap) {
