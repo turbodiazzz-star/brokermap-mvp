@@ -5013,27 +5013,83 @@ async function renderAgencyInvitePage(token) {
   `;
   bindMobileBottomNavActions();
   updateMobileNavMetrics();
+  const setInviteFieldError = (inputEl, message) => {
+    if (!inputEl) return;
+    inputEl.classList.add("input-invalid");
+    let errorEl = inputEl.nextElementSibling;
+    while (errorEl && !errorEl.classList?.contains("field-error-text")) {
+      errorEl = errorEl.nextElementSibling;
+    }
+    if (!errorEl || !errorEl.classList?.contains("field-error-text")) {
+      errorEl = document.createElement("p");
+      errorEl.className = "field-error-text";
+      inputEl.insertAdjacentElement("afterend", errorEl);
+    }
+    errorEl.textContent = message || "";
+  };
+  const clearInviteFieldError = (inputEl) => {
+    if (!inputEl) return;
+    inputEl.classList.remove("input-invalid");
+    let errorEl = inputEl.nextElementSibling;
+    while (errorEl && !errorEl.classList?.contains("field-error-text")) {
+      errorEl = errorEl.nextElementSibling;
+    }
+    if (errorEl?.classList?.contains("field-error-text")) {
+      errorEl.remove();
+    }
+  };
+  const firstNameEl = document.getElementById("inviteFirstName");
+  const lastNameEl = document.getElementById("inviteLastName");
+  const passwordEl = document.getElementById("invitePassword");
+  const phoneEl = document.getElementById("invitePhone");
+  const agreeEl = document.getElementById("inviteAgree");
+  const validateInviteFirstName = () => {
+    const ok = Boolean(String(firstNameEl?.value || "").trim());
+    if (!ok) setInviteFieldError(firstNameEl, "Введите имя");
+    else clearInviteFieldError(firstNameEl);
+    return ok;
+  };
+  const validateInviteLastName = () => {
+    const ok = Boolean(String(lastNameEl?.value || "").trim());
+    if (!ok) setInviteFieldError(lastNameEl, "Введите фамилию");
+    else clearInviteFieldError(lastNameEl);
+    return ok;
+  };
+  const validateInvitePassword = () => {
+    const ok = String(passwordEl?.value || "").length >= 6;
+    if (!ok) setInviteFieldError(passwordEl, "Пароль не менее 6 символов");
+    else clearInviteFieldError(passwordEl);
+    return ok;
+  };
+  const validateInvitePhone = () => {
+    const phone = `+7${toDigits(phoneEl?.value || "")}`;
+    const ok = /^\+7\d{10}$/.test(phone);
+    if (!ok) setInviteFieldError(phoneEl, "Введите 10 цифр после +7");
+    else clearInviteFieldError(phoneEl);
+    return ok;
+  };
+  firstNameEl?.addEventListener("input", validateInviteFirstName);
+  lastNameEl?.addEventListener("input", validateInviteLastName);
+  passwordEl?.addEventListener("input", validateInvitePassword);
+  phoneEl?.addEventListener("input", (event) => {
+    event.target.value = formatRussianPhoneMasked(event.target.value);
+    validateInvitePhone();
+  });
   document.getElementById("inviteCompleteBtn")?.addEventListener("click", async () => {
     const status = document.getElementById("inviteStatus");
     if (status) status.textContent = "";
-    const firstName = document.getElementById("inviteFirstName")?.value.trim() || "";
-    const lastName = document.getElementById("inviteLastName")?.value.trim() || "";
-    const password = document.getElementById("invitePassword")?.value || "";
-    const phone = `+7${toDigits(document.getElementById("invitePhone")?.value || "")}`;
-    const agree = document.getElementById("inviteAgree")?.checked;
+    const firstName = firstNameEl?.value.trim() || "";
+    const lastName = lastNameEl?.value.trim() || "";
+    const password = passwordEl?.value || "";
+    const phone = `+7${toDigits(phoneEl?.value || "")}`;
+    const agree = Boolean(agreeEl?.checked);
     const marketingConsent = document.getElementById("inviteMarketing")?.checked;
-    if (!firstName || !lastName) {
-      if (status) status.textContent = "Укажите имя и фамилию";
-      return;
-    }
-    if (password.length < 6) {
-      if (status) status.textContent = "Пароль не менее 6 символов";
-      return;
-    }
-    if (!/^\+7\d{10}$/.test(phone)) {
-      if (status) status.textContent = "Телефон: 10 цифр после +7";
-      return;
-    }
+    const valid =
+      validateInviteFirstName() &&
+      validateInviteLastName() &&
+      validateInvitePassword() &&
+      validateInvitePhone();
+    if (!valid) return;
     if (!agree) {
       if (status) status.textContent = "Нужно согласие на обработку персональных данных";
       return;
@@ -5191,7 +5247,6 @@ async function renderCabinetProfilePage() {
           <p class="muted" id="profileFormStatus"></p>
         </form>
         <hr />
-        <p><button type="button" class="btn" id="profileLogoutBtn">Выйти из аккаунта</button></p>
         <p style="margin-top: 28px;"><button type="button" class="btn danger-btn" id="profileDeleteBtn">Удалить профиль</button></p>
         <p class="muted" id="profileDeleteHint">Удаление необратимо. Объекты брокера агентства перейдут к агентству; у владельца агентства без брокеров объекты будут удалены вместе с профилем.</p>
       </div>
@@ -5260,10 +5315,6 @@ async function renderCabinetProfilePage() {
       if (status) status.textContent = err.message || "Ошибка сохранения";
     }
   });
-  document.getElementById("profileLogoutBtn")?.addEventListener("click", async () => {
-    await logout();
-    location.hash = "#/auth";
-  });
   document.getElementById("profileDeleteBtn")?.addEventListener("click", async () => {
     if (
       !window.confirm(
@@ -5302,6 +5353,7 @@ async function renderCabinetPage(openForm = false) {
         </div>
         <p class="muted">Всего объектов: ${stats.totalProperties}.</p>
         <p><button class="btn primary" id="addProperty">Добавить объект</button></p>
+        <p><button class="btn" id="cabinetLogoutBtn" type="button">Выйти из аккаунта</button></p>
       </div>
       <div class="panel">
         <h3>Мои объекты</h3>
@@ -5353,14 +5405,6 @@ async function renderCabinetPage(openForm = false) {
             </div>
             <input type="hidden" name="lat" id="latInput" />
             <input type="hidden" name="lon" id="lonInput" />
-            <div class="field-block field-span-2">
-              <label class="field-label" for="cianUrlInput">Ссылка на Циан (без фото)</label>
-              <div class="address-row">
-                <input id="cianUrlInput" type="url" placeholder="https://www.cian.ru/sale/flat/..." />
-                <button class="btn" type="button" id="parseCianBtn">Заполнить</button>
-              </div>
-              <div id="cianParseStatus" class="note"></div>
-            </div>
             <div class="field-block">
               <label class="field-label" for="priceInput">Цена</label>
               <input id="priceInput" name="price" type="text" inputmode="numeric" required />
@@ -5480,38 +5524,9 @@ async function renderCabinetPage(openForm = false) {
   document.getElementById("closeCabinetPanel").addEventListener("click", () => {
     location.hash = "#/";
   });
-  document.getElementById("parseCianBtn")?.addEventListener("click", async () => {
-    const urlInput = document.getElementById("cianUrlInput");
-    const statusEl = cianParseStatus();
-    const btn = document.getElementById("parseCianBtn");
-    if (!urlInput || !btn) return;
-    const url = String(urlInput.value || "").trim();
-    if (!url) {
-      if (statusEl) statusEl.textContent = "Вставьте ссылку на объявление Циан.";
-      return;
-    }
-    if (statusEl) statusEl.textContent = "Считываю данные объявления...";
-    btn.disabled = true;
-    try {
-      const parsed = await api("/api/my/properties/parse-cian", {
-        method: "POST",
-        body: JSON.stringify({ url })
-      });
-      applyParsedCianToForm(parsed);
-      if (statusEl) {
-        statusEl.textContent =
-          "Данные заполнены. Фото не импортируются. Проверьте поля и при необходимости скорректируйте.";
-      }
-    } catch (error) {
-      if (statusEl) {
-        const msg = String(error?.message || "Не удалось распознать ссылку.");
-        statusEl.textContent = msg.includes("Вы не робот")
-          ? `${msg} Попробуйте открыть объявление в браузере и подтвердить, что вы не робот, затем повторите.`
-          : msg;
-      }
-    } finally {
-      btn.disabled = false;
-    }
+  document.getElementById("cabinetLogoutBtn")?.addEventListener("click", async () => {
+    await logout();
+    location.hash = "#/auth";
   });
   document.getElementById("openCabinetProfile")?.addEventListener("click", () => {
     location.hash = "#/cabinet/profile";
@@ -5521,59 +5536,6 @@ async function renderCabinetPage(openForm = false) {
   let existingPhotoUrls = [];
   let removedPhotoUrls = [];
   const MAX_PHOTOS_PER_OBJECT = 5;
-  function cianParseStatus() {
-    return document.getElementById("cianParseStatus");
-  }
-
-
-  const applyParsedCianToForm = (parsed) => {
-    const form = document.getElementById("propertyForm");
-    if (!form || !parsed || typeof parsed !== "object") return;
-    if (parsed.title && form.elements.title) {
-      form.elements.title.value = parsed.title;
-    }
-    if (parsed.address) {
-      form.elements.address.value = parsed.address;
-    }
-    if (parsed.price != null) {
-      form.elements.price.value = formatSpacedNumber(String(Math.round(Number(parsed.price))));
-    }
-    if (parsed.area != null) {
-      const areaStr = String(parsed.area).replace(".", ",");
-      form.elements.area.value = areaStr;
-    }
-    if (parsed.bedrooms != null) {
-      form.elements.bedrooms.value = formatSpacedNumber(String(Math.round(Number(parsed.bedrooms))));
-    }
-    if (parsed.floor != null) {
-      form.elements.floor.value = formatSpacedNumber(String(Math.round(Number(parsed.floor))));
-    }
-    if (parsed.totalFloors != null) {
-      form.elements.totalFloors.value = formatSpacedNumber(String(Math.round(Number(parsed.totalFloors))));
-    }
-    if (parsed.ceilingHeight != null) {
-      form.elements.ceilingHeight.value = Number(parsed.ceilingHeight).toFixed(1).replace(/\.0$/, "");
-    }
-    if (parsed.metroWalkMinutes != null) {
-      form.elements.metroWalkMinutes.value = formatSpacedNumber(String(Math.round(Number(parsed.metroWalkMinutes))));
-    }
-    if (parsed.description) {
-      form.elements.description.value = parsed.description;
-    }
-    if (parsed.lat != null && parsed.lon != null) {
-      form.elements.lat.value = String(parsed.lat);
-      form.elements.lon.value = String(parsed.lon);
-      document.getElementById("addressHint").innerHTML = `Точка определена: <strong>${escapeHtml(
-        Number(parsed.lat).toFixed(6)
-      )}, ${escapeHtml(Number(parsed.lon).toFixed(6))}</strong>`;
-    } else {
-      form.elements.lat.value = "";
-      form.elements.lon.value = "";
-      document.getElementById("addressHint").textContent =
-        "Проверьте адрес и выберите подсказку, чтобы подтвердить точку на карте.";
-    }
-  };
-
   const renderPhotoState = () => {
     const existingWrap = document.getElementById("existingPhotosWrap");
     const existingPreview = document.getElementById("existingPhotosPreview");
@@ -5661,8 +5623,6 @@ async function renderCabinetPage(openForm = false) {
     document.getElementById("propertyFormTitle").textContent = "Новый объект";
     document.getElementById("propertySubmitBtn").textContent = "Сохранить объект";
     document.getElementById("propertyForm").reset();
-    if (document.getElementById("cianUrlInput")) document.getElementById("cianUrlInput").value = "";
-    if (cianParseStatus()) cianParseStatus().textContent = "";
     document.getElementById("photosInput").required = false;
     renderPhotoState();
     document.getElementById("propertyFormModal")?.classList.add("open");
@@ -5681,8 +5641,6 @@ async function renderCabinetPage(openForm = false) {
     renderPhotoState();
     document.getElementById("propertyFormModal")?.classList.add("open");
     const form = document.getElementById("propertyForm");
-    if (document.getElementById("cianUrlInput")) document.getElementById("cianUrlInput").value = "";
-    if (cianParseStatus()) cianParseStatus().textContent = "";
     form.elements.address.value = property.address || "";
     form.elements.price.value = formatSpacedNumber(property.price || "");
     form.elements.area.value = String(property.area ?? "").replace(".", ",");
@@ -6185,9 +6143,11 @@ async function renderAgencyPage() {
         </select>
       </td>
       <td>
-        <button type="button" class="btn agency-prop-open" data-id="${escapeHtml(p.id)}">Открыть</button>
-        <button type="button" class="btn agency-prop-edit" data-id="${escapeHtml(p.id)}">Редактировать</button>
-        <button type="button" class="btn danger-btn agency-prop-del" data-id="${escapeHtml(p.id)}">Удалить</button>
+        <div class="admin-row-actions agency-prop-actions">
+          <button type="button" class="btn agency-prop-open" data-id="${escapeHtml(p.id)}">Открыть</button>
+          <button type="button" class="btn agency-prop-edit" data-id="${escapeHtml(p.id)}">Редактировать</button>
+          <button type="button" class="btn danger-btn agency-prop-del" data-id="${escapeHtml(p.id)}">Удалить</button>
+        </div>
       </td>
     </tr>`;
         })

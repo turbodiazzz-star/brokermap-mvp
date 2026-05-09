@@ -1215,6 +1215,11 @@ body.sheet-property-popup-open {
   margin: 0 0 8px;
 }
 
+.cabinet .contact-us-card {
+  max-width: none;
+  width: 100%;
+}
+
 .auth-result-wrap {
   padding: 4px 0 2px;
 }
@@ -2412,6 +2417,17 @@ textarea {
   gap: 8px;
 }
 
+.agency-prop-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(112px, 1fr));
+  gap: 8px;
+  min-width: 240px;
+}
+
+.agency-prop-actions .danger-btn {
+  grid-column: 1 / -1;
+}
+
 .admin-prop-cell {
   display: flex;
   align-items: center;
@@ -2514,6 +2530,11 @@ textarea {
     display: grid;
     grid-template-columns: 1fr;
     width: 100%;
+  }
+
+  .agency-prop-actions {
+    grid-template-columns: 1fr;
+    min-width: 0;
   }
 
   .admin-row-actions .btn {
