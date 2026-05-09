@@ -1671,6 +1671,32 @@ app.get("/api/agency/brokers", auth, requireAgencyOwner, (req, res) => {
   });
 });
 
+app.get("/api/agency/brokers/:id", auth, requireAgencyOwner, (req, res) => {
+  const broker = findUserById(req.params.id);
+  if (!broker || broker.accountType !== "broker" || broker.agencyOwnerId !== req.userId) {
+    return res.status(404).json({ message: "Брокер не найден" });
+  }
+  const properties = listPropertiesByOwner(broker.id).map((p) => ({
+    id: p.id,
+    address: p.address || "",
+    price: p.price,
+    createdAt: p.createdAt,
+    ownerId: p.ownerId
+  }));
+  return res.json({
+    broker: {
+      id: broker.id,
+      email: broker.email,
+      firstName: broker.firstName || "",
+      lastName: broker.lastName || "",
+      name: broker.name || "",
+      phone: broker.phone || "",
+      createdAt: broker.createdAt
+    },
+    properties
+  });
+});
+
 app.get("/api/agency/properties", auth, requireAgencyOwner, (req, res) => {
   return res.json(listPropertiesForAgencyOwner(req.userId));
 });
