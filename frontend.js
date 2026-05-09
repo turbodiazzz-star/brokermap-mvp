@@ -116,6 +116,22 @@ function toDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function extractRussianLocalPhoneDigits(value) {
+  const raw = String(value || "");
+  const digits = toDigits(raw);
+  if (!digits) return "";
+  if (digits.length === 11 && (digits.startsWith("7") || digits.startsWith("8"))) {
+    return digits.slice(1);
+  }
+  if (digits.length > 10) {
+    return digits.slice(-10);
+  }
+  if (/^\s*\+?\s*7\b/.test(raw) || raw.includes("+7")) {
+    return digits.slice(1, 11);
+  }
+  return digits.slice(0, 10);
+}
+
 function escapeHtml(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -138,7 +154,7 @@ function normalizeDecimalInput(value) {
 }
 
 function normalizeRussianPhone(phone) {
-  const digits = String(phone || "").replace(/\D/g, "").slice(-10);
+  const digits = extractRussianLocalPhoneDigits(phone);
   return digits ? `+7${digits}` : "";
 }
 
@@ -453,8 +469,8 @@ async function shareDemoPresentationPdf(property) {
 }
 
 function formatRussianPhoneMasked(value) {
-  const digits = String(value || "").replace(/\D/g, "").slice(-10);
-  if (!digits) return "";
+  const digits = extractRussianLocalPhoneDigits(value);
+  if (!digits) return "+7";
   if (digits.length <= 3) return `+7 (${digits}`;
   if (digits.length <= 6) return `+7 (${digits.slice(0, 3)}) ${digits.slice(3)}`;
   if (digits.length <= 8) return `+7 (${digits.slice(0, 3)}) ${digits.slice(3, 6)} ${digits.slice(6)}`;
@@ -4785,7 +4801,7 @@ function attachAuthDomListeners(demoOverlay) {
   };
   const validateRegisterPhone = () => {
     const phoneEl = document.getElementById("phone");
-    const digits = toDigits(phoneEl?.value || "").slice(-10);
+    const digits = extractRussianLocalPhoneDigits(phoneEl?.value || "");
     if (digits.length !== 10) {
       setFieldError(phoneEl, "Телефон: 10 цифр после +7");
       return false;
@@ -5363,7 +5379,7 @@ async function renderCabinetProfilePage() {
   };
   const validateProfilePhone = () => {
     const phoneEl = document.getElementById("profilePhone");
-    const digits = toDigits(phoneEl?.value || "").slice(-10);
+    const digits = extractRussianLocalPhoneDigits(phoneEl?.value || "");
     const ok = digits.length === 10;
     if (!ok) setProfileFieldError(phoneEl, "Телефон: 10 цифр после +7");
     else clearProfileFieldError(phoneEl);

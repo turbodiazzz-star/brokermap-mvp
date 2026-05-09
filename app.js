@@ -163,6 +163,7 @@ function refreshAllPropertiesMetroWalkMinutes() {
 
 initDb({ adminEmails: adminEmailList });
 refreshAllPropertiesMetroWalkMinutes();
+void repairAllPropertyCoordinatesByAddress();
 
 for (const dir of [UPLOADS_DIR, PHOTOS_DIR, PDFS_DIR]) {
   if (!fs.existsSync(dir)) {
@@ -244,6 +245,80 @@ function autoMetroWalkMinutesByCoords(lat, lon) {
   if (!Number.isFinite(best)) return null;
   const metersPerMinute = 80;
   return Math.max(1, Math.min(180, Math.round(best / metersPerMinute)));
+}
+
+const GEO_REPAIR_CACHE = new Map();
+
+function normalizeAddressForGeocode(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function geocodeAddressWithNominatim(address) {
+  const query = normalizeAddressForGeocode(address);
+  if (!query) return null;
+  if (GEO_REPAIR_CACHE.has(query)) return GEO_REPAIR_CACHE.get(query);
+  if (typeof fetch !== "function") return null;
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 7000);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "BrokerMapMVP/1.0"
+      },
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      GEO_REPAIR_CACHE.set(query, null);
+      return null;
+    }
+    const list = await response.json().catch(() => []);
+    const first = Array.isArray(list) ? list[0] : null;
+    const lat = Number(first?.lat);
+    const lon = Number(first?.lon);
+    const point = Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+    GEO_REPAIR_CACHE.set(query, point);
+    return point;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function repairAllPropertyCoordinatesByAddress() {
+  try {
+    const list = listAllPropertiesForAdmin();
+    if (!Array.isArray(list) || !list.length) return;
+    let repaired = 0;
+    for (const row of list) {
+      const full = findPropertyById(row.id);
+      if (!full) continue;
+      const query = normalizeAddressForGeocode(full.address);
+      if (!query) continue;
+      const geo = await geocodeAddressWithNominatim(query);
+      if (!geo) continue;
+      const currentLat = Number(full.lat);
+      const currentLon = Number(full.lon);
+      if (!Number.isFinite(currentLat) || !Number.isFinite(currentLon)) continue;
+      const driftMeters = haversineMeters(currentLat, currentLon, geo.lat, geo.lon);
+      if (driftMeters < 1200) continue;
+      full.lat = geo.lat;
+      full.lon = geo.lon;
+      full.metroWalkMinutes = autoMetroWalkMinutesByCoords(geo.lat, geo.lon);
+      updatePropertyRow(full);
+      repaired += 1;
+    }
+    if (repaired > 0) {
+      console.log(`[geo-repair] fixed property coordinates: ${repaired}`);
+    }
+  } catch (error) {
+    console.error("[geo-repair] failed:", error?.message || error);
+  }
 }
 
 function toBooleanValue(value) {
