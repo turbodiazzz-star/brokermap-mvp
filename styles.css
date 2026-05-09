@@ -440,14 +440,14 @@ body.view-map #app {
 
 @media (min-width: 901px) {
   .map-layout--app-sheet .map-wrap {
-    display: grid;
+  display: grid;
     grid-template-columns: clamp(290px, 24vw, 380px) 1fr;
     grid-template-rows: minmax(0, 1fr);
     align-items: stretch;
-  }
+}
 
   .map-layout.collapsed .map-wrap {
-    grid-template-columns: 1fr;
+  grid-template-columns: 1fr;
   }
 
   .map-layout--app-sheet .map-stage {

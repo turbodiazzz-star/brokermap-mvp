@@ -943,42 +943,42 @@ app.post("/api/auth/register", async (req, res) => {
     const normalizedAgency = String(agency || "").trim();
     const normalizedPhone = String(phone || "").trim();
     if (!normalizedEmail || !password || !normalizedFirstName || !normalizedLastName || !normalizedPhone || !normalizedAgency) {
-      return res.status(400).json({ message: "Заполните все обязательные поля регистрации" });
-    }
+    return res.status(400).json({ message: "Заполните все обязательные поля регистрации" });
+  }
     if (!/^\+7\d{10}$/.test(normalizedPhone)) {
-      return res.status(400).json({ message: "Телефон должен быть в формате +7 и 10 цифр" });
-    }
-    if (!agree) {
-      return res.status(400).json({ message: "Нужно согласие на обработку данных" });
-    }
+    return res.status(400).json({ message: "Телефон должен быть в формате +7 и 10 цифр" });
+  }
+  if (!agree) {
+    return res.status(400).json({ message: "Нужно согласие на обработку данных" });
+  }
     if (findUserByEmail(normalizedEmail)) {
-      return res.status(409).json({ message: "Пользователь с таким email уже есть" });
-    }
-    const passwordHash = await bcrypt.hash(password, 10);
+    return res.status(409).json({ message: "Пользователь с таким email уже есть" });
+  }
+  const passwordHash = await bcrypt.hash(password, 10);
     const id = createUserId();
     const role = isAdminEmail(normalizedEmail) ? "admin" : "user";
-    const user = {
+  const user = {
       id,
       name: String(name || "").trim() || `${normalizedFirstName} ${normalizedLastName}`.trim(),
       email: normalizedEmail,
-      passwordHash,
+    passwordHash,
       firstName: normalizedFirstName,
       lastName: normalizedLastName,
       agency: normalizedAgency,
       inn: String(inn || "").trim(),
       phone: normalizedPhone,
-      marketingConsent: Boolean(marketingConsent),
-      telegram: "",
-      whatsapp: "",
-      vk: "",
-      max: "",
+    marketingConsent: Boolean(marketingConsent),
+    telegram: "",
+    whatsapp: "",
+    vk: "",
+    max: "",
       role,
       accountType: normalizedType,
       agencyOwnerId: null,
       brokerLimit: normalizedType === "agency_owner" ? 100 : 0,
       emailVerified: false,
-      createdAt: new Date().toISOString()
-    };
+    createdAt: new Date().toISOString()
+  };
     try {
       createUserRecord(user);
     } catch (dbError) {
@@ -1083,7 +1083,7 @@ app.get("/api/auth/agency-invite-info", (req, res) => {
     }
     const owner = findUserById(broker.agencyOwnerId);
     const agencyName = (owner?.agency || owner?.name || "агентства").trim() || "агентства";
-    return res.json({
+  return res.json({
       email: broker.email,
       agencyName
     });
@@ -1668,32 +1668,6 @@ app.get("/api/agency/brokers", auth, requireAgencyOwner, (req, res) => {
     brokerLimit: Number(owner?.brokerLimit || 0),
     brokerCount: brokers.length,
     brokers
-  });
-});
-
-app.get("/api/agency/brokers/:id", auth, requireAgencyOwner, (req, res) => {
-  const broker = findUserById(req.params.id);
-  if (!broker || broker.accountType !== "broker" || broker.agencyOwnerId !== req.userId) {
-    return res.status(404).json({ message: "Брокер не найден" });
-  }
-  const properties = listPropertiesByOwner(broker.id).map((p) => ({
-    id: p.id,
-    address: p.address || "",
-    price: p.price,
-    createdAt: p.createdAt,
-    ownerId: p.ownerId
-  }));
-  return res.json({
-    broker: {
-      id: broker.id,
-      email: broker.email,
-      firstName: broker.firstName || "",
-      lastName: broker.lastName || "",
-      name: broker.name || "",
-      phone: broker.phone || "",
-      createdAt: broker.createdAt
-    },
-    properties
   });
 });
 

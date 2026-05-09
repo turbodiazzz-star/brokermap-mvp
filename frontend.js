@@ -6100,16 +6100,35 @@ async function renderAgencyPage() {
 
   const brokers = Array.isArray(agencyData.brokers) ? agencyData.brokers : [];
   const activeBrokers = brokers.filter((b) => !b.invitePending);
+  const personFullName = (person) => {
+    const fn = String(person?.firstName || "").trim();
+    const ln = String(person?.lastName || "").trim();
+    const full = [fn, ln].filter(Boolean).join(" ").trim();
+    if (full) return full;
+    const name = String(person?.name || "").trim();
+    if (name && !name.includes("@")) return name;
+    return "";
+  };
+  const agencyOwnerLabel =
+    personFullName(state.user) ||
+    String(state.user?.name || "").trim() ||
+    [state.user?.firstName, state.user?.lastName].filter(Boolean).join(" ").trim() ||
+    String(state.user?.agency || "").trim() ||
+    "Агентство";
   const assignOptions = [
     {
       id: state.user.id,
-      label: `Агентство (${state.user.agency || state.user.email || "владелец"})`
+      label: `Агентство (${agencyOwnerLabel})`
     },
     ...activeBrokers.map((b) => ({
       id: b.id,
-      label: `${b.email}${b.name ? ` (${b.name})` : ""}`
+      label: personFullName(b) || "Брокер без имени"
     }))
   ];
+  const ownerLabelById = new Map(assignOptions.map((o) => [o.id, o.label]));
+  brokers.forEach((b) => {
+    ownerLabelById.set(b.id, personFullName(b) || ownerLabelById.get(b.id) || "Брокер без имени");
+  });
   const rows = brokers
     .map(
       (b) => `<tr>
@@ -6117,9 +6136,14 @@ async function renderAgencyPage() {
       <td>${escapeHtml(b.invitePending ? "ожидает регистрации" : b.name || "—")}</td>
       <td>${escapeHtml(b.invitePending ? "—" : b.phone || "—")}</td>
       <td class="muted">${escapeHtml((b.createdAt || "").slice(0, 10))}</td>
-      <td><button type="button" class="btn danger-btn agency-del-broker" data-id="${escapeHtml(b.id)}" data-email="${escapeHtml(
-        b.email
-      )}">Удалить</button></td>
+      <td>
+        <div class="admin-row-actions">
+          <button type="button" class="btn agency-open-broker" data-id="${escapeHtml(b.id)}">Открыть</button>
+          <button type="button" class="btn danger-btn agency-del-broker" data-id="${escapeHtml(b.id)}" data-email="${escapeHtml(
+            b.email
+          )}">Удалить</button>
+        </div>
+      </td>
     </tr>`
     )
     .join("");
@@ -6133,10 +6157,12 @@ async function renderAgencyPage() {
             )
             .join("");
           return `<tr>
-      <td><code>${escapeHtml(p.id)}</code></td>
+      <td data-label="Превью">
+        <img class="admin-prop-thumb" src="${photoUrlWithFallback(getPropertyPreviewPhoto(p))}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />
+      </td>
       <td>${escapeHtml(p.address || "—")}</td>
       <td>${money(p.price)} ₽</td>
-      <td>${escapeHtml(p.ownerEmail || "—")}</td>
+      <td>${escapeHtml(ownerLabelById.get(p.ownerId) || p.ownerName || "—")}</td>
       <td>
         <select class="agency-prop-owner-select" data-id="${escapeHtml(p.id)}" data-initial-owner="${escapeHtml(p.ownerId || "")}">
           ${optionsHtml}
@@ -6208,11 +6234,11 @@ async function renderAgencyPage() {
           <table class="admin-table">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>Превью</th>
                 <th>Адрес</th>
                 <th>Цена</th>
                 <th>Текущий ответственный</th>
-                <th>Новый ответственный</th>
+                <th>Сменить ответственного</th>
                 <th></th>
               </tr>
             </thead>
@@ -6247,6 +6273,15 @@ async function renderAgencyPage() {
           </p>
         </div>
       </div>
+      <div class="modal" id="agencyBrokerModal">
+        <div class="modal-card admin-modal-card">
+          <div class="panel-head">
+            <h3 id="agencyBrokerModalTitle">Брокер</h3>
+            <button class="close-panel-action" id="agencyBrokerCloseBtn" aria-label="Закрыть">×</button>
+          </div>
+          <div id="agencyBrokerModalBody"></div>
+        </div>
+      </div>
     </section>
     ${mobileBottomNavHtml("cabinet")}
   `;
@@ -6273,6 +6308,14 @@ async function renderAgencyPage() {
   };
   agencyBrokersTabBtn?.addEventListener("click", () => setAgencyTab("brokers"));
   agencyObjectsTabBtn?.addEventListener("click", () => setAgencyTab("objects"));
+  const agencyBrokerModal = document.getElementById("agencyBrokerModal");
+  const agencyBrokerModalTitle = document.getElementById("agencyBrokerModalTitle");
+  const agencyBrokerModalBody = document.getElementById("agencyBrokerModalBody");
+  const closeAgencyBrokerModal = () => agencyBrokerModal?.classList.remove("open");
+  document.getElementById("agencyBrokerCloseBtn")?.addEventListener("click", closeAgencyBrokerModal);
+  agencyBrokerModal?.addEventListener("click", (event) => {
+    if (event.target === agencyBrokerModal) closeAgencyBrokerModal();
+  });
 
   document.getElementById("agencyCreateBrokerBtn")?.addEventListener("click", async () => {
     const email = document.getElementById("agencyBrokerEmail").value.trim();
@@ -6308,6 +6351,62 @@ async function renderAgencyPage() {
         alert(err.message || "Ошибка удаления");
         btn.disabled = false;
       }
+    });
+  });
+  document.querySelectorAll(".agency-open-broker").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const brokerId = btn.getAttribute("data-id");
+      const broker = brokers.find((b) => b.id === brokerId);
+      if (!broker || !agencyBrokerModalBody || !agencyBrokerModalTitle) return;
+      const brokerProps = agencyProperties.filter((p) => p.ownerId === broker.id);
+      agencyBrokerModalTitle.textContent = `Брокер: ${broker.name || broker.email || "—"}`;
+      agencyBrokerModalBody.innerHTML = `
+        <p><strong>Email:</strong> ${escapeHtml(broker.email || "—")}</p>
+        <p><strong>Телефон:</strong> ${escapeHtml(broker.phone || "—")}</p>
+        <p><strong>Объектов:</strong> ${brokerProps.length}</p>
+        <div class="admin-mini-list">
+          ${
+            brokerProps.length
+              ? brokerProps
+                  .map(
+                    (p) => `<div class="admin-mini-list-item">
+                      <div><code>${escapeHtml(p.id)}</code> — ${escapeHtml(p.address || "—")} (${money(p.price)} ₽)</div>
+                      <div class="admin-row-actions">
+                        <button type="button" class="btn agency-broker-prop-open" data-id="${escapeHtml(p.id)}">Открыть</button>
+                        <button type="button" class="btn danger-btn agency-broker-prop-del" data-id="${escapeHtml(
+                          p.id
+                        )}">Удалить</button>
+                      </div>
+                    </div>`
+                  )
+                  .join("")
+              : `<p class="muted">У брокера пока нет объектов</p>`
+          }
+        </div>
+      `;
+      agencyBrokerModalBody.querySelectorAll(".agency-broker-prop-open").forEach((openBtn) => {
+        openBtn.addEventListener("click", async () => {
+          const propertyId = openBtn.getAttribute("data-id");
+          if (!propertyId) return;
+          await openSheetPropertyPopup(propertyId, { isDemo: false });
+        });
+      });
+      agencyBrokerModalBody.querySelectorAll(".agency-broker-prop-del").forEach((delBtn) => {
+        delBtn.addEventListener("click", async () => {
+          const propertyId = delBtn.getAttribute("data-id");
+          if (!propertyId || !window.confirm("Удалить объект брокера?")) return;
+          delBtn.disabled = true;
+          try {
+            await api(`/api/agency/properties/${encodeURIComponent(propertyId)}`, { method: "DELETE" });
+            closeAgencyBrokerModal();
+            await renderAgencyPage();
+          } catch (err) {
+            alert(err.message || "Ошибка удаления объекта");
+            delBtn.disabled = false;
+          }
+        });
+      });
+      agencyBrokerModal.classList.add("open");
     });
   });
 
