@@ -6369,21 +6369,59 @@ async function renderAgencyPage() {
             brokerProps.length
               ? brokerProps
                   .map(
-                    (p) => `<div class="admin-mini-list-item">
+                    (p) => {
+                      const optionsHtml = assignOptions
+                        .map(
+                          (o) =>
+                            `<option value="${escapeHtml(o.id)}" ${o.id === p.ownerId ? "selected" : ""}>${escapeHtml(o.label)}</option>`
+                        )
+                        .join("");
+                      return `<div class="admin-mini-list-item">
                       <div><code>${escapeHtml(p.id)}</code> — ${escapeHtml(p.address || "—")} (${money(p.price)} ₽)</div>
+                      <div class="address-row">
+                        <select class="agency-broker-prop-owner-select" data-id="${escapeHtml(p.id)}">
+                          ${optionsHtml}
+                        </select>
+                        <button type="button" class="btn agency-broker-prop-owner-save" data-id="${escapeHtml(p.id)}">Сменить ответственного</button>
+                      </div>
                       <div class="admin-row-actions">
                         <button type="button" class="btn agency-broker-prop-open" data-id="${escapeHtml(p.id)}">Открыть</button>
                         <button type="button" class="btn danger-btn agency-broker-prop-del" data-id="${escapeHtml(
                           p.id
                         )}">Удалить</button>
                       </div>
-                    </div>`
+                    </div>`;
+                    }
                   )
                   .join("")
               : `<p class="muted">У брокера пока нет объектов</p>`
           }
         </div>
       `;
+      agencyBrokerModalBody.querySelectorAll(".agency-broker-prop-owner-save").forEach((saveBtn) => {
+        saveBtn.addEventListener("click", async () => {
+          const propertyId = saveBtn.getAttribute("data-id");
+          if (!propertyId) return;
+          const select = saveBtn.closest(".admin-mini-list-item")?.querySelector(".agency-broker-prop-owner-select");
+          const ownerId = String(select?.value || "").trim();
+          if (!ownerId) return;
+          saveBtn.disabled = true;
+          const originalLabel = saveBtn.textContent;
+          saveBtn.textContent = "Сохраняю...";
+          try {
+            await api(`/api/agency/properties/${encodeURIComponent(propertyId)}/owner`, {
+              method: "PATCH",
+              body: JSON.stringify({ ownerId })
+            });
+            saveBtn.textContent = "Сохранено";
+            await renderAgencyPage();
+          } catch (err) {
+            alert(err.message || "Не удалось сменить ответственного");
+            saveBtn.disabled = false;
+            saveBtn.textContent = originalLabel || "Сменить ответственного";
+          }
+        });
+      });
       agencyBrokerModalBody.querySelectorAll(".agency-broker-prop-open").forEach((openBtn) => {
         openBtn.addEventListener("click", async () => {
           const propertyId = openBtn.getAttribute("data-id");
