@@ -143,9 +143,21 @@ function normalizeRussianPhone(phone) {
 }
 
 function normalizeTelegramNickname(value) {
-  const trimmed = String(value || "").trim().replace(/\s+/g, "");
-  if (!trimmed) return "";
-  return trimmed.startsWith("@") ? trimmed : `@${trimmed}`;
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const withoutProto = raw.replace(/^https?:\/\/(t\.me|telegram\.me)\//i, "");
+  const withoutDomain = withoutProto.replace(/^(t\.me|telegram\.me)\//i, "");
+  const clean = withoutDomain.replace(/^@+/, "").replace(/[^\w]/g, "");
+  return clean ? `@${clean}` : "";
+}
+
+function telegramContactLink(value) {
+  const normalized = normalizeTelegramNickname(value);
+  if (!normalized) return null;
+  return {
+    handle: normalized,
+    url: `https://t.me/${encodeURIComponent(normalized.slice(1))}`
+  };
 }
 
 const MAX_PROPERTY_UPLOAD_TOTAL_BYTES = 900 * 1024;
@@ -1240,6 +1252,7 @@ function renderSheetPropertyPopupBody(property, options = {}) {
   const galleryPhotos = (property?.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
   const metroLine = property ? propertyMetroLabel(property) : "";
   const telValue = normalizePhoneForTel(property?.contacts?.phone || "");
+  const tg = telegramContactLink(property?.contacts?.telegram || "");
   return `
     <div class="sheet-property-popup__content">
       <div class="sheet-property-popup__grid">
@@ -1289,7 +1302,11 @@ function renderSheetPropertyPopupBody(property, options = {}) {
                       </p>`
                    : `<p><button class="btn" id="popupGeneratePdfBtn" type="button">Сгенерировать презентацию PDF</button></p>`}
                  <p><strong>Телефон:</strong> ${escapeHtml(property?.contacts?.phone || "-")}</p>
-                 <p><strong>Telegram:</strong> ${escapeHtml(property?.contacts?.telegram || "-")}</p>
+                 <p><strong>Telegram:</strong> ${
+                   tg
+                     ? `<a href="${escapeHtml(tg.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(tg.handle)}</a>`
+                     : "-"
+                 }</p>
                  <p><a class="btn primary full contact-call-btn" href="tel:${escapeHtml(telValue)}">Связаться с брокером</a></p>`
           }
         </aside>
@@ -4220,6 +4237,7 @@ async function renderPropertyPage(id) {
     ? property.photos
     : [PLACEHOLDER_IMAGE_URL];
   const metroLine = propertyMetroLabel(property);
+  const tg = telegramContactLink(property?.contacts?.telegram || "");
   app.innerHTML = `
     ${topbar({ hideFilters: window.matchMedia("(max-width: 900px)").matches })}
     <section class="page">
@@ -4267,7 +4285,11 @@ async function renderPropertyPage(id) {
           }
           <hr />
           <p><strong>Телефон:</strong> ${property.contacts.phone || "-"}</p>
-          <p><strong>Telegram:</strong> ${property.contacts.telegram || "-"}</p>
+          <p><strong>Telegram:</strong> ${
+            tg
+              ? `<a href="${escapeHtml(tg.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(tg.handle)}</a>`
+              : "-"
+          }</p>
           <p>
             <a class="btn primary contact-call-btn" href="tel:${escapeHtml(normalizePhoneForTel(property.contacts.phone))}">
               Связаться с брокером
@@ -4462,6 +4484,8 @@ function authFormsInnerHtml() {
               <input id="phone" placeholder="9991234567" maxlength="10" inputmode="numeric" autocomplete="tel-national" />
             </div>
             <input id="password" placeholder="Пароль (мин 6)" type="password" autocomplete="new-password" />
+            <label class="field-label" for="registerTelegram">Telegram (необязательно)</label>
+            <input id="registerTelegram" placeholder="@nickname" />
             <label class="field-label" for="agency" id="agencyFieldLabel">ФИО ИП/самозанятого (обязательно)</label>
             <input id="agency" placeholder="Название агентства или ФИО ИП/самозанятого" />
             <p class="note">* ИП / юрлица должны иметь соответствующие ОКВЭД для операций с недвижимостью</p>
@@ -5134,6 +5158,7 @@ function collectAuth() {
     email: document.getElementById("email").value.trim(),
     password: document.getElementById("password").value,
     phone: `+7${phoneDigits}`,
+    telegram: normalizeTelegramNickname(document.getElementById("registerTelegram")?.value || ""),
     agency: document.getElementById("agency").value.trim(),
     inn: "",
     marketingConsent: document.getElementById("marketing").checked,
@@ -5458,23 +5483,12 @@ async function renderCabinetPage(openForm = false) {
               </select>
             </div>
             <div class="field-block">
-              <label class="field-label" for="metroWalkInput">До метро пешком (мин)</label>
-              <input id="metroWalkInput" name="metroWalkMinutes" type="text" inputmode="numeric" placeholder="Необязательно" />
+              <label class="field-label">До метро пешком</label>
+              <div class="muted">Рассчитывается автоматически после выбора адреса.</div>
             </div>
             <div class="field-block">
               <label class="field-label" for="commissionPartnerInput">Комиссия партнеру (%)</label>
               <input id="commissionPartnerInput" name="commissionPartner" type="text" inputmode="decimal" required />
-            </div>
-            <div class="field-block">
-              <label class="field-label" for="phoneInput">Телефон</label>
-              <div class="phone-group">
-                <span>+7</span>
-                <input id="phoneInput" name="phone" placeholder="(999) 999-99-99" maxlength="15" inputmode="numeric" required />
-              </div>
-            </div>
-            <div class="field-block">
-              <label class="field-label" for="telegramInput">Ник в Telegram</label>
-              <input id="telegramInput" name="telegram" placeholder="@nickname" />
             </div>
           </div>
           <label class="field-label" for="descriptionInput">Описание</label>
@@ -5652,13 +5666,7 @@ async function renderCabinetPage(openForm = false) {
     form.elements.finishing.value = property.finishing || "";
     form.elements.readiness.value = property.readiness || "";
     form.elements.housingStatus.value = property.housingStatus || "flat";
-    form.elements.metroWalkMinutes.value =
-      property.metroWalkMinutes != null && Number.isFinite(Number(property.metroWalkMinutes))
-        ? formatSpacedNumber(String(property.metroWalkMinutes))
-        : "";
     form.elements.commissionPartner.value = property.commissionPartner ?? "";
-    form.elements.phone.value = formatRussianPhoneMasked(String(property.contacts?.phone || "").replace(/\D/g, "").slice(-10));
-    form.elements.telegram.value = property.contacts?.telegram || "";
     form.elements.description.value = property.description || "";
     form.elements.lat.value = property.lat ?? "";
     form.elements.lon.value = property.lon ?? "";
@@ -5703,9 +5711,6 @@ async function renderCabinetPage(openForm = false) {
     formData.set("totalFloors", toRawNumberString(formData.get("totalFloors")));
     formData.set("commissionTotal", normalizeDecimalInput(String(formData.get("commissionTotal") || "").replace(",", ".")));
     formData.set("commissionPartner", normalizeDecimalInput(String(formData.get("commissionPartner") || "").replace(",", ".")));
-    formData.set("metroWalkMinutes", toRawNumberString(formData.get("metroWalkMinutes")));
-    formData.set("phone", normalizeRussianPhone(formData.get("phone")));
-    formData.set("telegram", normalizeTelegramNickname(formData.get("telegram")));
     if (!editingPropertyId && pendingPhotoFiles.length === 0) {
       document.getElementById("cabinetStatus").textContent = "Добавьте хотя бы одно фото.";
       return;
@@ -5742,7 +5747,6 @@ async function renderCabinetPage(openForm = false) {
   wireIntField("bedroomsInput");
   wireIntField("floorInput");
   wireIntField("totalFloorsInput");
-  wireIntField("metroWalkInput");
 
   document.getElementById("commissionTotalInput")?.addEventListener("input", (event) => {
     event.target.value = normalizeDecimalInput(event.target.value);
@@ -5760,11 +5764,6 @@ async function renderCabinetPage(openForm = false) {
     const decimalPart = rest.join("").slice(0, 2);
     const formattedInteger = formatSpacedNumber(integerPart);
     event.target.value = decimalPart ? `${formattedInteger},${decimalPart}` : formattedInteger;
-  });
-
-  const phoneInput = document.getElementById("phoneInput");
-  phoneInput?.addEventListener("input", (event) => {
-    event.target.value = formatRussianPhoneMasked(event.target.value);
   });
 
   const photosInput = document.getElementById("photosInput");
@@ -6376,15 +6375,15 @@ async function renderAgencyPage() {
                             `<option value="${escapeHtml(o.id)}" ${o.id === p.ownerId ? "selected" : ""}>${escapeHtml(o.label)}</option>`
                         )
                         .join("");
-                      return `<div class="admin-mini-list-item">
-                      <div><code>${escapeHtml(p.id)}</code> — ${escapeHtml(p.address || "—")} (${money(p.price)} ₽)</div>
-                      <div class="address-row">
+                      return `<div class="admin-mini-list-item agency-broker-prop-card">
+                      <div class="agency-broker-prop-title">${escapeHtml(p.address || "—")} · ${money(p.price)} ₽</div>
+                      <div class="agency-broker-prop-controls">
                         <select class="agency-broker-prop-owner-select" data-id="${escapeHtml(p.id)}">
                           ${optionsHtml}
                         </select>
-                        <button type="button" class="btn agency-broker-prop-owner-save" data-id="${escapeHtml(p.id)}">Сменить ответственного</button>
+                        <button type="button" class="btn primary agency-broker-prop-owner-save" data-id="${escapeHtml(p.id)}">Сменить ответственного</button>
                       </div>
-                      <div class="admin-row-actions">
+                      <div class="admin-row-actions agency-broker-prop-actions">
                         <button type="button" class="btn agency-broker-prop-open" data-id="${escapeHtml(p.id)}">Открыть</button>
                         <button type="button" class="btn danger-btn agency-broker-prop-del" data-id="${escapeHtml(
                           p.id
@@ -6535,15 +6534,12 @@ async function renderAgencyPage() {
       formData.set("finishing", source.finishing || "");
       formData.set("readiness", source.readiness || "");
       formData.set("housingStatus", source.housingStatus || "flat");
-      formData.set("metroWalkMinutes", toRawNumberString(source.metroWalkMinutes ?? ""));
       formData.set("description", document.getElementById("agencyPropEditDescription").value || "");
       formData.set("commissionTotal", normalizeDecimalInput(String(source.commissionTotal ?? "")));
       formData.set(
         "commissionPartner",
         normalizeDecimalInput(document.getElementById("agencyPropEditCommissionPartner").value || source.commissionPartner)
       );
-      formData.set("phone", source.contacts?.phone || "");
-      formData.set("telegram", source.contacts?.telegram || "");
       await api(`/api/my/properties/${encodeURIComponent(editingAgencyPropertyId)}`, {
         method: "PUT",
         body: formData

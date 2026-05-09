@@ -2354,6 +2354,37 @@ textarea {
   margin-top: 8px;
 }
 
+.agency-broker-prop-card {
+  border-color: #dbe4fb;
+  background: #fbfdff;
+}
+
+.agency-broker-prop-title {
+  font-weight: 600;
+  color: #1f2a44;
+  line-height: 1.35;
+}
+
+.agency-broker-prop-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+  margin-top: 8px;
+}
+
+.agency-broker-prop-owner-select {
+  min-width: 0;
+}
+
+.agency-broker-prop-owner-save {
+  white-space: nowrap;
+}
+
+.agency-broker-prop-actions {
+  margin-top: 8px;
+}
+
 .admin-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -2554,6 +2585,21 @@ textarea {
     font-size: 12px;
     line-height: 1.45;
     display: grid;
+    gap: 8px;
+  }
+
+  .agency-broker-prop-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .agency-broker-prop-owner-save {
+    width: 100%;
+    min-height: 38px;
+  }
+
+  .agency-broker-prop-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
   }
 

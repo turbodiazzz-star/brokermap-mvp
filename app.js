@@ -69,6 +69,29 @@ const UPLOADS_DIR = path.join(__dirname, "uploads");
 const PHOTOS_DIR = path.join(UPLOADS_DIR, "photos");
 const PDFS_DIR = path.join(UPLOADS_DIR, "pdfs");
 const app = express();
+const METRO_STATIONS_BACKEND = (() => {
+  try {
+    const src = fs.readFileSync(path.join(__dirname, "moscowMetroStations.js"), "utf8");
+    const m = src.match(/const raw = `([\s\S]*?)`;/);
+    const raw = m ? m[1] : "";
+    return raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const [coords, name] = line.split("|");
+        if (!coords || !name) return null;
+        const [latStr, lonStr] = coords.split(",");
+        const lat = Number(latStr);
+        const lon = Number(lonStr);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        return { lat, lon, name: String(name).trim() };
+      })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+})();
 
 const mailTransport = SMTP_HOST && nodemailer
   ? nodemailer.createTransport({
@@ -122,7 +145,24 @@ function deletePropertyFilesOnDisk(property) {
   unlinkUploadMaybe(property.pdfUrl);
 }
 
+function refreshAllPropertiesMetroWalkMinutes() {
+  try {
+    const rows = listAllPropertiesForAdmin();
+    rows.forEach((row) => {
+      const full = findPropertyById(row.id);
+      if (!full) return;
+      const auto = autoMetroWalkMinutesByCoords(full.lat, full.lon);
+      if (auto == null || Number(full.metroWalkMinutes) === auto) return;
+      full.metroWalkMinutes = auto;
+      updatePropertyRow(full);
+    });
+  } catch (error) {
+    console.error("[metro] refresh walk minutes failed:", error?.message || error);
+  }
+}
+
 initDb({ adminEmails: adminEmailList });
+refreshAllPropertiesMetroWalkMinutes();
 
 for (const dir of [UPLOADS_DIR, PHOTOS_DIR, PDFS_DIR]) {
   if (!fs.existsSync(dir)) {
@@ -148,6 +188,62 @@ function toOptionalNumber(value) {
   if (value === "" || value === undefined || value === null) return null;
   const num = Number(value);
   return Number.isFinite(num) ? num : null;
+}
+
+function normalizeTelegramHandle(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const withoutProto = raw.replace(/^https?:\/\/(t\.me|telegram\.me)\//i, "");
+  const withoutDomain = withoutProto.replace(/^(t\.me|telegram\.me)\//i, "");
+  const clean = withoutDomain.replace(/^@+/, "").replace(/[^\w]/g, "");
+  return clean ? `@${clean}` : "";
+}
+
+function buildPropertyContactsFromUser(user) {
+  if (!user) {
+    return { phone: "", telegram: "", whatsapp: "", vk: "", max: "" };
+  }
+  return {
+    phone: String(user.phone || "").trim(),
+    telegram: normalizeTelegramHandle(user.telegram),
+    whatsapp: String(user.whatsapp || "").trim(),
+    vk: String(user.vk || "").trim(),
+    max: String(user.max || "").trim()
+  };
+}
+
+function attachOwnerContacts(property) {
+  if (!property) return property;
+  const owner = findUserById(property.ownerId);
+  return {
+    ...property,
+    contacts: buildPropertyContactsFromUser(owner)
+  };
+}
+
+function haversineMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toR = (d) => (d * Math.PI) / 180;
+  const dLat = toR(lat2 - lat1);
+  const dLon = toR(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+function autoMetroWalkMinutesByCoords(lat, lon) {
+  const nLat = Number(lat);
+  const nLon = Number(lon);
+  if (!Number.isFinite(nLat) || !Number.isFinite(nLon) || !METRO_STATIONS_BACKEND.length) return null;
+  let best = Infinity;
+  for (const s of METRO_STATIONS_BACKEND) {
+    const d = haversineMeters(nLat, nLon, s.lat, s.lon);
+    if (d < best) best = d;
+  }
+  if (!Number.isFinite(best)) return null;
+  const metersPerMinute = 80;
+  return Math.max(1, Math.min(180, Math.round(best / metersPerMinute)));
 }
 
 function toBooleanValue(value) {
@@ -935,7 +1031,8 @@ const upload = multer({ storage });
 
 app.post("/api/auth/register", async (req, res) => {
   try {
-    const { firstName, lastName, name, email, password, phone, agency, inn, marketingConsent, agree, accountType } = req.body;
+    const { firstName, lastName, name, email, password, phone, telegram, agency, inn, marketingConsent, agree, accountType } =
+      req.body;
     const normalizedType = accountType === "agency_owner" ? "agency_owner" : "broker";
     const normalizedEmail = String(email || "").trim().toLowerCase();
     const normalizedFirstName = String(firstName || "").trim();
@@ -968,7 +1065,7 @@ app.post("/api/auth/register", async (req, res) => {
       inn: String(inn || "").trim(),
       phone: normalizedPhone,
     marketingConsent: Boolean(marketingConsent),
-    telegram: "",
+    telegram: normalizeTelegramHandle(telegram),
     whatsapp: "",
     vk: "",
     max: "",
@@ -1421,11 +1518,11 @@ app.get("/api/properties/:id", auth, (req, res) => {
   if (!property) {
     return res.status(404).json({ message: "Объект не найден" });
   }
-  return res.json(property);
+  return res.json(attachOwnerContacts(property));
 });
 
 app.get("/api/my/properties", auth, (req, res) => {
-  return res.json(listPropertiesByOwner(req.userId));
+  return res.json(listPropertiesByOwner(req.userId).map((item) => attachOwnerContacts(item)));
 });
 
 app.post("/api/my/properties/parse-cian", auth, async (req, res) => {
@@ -1856,7 +1953,6 @@ app.post(
       req.body.readiness &&
       req.body.commissionTotal &&
       req.body.commissionPartner &&
-      req.body.phone &&
       req.body.description;
     if (!hasRequiredFields || !(req.files.photos || []).length) {
       return res.status(400).json({ message: "Заполните все обязательные поля объекта, включая фото." });
@@ -1879,7 +1975,7 @@ app.post(
       finishing: normalizeFinishing(req.body.finishing),
       readiness: normalizeReadiness(req.body.readiness),
       housingStatus: normalizeHousingStatus(req.body.housingStatus),
-      metroWalkMinutes: toOptionalNumber(req.body.metroWalkMinutes),
+      metroWalkMinutes: autoMetroWalkMinutesByCoords(req.body.lat, req.body.lon),
       description: req.body.description || "",
       photos,
       pdfUrl: presentation,
@@ -1887,13 +1983,7 @@ app.post(
       commissionPartner: Number(req.body.commissionPartner),
       publishedAt,
       createdAt: publishedAt,
-      contacts: {
-        phone: req.body.phone || "",
-        telegram: req.body.telegram || "",
-        whatsapp: req.body.whatsapp || user.whatsapp || "",
-        vk: req.body.vk || user.vk || "",
-        max: req.body.max || user.max || ""
-      }
+      contacts: buildPropertyContactsFromUser(user)
     };
 
     if (!presentation && wantsAutoPresentation) {
@@ -1968,8 +2058,7 @@ app.put(
         finishing: req.body.finishing === undefined ? property.finishing : normalizeFinishing(req.body.finishing),
         readiness: req.body.readiness === undefined ? property.readiness : normalizeReadiness(req.body.readiness),
         housingStatus: req.body.housingStatus === undefined ? property.housingStatus : normalizeHousingStatus(req.body.housingStatus),
-        metroWalkMinutes:
-          req.body.metroWalkMinutes === undefined ? property.metroWalkMinutes : toOptionalNumber(req.body.metroWalkMinutes),
+        metroWalkMinutes: autoMetroWalkMinutesByCoords(req.body.lat ?? property.lat, req.body.lon ?? property.lon),
         description: req.body.description ?? property.description,
         id: property.id
       });
@@ -1989,18 +2078,11 @@ app.put(
     property.readiness = req.body.readiness === undefined ? property.readiness : normalizeReadiness(req.body.readiness);
     property.housingStatus =
       req.body.housingStatus === undefined ? property.housingStatus : normalizeHousingStatus(req.body.housingStatus);
-    property.metroWalkMinutes =
-      req.body.metroWalkMinutes === undefined ? property.metroWalkMinutes : toOptionalNumber(req.body.metroWalkMinutes);
+    property.metroWalkMinutes = autoMetroWalkMinutesByCoords(property.lat, property.lon);
     property.description = req.body.description ?? property.description;
     property.commissionTotal = Number(req.body.commissionTotal ?? property.commissionTotal);
     property.commissionPartner = Number(req.body.commissionPartner ?? property.commissionPartner);
-    property.contacts = {
-      phone: req.body.phone ?? property.contacts?.phone,
-      telegram: req.body.telegram ?? property.contacts?.telegram,
-      whatsapp: req.body.whatsapp ?? property.contacts?.whatsapp,
-      vk: req.body.vk ?? property.contacts?.vk,
-      max: req.body.max ?? property.contacts?.max
-    };
+    property.contacts = buildPropertyContactsFromUser(findUserById(property.ownerId));
 
     updatePropertyRow(property);
     return res.json(property);
