@@ -1479,6 +1479,9 @@ textarea {
   background: #fff;
   border-radius: 16px;
   padding: 16px;
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
 }
 
 .property-form-modal-card {
@@ -1498,8 +1501,63 @@ textarea {
 #propertyFormWrap {
   max-height: calc(88vh - 84px);
   overflow-y: auto;
-  overflow-x: visible;
+  overflow-x: hidden;
   padding-right: 4px;
+}
+
+.modal.open,
+.auth-modal.active,
+.sheet-property-popup {
+  overscroll-behavior-x: none;
+}
+
+.auth-modal-content,
+.sheet-property-popup__panel,
+.filters-modal-card {
+  overflow-x: hidden;
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
+}
+
+.modal-card p,
+.modal-card span,
+.modal-card div,
+.modal-card label,
+.modal-card h1,
+.modal-card h2,
+.modal-card h3,
+.modal-card h4,
+.modal-card h5,
+.modal-card h6,
+.modal-card a,
+.modal-card li,
+.auth-modal-content p,
+.auth-modal-content span,
+.auth-modal-content div,
+.auth-modal-content label,
+.auth-modal-content h1,
+.auth-modal-content h2,
+.auth-modal-content h3,
+.auth-modal-content h4,
+.auth-modal-content h5,
+.auth-modal-content h6,
+.auth-modal-content a,
+.auth-modal-content li,
+.sheet-property-popup__panel p,
+.sheet-property-popup__panel span,
+.sheet-property-popup__panel div,
+.sheet-property-popup__panel label,
+.sheet-property-popup__panel h1,
+.sheet-property-popup__panel h2,
+.sheet-property-popup__panel h3,
+.sheet-property-popup__panel h4,
+.sheet-property-popup__panel h5,
+.sheet-property-popup__panel h6,
+.sheet-property-popup__panel a,
+.sheet-property-popup__panel li {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ymaps-2-1-79-suggest {
