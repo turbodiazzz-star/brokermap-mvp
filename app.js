@@ -1161,11 +1161,55 @@ app.get("/api/auth/verify-email", (req, res) => {
       return res.status(400).send("<h2>Пользователь не найден</h2>");
     }
     markUserEmailVerified(user.id);
-    return res.send(
-      `<h2>Email подтвержден</h2><p>Теперь можно войти в аккаунт.</p><p><a href="${htmlEscape(
-        `${APP_BASE_URL}/#/auth`
-      )}">Перейти ко входу</a></p>`
-    );
+    const verifiedUser = findUserById(user.id) || user;
+    const sessionToken = signUserToken(verifiedUser);
+    setAuthCookie(res, sessionToken);
+    const targetUrl = `${APP_BASE_URL}/#/`;
+    const tokenJson = JSON.stringify(sessionToken);
+    const userJson = JSON.stringify(publicUser(verifiedUser)).replace(/</g, "\\u003c");
+    return res.send(`<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Email подтвержден — BrokerMap</title>
+  <style>
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#eef3ff;color:#0f172a;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:20px;box-sizing:border-box}
+    .card{width:min(560px,100%);background:#fff;border:1px solid #dbe4fb;border-radius:18px;padding:22px;box-shadow:0 18px 42px rgba(15,23,42,.16)}
+    h1{margin:0 0 10px;font-size:30px;line-height:1.15}
+    p{margin:0 0 10px;color:#344054;font-size:15px;line-height:1.45}
+    .ok{display:inline-flex;align-items:center;gap:8px;background:#ecfdf3;color:#166534;border:1px solid #bbf7d0;border-radius:999px;padding:6px 12px;font-size:13px;font-weight:600;margin-bottom:12px}
+    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+    .btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:10px;text-decoration:none;border:1px solid #d0daf5;background:#fff;color:#1e293b}
+    .btn.primary{background:#1760ff;border-color:#1760ff;color:#fff}
+    .muted{color:#64748b;font-size:13px}
+  </style>
+</head>
+<body>
+  <section class="card">
+    <div class="ok">Email подтвержден</div>
+    <h1>Готово, вы вошли в аккаунт</h1>
+    <p>Подтверждение прошло успешно. Сейчас перенаправим вас на карту.</p>
+    <p class="muted">Если переход не сработал автоматически, нажмите кнопку ниже.</p>
+    <div class="actions">
+      <a class="btn primary" href="${htmlEscape(targetUrl)}">Открыть карту</a>
+    </div>
+  </section>
+  <script>
+    (function () {
+      var token = ${tokenJson};
+      var user = ${userJson};
+      try {
+        localStorage.setItem("token", token);
+        localStorage.setItem("user", JSON.stringify(user));
+      } catch (_e) {}
+      window.setTimeout(function () {
+        window.location.replace(${JSON.stringify(targetUrl)});
+      }, 950);
+    })();
+  </script>
+</body>
+</html>`);
   } catch {
     return res.status(400).send("<h2>Ссылка подтверждения недействительна или истекла</h2>");
   }
@@ -1503,6 +1547,7 @@ app.get("/api/admin/agencies/:id", auth, requireAdmin, (req, res) => {
     return res.status(404).json({ message: "Агентство не найдено" });
   }
   const brokers = listBrokersByAgencyOwner(agencyUser.id);
+  const properties = listPropertiesForAgencyOwner(agencyUser.id);
   return res.json({
     agency: {
       id: agencyUser.id,
@@ -1511,9 +1556,11 @@ app.get("/api/admin/agencies/:id", auth, requireAdmin, (req, res) => {
       agency: agencyUser.agency || "",
       phone: agencyUser.phone || "",
       inn: agencyUser.inn || "",
-      brokerLimit: Number(agencyUser.brokerLimit || 0)
+      brokerLimit: Number(agencyUser.brokerLimit || 0),
+      createdAt: agencyUser.createdAt
     },
-    brokers
+    brokers,
+    properties
   });
 });
 
@@ -1650,6 +1697,29 @@ app.patch("/api/agency/properties/:id/owner", auth, requireAgencyOwner, (req, re
     return res.status(500).json({ message: "Не удалось обновить ответственного брокера" });
   }
   return res.json({ success: true, propertyId: property.id, ownerId: targetOwnerId });
+});
+
+app.patch("/api/agency/properties/reassign-batch", auth, requireAgencyOwner, (req, res) => {
+  const changes = Array.isArray(req.body?.changes) ? req.body.changes : [];
+  if (!changes.length) {
+    return res.status(400).json({ message: "Нет изменений для сохранения" });
+  }
+  const allowedOwnerIds = new Set([req.userId, ...agencyAssignableBrokerIds(req.userId)]);
+  let updated = 0;
+  for (const change of changes) {
+    const propertyId = String(change?.propertyId || "").trim();
+    const ownerId = String(change?.ownerId || "").trim();
+    if (!propertyId || !ownerId) continue;
+    if (!allowedOwnerIds.has(ownerId)) continue;
+    const property = findPropertyById(propertyId);
+    if (!property) continue;
+    if (!allowedOwnerIds.has(property.ownerId)) continue;
+    if (property.ownerId === ownerId) continue;
+    if (reassignPropertyOwner(property.id, ownerId)) {
+      updated += 1;
+    }
+  }
+  return res.json({ success: true, updated });
 });
 
 app.delete("/api/agency/properties/:id", auth, requireAgencyOwner, (req, res) => {
@@ -1844,7 +1914,14 @@ app.put(
   ]),
   async (req, res) => {
     const property = findPropertyById(req.params.id);
-    if (!property || property.ownerId !== req.userId) {
+    if (!property) {
+      return res.status(404).json({ message: "Объект не найден" });
+    }
+    const actor = findUserById(req.userId);
+    const isAgencyOwner = actor?.accountType === "agency_owner";
+    const allowedOwnerIds = isAgencyOwner ? new Set([req.userId, ...agencyAssignableBrokerIds(req.userId)]) : null;
+    const canEdit = property.ownerId === req.userId || (isAgencyOwner && allowedOwnerIds?.has(property.ownerId));
+    if (!canEdit) {
       return res.status(404).json({ message: "Объект не найден" });
     }
 

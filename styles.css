@@ -2345,6 +2345,10 @@ textarea {
   font-size: 13px;
 }
 
+.admin-mini-list-item .admin-row-actions {
+  margin-top: 8px;
+}
+
 .admin-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));

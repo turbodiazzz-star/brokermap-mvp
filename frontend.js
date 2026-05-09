@@ -6180,13 +6180,13 @@ async function renderAgencyPage() {
       <td>${money(p.price)} ₽</td>
       <td>${escapeHtml(p.ownerEmail || "—")}</td>
       <td>
-        <select class="agency-prop-owner-select" data-id="${escapeHtml(p.id)}">
+        <select class="agency-prop-owner-select" data-id="${escapeHtml(p.id)}" data-initial-owner="${escapeHtml(p.ownerId || "")}">
           ${optionsHtml}
         </select>
       </td>
       <td>
-        <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
-        <button type="button" class="btn agency-prop-owner-save" data-id="${escapeHtml(p.id)}">Сохранить</button>
+        <button type="button" class="btn agency-prop-open" data-id="${escapeHtml(p.id)}">Открыть</button>
+        <button type="button" class="btn agency-prop-edit" data-id="${escapeHtml(p.id)}">Редактировать</button>
         <button type="button" class="btn danger-btn agency-prop-del" data-id="${escapeHtml(p.id)}">Удалить</button>
       </td>
     </tr>`;
@@ -6200,7 +6200,12 @@ async function renderAgencyPage() {
       <h1>Панель агентства</h1>
       <p class="muted">Добавьте email сотрудника — ему на почту уйдёт приглашение. Пароль, телефон и согласия он укажет сам по ссылке из письма.</p>
       <p class="muted">Лимит: <strong>${agencyData.brokerCount} / ${agencyData.brokerLimit || "∞"}</strong></p>
+      <div class="admin-tabs" role="tablist" aria-label="Разделы панели агентства">
+        <button class="btn admin-tab-btn active" type="button" id="agencyBrokersTabBtn" role="tab" aria-selected="true">Брокеры</button>
+        <button class="btn admin-tab-btn" type="button" id="agencyObjectsTabBtn" role="tab" aria-selected="false">Объекты</button>
+      </div>
 
+      <div class="admin-tab-panel active" id="agencyBrokersPanel">
       <div class="panel">
         <h3>Пригласить брокера</h3>
         <div class="form-grid">
@@ -6214,6 +6219,7 @@ async function renderAgencyPage() {
       </div>
 
       <div class="panel">
+        <p class="muted">Если удалить брокера, все его объекты автоматически переходят агентству.</p>
         <h3>Брокеры агентства: ${brokers.length}</h3>
         <div class="admin-table-wrap">
           <table class="admin-table">
@@ -6232,9 +6238,12 @@ async function renderAgencyPage() {
           </table>
         </div>
       </div>
+      </div>
+
+      <div class="admin-tab-panel" id="agencyObjectsPanel">
       <div class="panel">
         <h3>Объекты агентства: ${agencyProperties.length}</h3>
-        <p class="muted">Можно изменить ответственного: на любого брокера агентства или на само агентство.</p>
+        <p class="muted">Можно изменить ответственного: на любого брокера агентства или на само агентство. Изменения сохраняются одной кнопкой.</p>
         <div class="admin-table-wrap">
           <table class="admin-table">
             <thead>
@@ -6252,6 +6261,31 @@ async function renderAgencyPage() {
             </tbody>
           </table>
         </div>
+        <p class="admin-row-actions">
+          <button type="button" class="btn primary" id="agencySaveOwnerChangesBtn">Сохранить изменения</button>
+          <span class="muted" id="agencyOwnerSaveStatus"></span>
+        </p>
+      </div>
+      </div>
+      <div class="modal" id="agencyPropEditModal">
+        <div class="modal-card">
+          <div class="panel-head">
+            <h3 id="agencyPropEditTitle">Редактирование объекта</h3>
+            <button class="close-panel-action" id="agencyPropEditCloseBtn" aria-label="Закрыть">×</button>
+          </div>
+          <div class="form-grid">
+            <div class="field-block field-span-2"><label class="field-label" for="agencyPropEditAddress">Адрес</label><input id="agencyPropEditAddress" /></div>
+            <div class="field-block"><label class="field-label" for="agencyPropEditPrice">Цена</label><input id="agencyPropEditPrice" type="text" inputmode="numeric" /></div>
+            <div class="field-block"><label class="field-label" for="agencyPropEditArea">Площадь</label><input id="agencyPropEditArea" type="text" inputmode="decimal" /></div>
+            <div class="field-block"><label class="field-label" for="agencyPropEditBedrooms">Спальни</label><input id="agencyPropEditBedrooms" type="text" inputmode="numeric" /></div>
+            <div class="field-block"><label class="field-label" for="agencyPropEditCommissionPartner">Партнеру (%)</label><input id="agencyPropEditCommissionPartner" type="text" inputmode="decimal" /></div>
+            <div class="field-block field-span-2"><label class="field-label" for="agencyPropEditDescription">Описание</label><textarea id="agencyPropEditDescription"></textarea></div>
+          </div>
+          <p class="admin-row-actions">
+            <button class="btn primary" id="agencyPropEditSaveBtn" type="button">Сохранить</button>
+            <span class="muted" id="agencyPropEditStatus"></span>
+          </p>
+        </div>
       </div>
     </section>
     ${mobileBottomNavHtml("cabinet")}
@@ -6264,6 +6298,21 @@ async function renderAgencyPage() {
   document.getElementById("agencyBtn")?.addEventListener("click", () => (location.hash = "#/agency"));
   document.getElementById("toMapBtn")?.addEventListener("click", () => (location.hash = "#/"));
   document.getElementById("cabinetBtn")?.addEventListener("click", () => (location.hash = "#/cabinet"));
+  const agencyBrokersTabBtn = document.getElementById("agencyBrokersTabBtn");
+  const agencyObjectsTabBtn = document.getElementById("agencyObjectsTabBtn");
+  const agencyBrokersPanel = document.getElementById("agencyBrokersPanel");
+  const agencyObjectsPanel = document.getElementById("agencyObjectsPanel");
+  const setAgencyTab = (tab) => {
+    const brokersActive = tab === "brokers";
+    agencyBrokersTabBtn?.classList.toggle("active", brokersActive);
+    agencyObjectsTabBtn?.classList.toggle("active", !brokersActive);
+    agencyBrokersTabBtn?.setAttribute("aria-selected", brokersActive ? "true" : "false");
+    agencyObjectsTabBtn?.setAttribute("aria-selected", !brokersActive ? "true" : "false");
+    agencyBrokersPanel?.classList.toggle("active", brokersActive);
+    agencyObjectsPanel?.classList.toggle("active", !brokersActive);
+  };
+  agencyBrokersTabBtn?.addEventListener("click", () => setAgencyTab("brokers"));
+  agencyObjectsTabBtn?.addEventListener("click", () => setAgencyTab("objects"));
 
   document.getElementById("agencyCreateBrokerBtn")?.addEventListener("click", async () => {
     const email = document.getElementById("agencyBrokerEmail").value.trim();
@@ -6302,28 +6351,111 @@ async function renderAgencyPage() {
     });
   });
 
-  document.querySelectorAll(".agency-prop-owner-save").forEach((btn) => {
+  document.getElementById("agencySaveOwnerChangesBtn")?.addEventListener("click", async () => {
+    const statusEl = document.getElementById("agencyOwnerSaveStatus");
+    if (statusEl) statusEl.textContent = "";
+    const changes = Array.from(document.querySelectorAll(".agency-prop-owner-select"))
+      .map((select) => ({
+        propertyId: String(select.dataset.id || ""),
+        ownerId: String(select.value || ""),
+        initialOwner: String(select.dataset.initialOwner || "")
+      }))
+      .filter((item) => item.propertyId && item.ownerId && item.ownerId !== item.initialOwner)
+      .map((item) => ({ propertyId: item.propertyId, ownerId: item.ownerId }));
+    if (!changes.length) {
+      if (statusEl) statusEl.textContent = "Нет изменений для сохранения.";
+      return;
+    }
+    const saveBtn = document.getElementById("agencySaveOwnerChangesBtn");
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+      const result = await api("/api/agency/properties/reassign-batch", {
+        method: "PATCH",
+        body: JSON.stringify({ changes })
+      });
+      if (statusEl) statusEl.textContent = `Сохранено изменений: ${Number(result.updated || 0)}.`;
+      await renderAgencyPage();
+    } catch (err) {
+      if (statusEl) statusEl.textContent = err.message || "Не удалось сохранить изменения";
+    } finally {
+      if (saveBtn) saveBtn.disabled = false;
+    }
+  });
+
+  document.querySelectorAll(".agency-prop-open").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.getAttribute("data-id");
       if (!id) return;
-      const select = btn.closest("tr")?.querySelector(".agency-prop-owner-select");
-      const ownerId = String(select?.value || "").trim();
-      if (!ownerId) {
-        alert("Выберите ответственного");
-        return;
-      }
-      btn.disabled = true;
+      await openSheetPropertyPopup(id, { isDemo: false });
+    });
+  });
+
+  let editingAgencyPropertyId = "";
+  const closeAgencyEditModal = () => document.getElementById("agencyPropEditModal")?.classList.remove("open");
+  document.getElementById("agencyPropEditCloseBtn")?.addEventListener("click", closeAgencyEditModal);
+  document.getElementById("agencyPropEditModal")?.addEventListener("click", (event) => {
+    if (event.target?.id === "agencyPropEditModal") closeAgencyEditModal();
+  });
+  document.querySelectorAll(".agency-prop-edit").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = String(btn.getAttribute("data-id") || "").trim();
+      if (!id) return;
       try {
-        await api(`/api/agency/properties/${encodeURIComponent(id)}/owner`, {
-          method: "PATCH",
-          body: JSON.stringify({ ownerId })
-        });
-        await renderAgencyPage();
+        const p = await api(`/api/properties/${encodeURIComponent(id)}`);
+        editingAgencyPropertyId = id;
+        document.getElementById("agencyPropEditTitle").textContent = `Редактирование: ${p.address || p.id}`;
+        document.getElementById("agencyPropEditAddress").value = p.address || "";
+        document.getElementById("agencyPropEditPrice").value = formatSpacedNumber(p.price);
+        document.getElementById("agencyPropEditArea").value = normalizeDecimalInput(p.area);
+        document.getElementById("agencyPropEditBedrooms").value = formatSpacedNumber(p.bedrooms);
+        document.getElementById("agencyPropEditCommissionPartner").value = normalizeDecimalInput(p.commissionPartner);
+        document.getElementById("agencyPropEditDescription").value = p.description || "";
+        document.getElementById("agencyPropEditStatus").textContent = "";
+        document.getElementById("agencyPropEditModal")?.classList.add("open");
       } catch (err) {
-        alert(err.message || "Не удалось сменить ответственного");
-        btn.disabled = false;
+        alert(err.message || "Не удалось загрузить объект");
       }
     });
+  });
+
+  document.getElementById("agencyPropEditSaveBtn")?.addEventListener("click", async () => {
+    if (!editingAgencyPropertyId) return;
+    const statusEl = document.getElementById("agencyPropEditStatus");
+    if (statusEl) statusEl.textContent = "";
+    try {
+      const source = await api(`/api/properties/${encodeURIComponent(editingAgencyPropertyId)}`);
+      const formData = new FormData();
+      formData.set("title", source.title || source.address || "Объект");
+      formData.set("address", document.getElementById("agencyPropEditAddress").value || source.address || "");
+      formData.set("lat", String(source.lat ?? ""));
+      formData.set("lon", String(source.lon ?? ""));
+      formData.set("price", toRawNumberString(document.getElementById("agencyPropEditPrice").value || source.price));
+      formData.set("area", normalizeDecimalInput(document.getElementById("agencyPropEditArea").value || source.area));
+      formData.set("bedrooms", toRawNumberString(document.getElementById("agencyPropEditBedrooms").value || source.bedrooms));
+      formData.set("floor", toRawNumberString(source.floor ?? ""));
+      formData.set("totalFloors", toRawNumberString(source.totalFloors ?? ""));
+      formData.set("ceilingHeight", normalizeDecimalInput(String(source.ceilingHeight ?? "")));
+      formData.set("finishing", source.finishing || "");
+      formData.set("readiness", source.readiness || "");
+      formData.set("housingStatus", source.housingStatus || "flat");
+      formData.set("metroWalkMinutes", toRawNumberString(source.metroWalkMinutes ?? ""));
+      formData.set("description", document.getElementById("agencyPropEditDescription").value || "");
+      formData.set("commissionTotal", normalizeDecimalInput(String(source.commissionTotal ?? "")));
+      formData.set(
+        "commissionPartner",
+        normalizeDecimalInput(document.getElementById("agencyPropEditCommissionPartner").value || source.commissionPartner)
+      );
+      formData.set("phone", source.contacts?.phone || "");
+      formData.set("telegram", source.contacts?.telegram || "");
+      await api(`/api/my/properties/${encodeURIComponent(editingAgencyPropertyId)}`, {
+        method: "PUT",
+        body: formData
+      });
+      closeAgencyEditModal();
+      await renderAgencyPage();
+    } catch (err) {
+      if (statusEl) statusEl.textContent = err.message || "Не удалось сохранить";
+    }
   });
 
   document.querySelectorAll(".agency-prop-del").forEach((btn) => {
@@ -6378,6 +6510,7 @@ async function renderAdminPage() {
       (a) => `<tr>
       <td data-label="Агентство">${escapeHtml(a.agency || "—")}</td>
       <td data-label="Email">${escapeHtml(a.email || "—")}</td>
+      <td data-label="Регистрация" class="muted">${escapeHtml((a.createdAt || "").slice(0, 10))}</td>
       <td data-label="Брокеров">${a.brokerCount}</td>
       <td data-label="Лимит">${a.brokerLimit}</td>
       <td data-label="Действия">
@@ -6428,7 +6561,7 @@ async function renderAdminPage() {
       <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
       <td data-label="Действия">
         <div class="admin-row-actions">
-          <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
+          <button class="btn admin-open-prop" data-id="${escapeHtml(p.id)}" type="button">Открыть</button>
           <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
         </div>
       </td>
@@ -6470,13 +6603,14 @@ async function renderAdminPage() {
               <tr>
                 <th>Агентство</th>
                 <th>Email</th>
+                <th>Регистрация</th>
                 <th>Брокеров</th>
                 <th>Лимит</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="adminAgencyTableBody">
-              ${agencyRows || `<tr><td colspan="5" class="muted">Нет агентств</td></tr>`}
+              ${agencyRows || `<tr><td colspan="6" class="muted">Нет агентств</td></tr>`}
             </tbody>
           </table>
         </div>
@@ -6602,6 +6736,95 @@ async function renderAdminPage() {
     if (event.target === agencyModal) closeAgencyModal();
   });
 
+  const openAdminPropertyModal = async (propertyId, options = {}) => {
+    if (!propertyId) return;
+    const canDelete = options.canDelete !== false;
+    try {
+      const property = await api(`/api/properties/${encodeURIComponent(propertyId)}`);
+      const photos = (property.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
+      adminInfoTitle.textContent = `Объект: ${property.address || property.title || property.id}`;
+      adminInfoBody.innerHTML = `
+        <p><strong>ID:</strong> <code>${escapeHtml(property.id || "—")}</code></p>
+        <p><strong>Адрес:</strong> ${escapeHtml(property.address || "—")}</p>
+        <p><strong>Цена:</strong> ${money(property.price)} ₽</p>
+        <p><strong>Создан:</strong> ${escapeHtml(formatPublishedDateRu(property.createdAt) || (property.createdAt || "").slice(0, 10))}</p>
+        <div class="gallery">
+          ${photos
+            .map(
+              (photo, index) =>
+                `<img class="gallery__img" src="${photoUrlWithFallback(photo, { gallery: true })}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" data-admin-prop-gallery-index="${index}" />`
+            )
+            .join("")}
+        </div>
+        <p>${escapeHtml(property.description || "")}</p>
+        <div class="admin-row-actions">
+          ${
+            canDelete
+              ? `<button class="btn danger-btn" type="button" id="adminModalDeletePropBtn" data-id="${escapeHtml(
+                  property.id
+                )}">Удалить</button>`
+              : ""
+          }
+        </div>
+      `;
+      adminModal.classList.add("open");
+      document.getElementById("adminModalDeletePropBtn")?.addEventListener("click", async (event) => {
+        const id = event.currentTarget?.dataset?.id;
+        if (!id || !window.confirm("Удалить объект из базы?")) return;
+        event.currentTarget.disabled = true;
+        try {
+          await api(`/api/admin/properties/${encodeURIComponent(id)}`, { method: "DELETE" });
+          closeAdminModal();
+          closeAgencyModal();
+          await renderAdminPage();
+        } catch (e) {
+          alert(e.message || "Ошибка удаления объекта");
+          event.currentTarget.disabled = false;
+        }
+      });
+    } catch (e) {
+      alert(e.message || "Не удалось открыть объект");
+    }
+  };
+
+  const openAdminUserDetails = async (userId) => {
+    if (!userId) return;
+    const data = await api(`/api/admin/users/${encodeURIComponent(userId)}`);
+    const user = data.user || {};
+    const userProps = Array.isArray(data.properties) ? data.properties : [];
+    adminInfoTitle.textContent = `Пользователь: ${user.email || "—"}`;
+    adminInfoBody.innerHTML = `
+      <p><strong>Имя:</strong> ${escapeHtml(user.name || "—")}</p>
+      <p><strong>Фамилия:</strong> ${escapeHtml(user.lastName || "—")}</p>
+      <p><strong>Телефон:</strong> ${escapeHtml(user.phone || "—")}</p>
+      <p><strong>Организация:</strong> ${escapeHtml(user.agency || "—")}</p>
+      <p><strong>ИНН:</strong> ${escapeHtml(user.inn || "—")}</p>
+      <p><strong>Роль:</strong> ${escapeHtml(user.role || "user")}</p>
+      <p><strong>Регистрация:</strong> ${escapeHtml((user.createdAt || "").slice(0, 10))}</p>
+      <hr />
+      <p><strong>Объектов у пользователя:</strong> ${userProps.length}</p>
+      <div class="admin-mini-list">
+        ${
+          userProps.length
+            ? userProps
+                .map(
+                  (p) => `<div class="admin-mini-list-item">
+                    <div><code>${escapeHtml(p.id)}</code> — ${escapeHtml(p.address || "—")} (${money(p.price)} ₽)</div>
+                    <div class="admin-row-actions">
+                      <button class="btn admin-open-prop" type="button" data-id="${escapeHtml(p.id)}">Открыть</button>
+                      <button class="btn danger-btn admin-del-prop" type="button" data-id="${escapeHtml(p.id)}">Удалить</button>
+                    </div>
+                  </div>`
+                )
+                .join("")
+            : `<p class="muted">Нет объектов</p>`
+        }
+      </div>
+    `;
+    adminModal.classList.add("open");
+    bindPropertyRowHandlers();
+  };
+
   const renderAgencyRows = (list) => {
     const tbody = document.getElementById("adminAgencyTableBody");
     if (!tbody) return;
@@ -6611,6 +6834,7 @@ async function renderAdminPage() {
             (a) => `<tr>
           <td data-label="Агентство">${escapeHtml(a.agency || "—")}</td>
           <td data-label="Email">${escapeHtml(a.email || "—")}</td>
+          <td data-label="Регистрация" class="muted">${escapeHtml((a.createdAt || "").slice(0, 10))}</td>
           <td data-label="Брокеров">${a.brokerCount}</td>
           <td data-label="Лимит">${a.brokerLimit}</td>
           <td data-label="Действия">
@@ -6622,7 +6846,7 @@ async function renderAdminPage() {
         </tr>`
           )
           .join("")
-      : `<tr><td colspan="5" class="muted">Нет агентств</td></tr>`;
+      : `<tr><td colspan="6" class="muted">Нет агентств</td></tr>`;
     bindAgencyOpenButtons();
     bindAgencyDeleteButtons();
   };
@@ -6637,11 +6861,13 @@ async function renderAdminPage() {
           const details = await api(`/api/admin/agencies/${encodeURIComponent(id)}`);
           const agency = details.agency || {};
           const brokers = Array.isArray(details.brokers) ? details.brokers : [];
+          const agencyProps = Array.isArray(details.properties) ? details.properties : [];
           agencyModalTitle.textContent = `Агентство: ${agency.agency || agency.email || "—"}`;
           agencyModalBody.innerHTML = `
             <p><strong>Email:</strong> ${escapeHtml(agency.email || "—")}</p>
             <p><strong>Телефон:</strong> ${escapeHtml(agency.phone || "—")}</p>
             <p><strong>ИНН:</strong> ${escapeHtml(agency.inn || "—")}</p>
+            <p><strong>Регистрация:</strong> ${escapeHtml((agency.createdAt || "").slice(0, 10))}</p>
             <div class="address-row">
               <div style="flex:1;">
                 <label class="field-label" for="adminAgencyLimitInput">Лимит брокеров</label>
@@ -6659,15 +6885,40 @@ async function renderAdminPage() {
                 brokers.length
                   ? brokers
                       .map(
-                        (b) =>
-                          `<div class="admin-mini-list-item">${escapeHtml(b.name || "—")} — ${escapeHtml(b.email || "—")} (${escapeHtml(
-                            b.phone || "—"
-                          )}) <button class="btn danger-btn admin-del-agency-broker" type="button" data-id="${escapeHtml(
-                            b.id
-                          )}" data-email="${escapeHtml(b.email || "")}">Удалить</button></div>`
+                        (b) => `<div class="admin-mini-list-item">
+                          <div>${escapeHtml(b.name || "—")} — ${escapeHtml(b.email || "—")} (${escapeHtml(b.phone || "—")})</div>
+                          <div class="admin-row-actions">
+                            <button class="btn admin-open-agency-broker" type="button" data-id="${escapeHtml(b.id)}">Открыть</button>
+                            <button class="btn danger-btn admin-del-agency-broker" type="button" data-id="${escapeHtml(
+                              b.id
+                            )}" data-email="${escapeHtml(b.email || "")}">Удалить</button>
+                          </div>
+                        </div>`
                       )
                       .join("")
                   : `<p class="muted">Пока нет брокеров</p>`
+              }
+            </div>
+            <hr />
+            <p><strong>Объекты агентства и брокеров:</strong> ${agencyProps.length}</p>
+            <div class="admin-mini-list">
+              ${
+                agencyProps.length
+                  ? agencyProps
+                      .map(
+                        (p) => `<div class="admin-mini-list-item">
+                          <div><code>${escapeHtml(p.id)}</code> — ${escapeHtml(p.address || "—")} (${money(p.price)} ₽)</div>
+                          <div class="muted">Ответственный: ${escapeHtml(p.ownerEmail || "—")}</div>
+                          <div class="admin-row-actions">
+                            <button class="btn admin-open-agency-prop" type="button" data-id="${escapeHtml(p.id)}">Открыть</button>
+                            <button class="btn danger-btn admin-del-agency-prop" type="button" data-id="${escapeHtml(
+                              p.id
+                            )}">Удалить</button>
+                          </div>
+                        </div>`
+                      )
+                      .join("")
+                  : `<p class="muted">Нет объектов</p>`
               }
             </div>
           `;
@@ -6706,6 +6957,40 @@ async function renderAdminPage() {
               } catch (e) {
                 alert(e.message || "Ошибка удаления брокера");
                 brokerBtn.disabled = false;
+              }
+            });
+          });
+          document.querySelectorAll(".admin-open-agency-broker").forEach((brokerBtn) => {
+            brokerBtn.addEventListener("click", async () => {
+              const brokerId = brokerBtn.getAttribute("data-id");
+              if (!brokerId) return;
+              try {
+                closeAgencyModal();
+                await openAdminUserDetails(brokerId);
+              } catch (e) {
+                alert(e.message || "Не удалось открыть брокера");
+              }
+            });
+          });
+          document.querySelectorAll(".admin-open-agency-prop").forEach((propBtn) => {
+            propBtn.addEventListener("click", async () => {
+              const propertyId = propBtn.getAttribute("data-id");
+              if (!propertyId) return;
+              await openAdminPropertyModal(propertyId, { canDelete: true });
+            });
+          });
+          document.querySelectorAll(".admin-del-agency-prop").forEach((propBtn) => {
+            propBtn.addEventListener("click", async () => {
+              const propertyId = propBtn.getAttribute("data-id");
+              if (!propertyId || !window.confirm("Удалить объект из базы?")) return;
+              propBtn.disabled = true;
+              try {
+                await api(`/api/admin/properties/${encodeURIComponent(propertyId)}`, { method: "DELETE" });
+                closeAgencyModal();
+                await renderAdminPage();
+              } catch (e) {
+                alert(e.message || "Ошибка удаления объекта");
+                propBtn.disabled = false;
               }
             });
           });
@@ -6758,47 +7043,28 @@ async function renderAdminPage() {
 
   const bindUserRowHandlers = () => {
     document.querySelectorAll(".admin-open-user").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const id = btn.getAttribute("data-id");
-      if (!id) return;
-      btn.disabled = true;
-      try {
-        const data = await api(`/api/admin/users/${encodeURIComponent(id)}`);
-        const user = data.user || {};
-        const userProps = Array.isArray(data.properties) ? data.properties : [];
-        adminInfoTitle.textContent = `Пользователь: ${user.email || "—"}`;
-        adminInfoBody.innerHTML = `
-          <p><strong>Имя:</strong> ${escapeHtml(user.name || "—")}</p>
-          <p><strong>Фамилия:</strong> ${escapeHtml(user.lastName || "—")}</p>
-          <p><strong>Телефон:</strong> ${escapeHtml(user.phone || "—")}</p>
-          <p><strong>Организация:</strong> ${escapeHtml(user.agency || "—")}</p>
-          <p><strong>ИНН:</strong> ${escapeHtml(user.inn || "—")}</p>
-          <p><strong>Роль:</strong> ${escapeHtml(user.role || "user")}</p>
-          <hr />
-          <p><strong>Объектов у пользователя:</strong> ${userProps.length}</p>
-          <div class="admin-mini-list">
-            ${
-              userProps.length
-                ? userProps
-                    .map(
-                      (p) =>
-                        `<div class="admin-mini-list-item"><code>${escapeHtml(p.id)}</code> — ${escapeHtml(p.address || "—")} (${money(p.price)} ₽)</div>`
-                    )
-                    .join("")
-                : `<p class="muted">Нет объектов</p>`
-            }
-          </div>
-        `;
-        adminModal.classList.add("open");
-      } catch (e) {
-        alert(e.message);
-      } finally {
-        btn.disabled = false;
-      }
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        if (!id) return;
+        btn.disabled = true;
+        try {
+          await openAdminUserDetails(id);
+        } catch (e) {
+          alert(e.message || "Ошибка загрузки пользователя");
+        } finally {
+          btn.disabled = false;
+        }
+      });
     });
-  });
 
   const bindPropertyRowHandlers = () => {
+    document.querySelectorAll(".admin-open-prop").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        if (!id) return;
+        await openAdminPropertyModal(id, { canDelete: true });
+      });
+    });
     document.querySelectorAll(".admin-del-prop").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const id = btn.getAttribute("data-id");
@@ -6904,7 +7170,7 @@ async function renderAdminPage() {
           <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
           <td data-label="Действия">
             <div class="admin-row-actions">
-              <a class="btn" href="#/property/${encodeURIComponent(p.id)}">Открыть</a>
+              <button class="btn admin-open-prop" data-id="${escapeHtml(p.id)}" type="button">Открыть</button>
               <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
             </div>
           </td>
