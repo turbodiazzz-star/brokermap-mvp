@@ -551,7 +551,9 @@ function imgLazyAttrs(extra = {}) {
   const eager = extra.priority === "high" || extra.feedCard === true;
   const loading = eager ? 'loading="eager"' : 'loading="lazy"';
   const fetchPr = extra.priority === "high" ? ' fetchpriority="high"' : "";
-  return `${loading} decoding="async"${fetchPr}`;
+  const decoding = eager ? ' decoding="sync"' : ' decoding="async"';
+  const ref = extra.feedCard ? ' referrerpolicy="no-referrer"' : "";
+  return `${loading}${decoding}${fetchPr}${ref}`;
 }
 
 function photoOnErrorAttr() {
@@ -1770,6 +1772,25 @@ function mobileViewportInnerHeight() {
   return Math.round(window.innerHeight || document.documentElement.clientHeight || 0);
 }
 
+/**
+ * Планшет в «мобильном» брейкпоинте (узкая сетка, но ширина как у iPad):
+ * удобнее обычный скролл списка, чем жест transform-шторки (и стабильнее превью в WebKit).
+ */
+function prefersTabletFeedInnerScroll() {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return (
+    window.matchMedia("(max-width: 900px)").matches && window.matchMedia("(min-width: 744px)").matches
+  );
+}
+
+function syncAuthDemoSubmodalClass() {
+  const overlay = document.getElementById("authDemoOverlay");
+  if (!overlay) return;
+  const reg = document.getElementById("registerModal")?.classList.contains("active");
+  const res = document.getElementById("resetModal")?.classList.contains("active");
+  overlay.classList.toggle("auth-demo-overlay--submodal", Boolean(reg || res));
+}
+
 function isAltIOSBrowser() {
   const ua = String(navigator.userAgent || "");
   const isIOS = /iPhone|iPad|iPod/i.test(ua);
@@ -2020,6 +2041,12 @@ function primeMobileSheetAfterPanelHtml(panel) {
   if (!s || !s.querySelector(".left-panel-head")) return;
   void s.offsetHeight;
   void panel.offsetHeight;
+  if (prefersTabletFeedInnerScroll()) {
+    s.classList.remove("left-panel--sheet-anim");
+    setPanelTranslateY(s, 0, false);
+    root.classList.remove("collapsed");
+    return;
+  }
   const g = getSheetGeometry(panel);
   if (!g) return;
   let t;
@@ -2117,6 +2144,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   const layout = () => document.getElementById(layoutId);
   const sheetNode = () => getSheetNode(panel);
   const mq = () => window.matchMedia("(max-width: 900px)").matches;
+  const sheetPointerGestures = () => mq() && !prefersTabletFeedInnerScroll();
 
   let startY = 0;
   let startSheetT = 0;
@@ -2271,7 +2299,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   };
 
   const onPointerDown = (e) => {
-    if (!mq() || e.button !== 0) return;
+    if (!sheetPointerGestures() || e.button !== 0) return;
     const track = panel.querySelector("[data-sheet-track]");
     if (!track || !track.contains(e.target)) return;
     if (e.target.closest("button.close-left-panel")) return;
@@ -2303,7 +2331,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   const onPointerMove = (e) => {
     if (mode === "idle") return;
     if (e.pointerId != null && e.pointerId !== activeId) return;
-    if (!mq()) return;
+    if (!sheetPointerGestures()) return;
 
     const dy = e.clientY - startY;
     if (mode === "decide" && Math.abs(dy) < 8) return;
@@ -2427,7 +2455,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   panel.addEventListener("click", (ev) => {
     const btn = ev.target.closest("[data-sheet-back-first]");
     if (!btn) return;
-    if (!mq()) return;
+    if (!sheetPointerGestures()) return;
     ev.preventDefault();
     ev.stopPropagation();
     const s = sheetNode();
@@ -2473,6 +2501,16 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   panel.dataset.mobileSheetBound = "1";
   setBackToFirstVisible(false);
   ensureMobileSheetVisualViewportReflow();
+  if (typeof window !== "undefined" && window.__bmTabletInnerScrollMqlBound !== "1") {
+    window.__bmTabletInnerScrollMqlBound = "1";
+    const mqTablet = window.matchMedia("(max-width: 900px) and (min-width: 744px)");
+    const onChange = () => {
+      scheduleMobileSheetReflow(document.getElementById("leftPanel"), document.getElementById("mapLayout"));
+      scheduleMobileSheetReflow(document.getElementById("demoLeftPanel"), document.getElementById("demoMapLayout"));
+    };
+    if (mqTablet.addEventListener) mqTablet.addEventListener("change", onChange);
+    else mqTablet.addListener(onChange);
+  }
 }
 
 function snapSheetToPeek(panelId, layoutId, isDemo) {
@@ -2608,6 +2646,18 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
   if (s.classList.contains("left-panel--sheet-live")) return;
   if (!window.matchMedia("(max-width: 900px)").matches) {
     setPanelTranslateY(s, 0, false);
+    return;
+  }
+  if (prefersTabletFeedInnerScroll()) {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setPanelTranslateY(s, 0, false);
+        layout?.classList.remove("collapsed");
+        state.panelCollapsed = false;
+        state.panelSheetT = 0;
+        state.panelSheetOpenOffset = null;
+      });
+    });
     return;
   }
   requestAnimationFrame(() => {
@@ -4587,6 +4637,7 @@ function dismissDemoAuthOverlay() {
   document.getElementById("registerModal")?.classList.remove("active");
   document.getElementById("resetModal")?.classList.remove("active");
   document.body.classList.remove("auth-modal-open");
+  syncAuthDemoSubmodalClass();
   removeAuthDemoOverlay();
   const target = state.authOverlayReturnHash || "#/";
   state.authOverlayReturnHash = null;
@@ -4643,6 +4694,7 @@ function renderAuthPage() {
 function attachAuthDomListeners(demoOverlay) {
   const setAuthModalOpen = (open) => {
     document.body.classList.toggle("auth-modal-open", Boolean(open));
+    syncAuthDemoSubmodalClass();
   };
   const resetRegisterModalUi = () => {
     document.getElementById("registerFormWrap")?.removeAttribute("hidden");
@@ -4654,6 +4706,7 @@ function attachAuthDomListeners(demoOverlay) {
       btn.disabled = false;
       btn.textContent = "Создать аккаунт";
     }
+    syncAuthDemoSubmodalClass();
   };
   const resetPasswordModalUi = () => {
     document.getElementById("resetFormWrap")?.removeAttribute("hidden");
@@ -4665,6 +4718,7 @@ function attachAuthDomListeners(demoOverlay) {
       btn.disabled = false;
       btn.textContent = "Отправить ссылку";
     }
+    syncAuthDemoSubmodalClass();
   };
   const toDemoEl = document.getElementById("toDemoMapBtn");
   if (toDemoEl) {

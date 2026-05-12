@@ -830,6 +830,8 @@ body.sheet-property-popup-open {
   width: 100%;
   height: 172px;
   object-fit: cover;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
 }
 
 .card-photo-dots {
@@ -1190,6 +1192,37 @@ body.sheet-property-popup-open {
 
 .auth-demo-overlay__x:active {
   transform: scale(0.96);
+}
+
+/* Демо-оверлей: регистрация / сброс — один слой, без белой формы входа «под» модалкой */
+.auth-demo-overlay--submodal .login-wrapper,
+.auth-demo-overlay--submodal .contact-us-card {
+  display: none;
+}
+
+.auth-demo-overlay--submodal .auth-demo-overlay__panel {
+  max-height: min(96dvh, 96vh);
+  min-height: min(380px, 78dvh);
+}
+
+.auth-demo-overlay--submodal #registerModal.active,
+.auth-demo-overlay--submodal #resetModal.active {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  z-index: 2;
+}
+
+.auth-demo-overlay--submodal #registerModal.active .auth-modal-content,
+.auth-demo-overlay--submodal #resetModal.active .auth-modal-content {
+  width: 100%;
+  max-width: none;
+  align-self: stretch;
+  max-height: min(96dvh, 96vh);
+  border-radius: 18px 18px 0 0;
 }
 
 .login-wrapper {
@@ -2122,6 +2155,36 @@ textarea {
   .map-page,
   .demo-page {
     padding-bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* iPad / широкий «мобильный» режим: скролл списка внутри шторки вместо только transform-рулона */
+@media (max-width: 900px) and (min-width: 744px) {
+  .map-page .map-layout--app-sheet .left-panel__track,
+  .demo-page .map-layout--app-sheet .left-panel__track {
+    transform: none !important;
+    transition: none !important;
+    max-height: calc(
+      100dvh - var(--mobile-sheet-top-gap, 120px) - var(--mobile-bottom-nav-height, 72px) - 12px
+    );
+    overflow: hidden;
+    touch-action: auto;
+    will-change: auto;
+    box-shadow:
+      0 -6px 28px rgba(16, 24, 40, 0.18),
+      0 28px 0 28px #fff;
+  }
+
+  .map-page .map-layout--app-sheet .left-panel-scroll,
+  .demo-page .map-layout--app-sheet .left-panel-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto !important;
+    overflow-x: hidden;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y !important;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
