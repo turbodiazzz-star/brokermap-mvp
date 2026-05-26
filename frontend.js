@@ -1070,8 +1070,9 @@ async function loadDemoCatalog(options = {}) {
   }
   let list = [];
   try {
-    const res = await fetch("/api/demo/properties");
-    if (res.ok) {
+    const res = await fetch("/api/demo/properties", { cache: "no-store" });
+    const contentType = String(res.headers.get("content-type") || "").toLowerCase();
+    if (res.ok && contentType.includes("application/json")) {
       const data = await res.json();
       if (Array.isArray(data)) list = data;
     }

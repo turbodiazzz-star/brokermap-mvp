@@ -165,7 +165,6 @@ function refreshAllPropertiesMetroWalkMinutes() {
 
 initDb({ adminEmails: adminEmailList });
 refreshAllPropertiesMetroWalkMinutes();
-void repairAllPropertyCoordinatesByAddress();
 
 for (const dir of [UPLOADS_DIR, PHOTOS_DIR, PDFS_DIR]) {
   if (!fs.existsSync(dir)) {
@@ -322,6 +321,8 @@ async function repairAllPropertyCoordinatesByAddress() {
     console.error("[geo-repair] failed:", error?.message || error);
   }
 }
+
+void repairAllPropertyCoordinatesByAddress();
 
 function toBooleanValue(value) {
   const normalized = String(value ?? "")
@@ -1579,6 +1580,12 @@ app.delete("/api/me", auth, (req, res) => {
   return res.json({ success: true });
 });
 
+// Публичная демо-карта: объекты с show_in_demo (без авторизации)
+app.get("/api/demo/properties", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  return res.json(listPropertiesForPublicDemo());
+});
+
 // Список на карту — только для авторизованных; без полей contacts (телефоны в карточке списка не отдаём)
 app.get("/api/properties", auth, (req, res) => {
   const minPrice = Number(req.query.minPrice || 0);
@@ -1833,10 +1840,6 @@ app.patch("/api/admin/properties/:id/demo", auth, requireAdmin, (req, res) => {
     return res.status(500).json({ message: "Не удалось обновить объект" });
   }
   return res.json({ success: true, showInDemo });
-});
-
-app.get("/api/demo/properties", (_req, res) => {
-  return res.json(listPropertiesForPublicDemo());
 });
 
 app.delete("/api/admin/properties/:id", auth, requireAdmin, (req, res) => {
