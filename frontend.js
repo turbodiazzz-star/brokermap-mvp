@@ -1166,6 +1166,64 @@ function createDemoProperties(count = 100) {
   return demo;
 }
 
+/** Объекты для гостевой демо-карты: из БД (show_in_demo) или 100 сгенерированных. */
+async function loadDemoCatalog(options = {}) {
+  const force = options.force === true;
+  if (!force && state.demoAllProperties?.length && state.demoCatalogFromDb != null) {
+    return state.demoAllProperties;
+  }
+  try {
+    const res = await fetch("/api/demo/properties");
+    if (res.ok) {
+      const list = await res.json();
+      if (Array.isArray(list) && list.length) {
+        state.demoAllProperties = list;
+        state.demoCatalogFromDb = true;
+        return list;
+      }
+    }
+  } catch {
+    /* сервер недоступен */
+  }
+  state.demoCatalogFromDb = false;
+  if (state.demoDataVersion !== CURRENT_DEMO_DATA_VERSION) {
+    state.demoAllProperties = null;
+    state.demoDataVersion = CURRENT_DEMO_DATA_VERSION;
+  }
+  if (!state.demoAllProperties?.length) {
+    state.demoAllProperties = createDemoProperties(100);
+  }
+  return state.demoAllProperties;
+}
+
+function adminPropertyTableRowHtml(p) {
+  const checked = p.showInDemo ? "checked" : "";
+  return `<tr>
+      <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
+      <td data-label="Адрес">
+        <div class="admin-prop-cell">
+          <img class="admin-prop-thumb" src="${photoUrlWithFallback(getPropertyPreviewPhoto(p))}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />
+          <span>${escapeHtml(p.address || "—")}</span>
+        </div>
+      </td>
+      <td data-label="Цена">${money(p.price)} ₽</td>
+      <td data-label="Владелец">${escapeHtml(p.ownerEmail)}</td>
+      <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
+      <td data-label="Демо">
+        <label class="admin-demo-toggle">
+          <input type="checkbox" class="admin-demo-flag" data-id="${escapeHtml(p.id)}" ${checked} aria-label="Показывать в демо-карте" />
+          <span>Демо</span>
+        </label>
+      </td>
+      <td data-label="Действия">
+        <div class="admin-row-actions">
+          <button class="btn admin-open-prop" data-id="${escapeHtml(p.id)}" type="button">Открыть</button>
+          <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
+        </div>
+      </td>
+    </tr>`;
+}
+
 function demoCardMarkup(item) {
   const pct = Number(item.commissionPartner || 0);
   const commissionRub = (Number(item.price || 0) * pct) / 100;
@@ -1605,9 +1663,7 @@ async function openSheetPropertyPopup(id, options = {}) {
   try {
     let property = null;
     if (isDemo) {
-      if (!state.demoAllProperties || !state.demoAllProperties.length) {
-        state.demoAllProperties = createDemoProperties(100);
-      }
+      await loadDemoCatalog();
       property = state.demoAllProperties.find((item) => String(item.id) === String(id)) || null;
     } else {
       property = await api(`/api/properties/${encodeURIComponent(id)}`);
@@ -2977,18 +3033,16 @@ function applyDemoFilters() {
   }
 }
 
-function renderPublicDemoPage() {
+async function renderPublicDemoPage() {
   setMapBodyClass(true);
   resetMobileSheetLandingState();
   const isMobileSheet = isMobileLayout();
-  if (state.demoDataVersion !== CURRENT_DEMO_DATA_VERSION) {
-    state.demoAllProperties = null;
-    state.demoDataVersion = CURRENT_DEMO_DATA_VERSION;
-  }
-  if (!state.demoAllProperties || !state.demoAllProperties.length) {
-    state.demoAllProperties = createDemoProperties(100);
-  }
+  await loadDemoCatalog({ force: true });
   state.properties = filterPropertiesByState(state.demoAllProperties);
+  const demoCount = state.demoAllProperties.length;
+  const demoCountLabel = state.demoCatalogFromDb
+    ? `${demoCount} ${demoCount === 1 ? "объект" : demoCount < 5 ? "объекта" : "объектов"}`
+    : `${demoCount} точек`;
 
   app.innerHTML = `
     <section class="demo-page">
@@ -2996,7 +3050,7 @@ function renderPublicDemoPage() {
       ${mobileMapChromeHtml(true)}
       <div class="demo-top-strip" id="demoTopStrip" aria-label="Справка по демо">
         <p class="demo-top-strip__line">
-          <strong>Демо</strong> · 100 точек · список снизу: тяните панель, нажмите метку или обведите район ✍
+          <strong>Демо</strong> · ${escapeHtml(demoCountLabel)} · список снизу: тяните панель, нажмите метку или обведите район ✍
         </p>
         <button type="button" class="btn demo-top-strip__open" id="demoAboutOpen">О демо</button>
       </div>
@@ -3232,12 +3286,10 @@ function renderPublicDemoPage() {
   bindMapZoomGuards();
 }
 
-function renderDemoPropertyPage(id) {
+async function renderDemoPropertyPage(id) {
   endSheetRouteTransition();
   setMapBodyClass(false);
-  if (!state.demoAllProperties || !state.demoAllProperties.length) {
-    state.demoAllProperties = createDemoProperties(100);
-  }
+  await loadDemoCatalog();
   const property = state.demoAllProperties.find((item) => item.id === id) || state.demoAllProperties[0];
   const galleryPhotos = (property.photos || []).length ? property.photos : [PLACEHOLDER_IMAGE_URL];
   const showMetroInfo = shouldShowMetroInfo(property);
@@ -6859,28 +6911,7 @@ async function renderAdminPage() {
     )
     .join("");
 
-  const propRows = properties
-    .map(
-      (p) => `<tr>
-      <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
-      <td data-label="Адрес">
-        <div class="admin-prop-cell">
-          <img class="admin-prop-thumb" src="${photoUrlWithFallback(getPropertyPreviewPhoto(p))}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />
-          <span>${escapeHtml(p.address || "—")}</span>
-        </div>
-      </td>
-      <td data-label="Цена">${money(p.price)} ₽</td>
-      <td data-label="Владелец">${escapeHtml(p.ownerEmail)}</td>
-      <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
-      <td data-label="Действия">
-        <div class="admin-row-actions">
-          <button class="btn admin-open-prop" data-id="${escapeHtml(p.id)}" type="button">Открыть</button>
-          <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
-        </div>
-      </td>
-    </tr>`
-    )
-    .join("");
+  const propRows = properties.map((p) => adminPropertyTableRowHtml(p)).join("");
 
   app.innerHTML = `
     ${topbar({ slim: true })}
@@ -6968,11 +6999,12 @@ async function renderAdminPage() {
               <th>Цена</th>
               <th>Владелец (email)</th>
               <th>Создан</th>
+              <th>Демо</th>
               <th></th>
             </tr>
           </thead>
           <tbody id="adminPropertyTableBody">
-            ${propRows || `<tr><td colspan="6" class="muted">Нет объектов</td></tr>`}
+            ${propRows || `<tr><td colspan="7" class="muted">Нет объектов</td></tr>`}
           </tbody>
         </table>
       </div>
@@ -7070,6 +7102,12 @@ async function renderAdminPage() {
             .join("")}
         </div>
         <p>${escapeHtml(property.description || "")}</p>
+        <p class="admin-demo-modal-row">
+          <label class="admin-demo-toggle">
+            <input type="checkbox" id="adminModalDemoFlag" ${property.showInDemo ? "checked" : ""} />
+            <span>Показывать в демо-карте (для гостей без входа)</span>
+          </label>
+        </p>
         <div class="admin-row-actions">
           ${
             canDelete
@@ -7081,6 +7119,27 @@ async function renderAdminPage() {
         </div>
       `;
       adminModal.classList.add("open");
+      document.getElementById("adminModalDemoFlag")?.addEventListener("change", async (event) => {
+        const input = event.currentTarget;
+        const showInDemo = Boolean(input?.checked);
+        input.disabled = true;
+        try {
+          await api(`/api/admin/properties/${encodeURIComponent(propertyId)}/demo`, {
+            method: "PATCH",
+            body: JSON.stringify({ showInDemo })
+          });
+          property.showInDemo = showInDemo;
+          const row = properties.find((item) => item.id === propertyId);
+          if (row) row.showInDemo = showInDemo;
+          const tableInput = document.querySelector(`.admin-demo-flag[data-id="${CSS.escape(propertyId)}"]`);
+          if (tableInput) tableInput.checked = showInDemo;
+        } catch (e) {
+          input.checked = !showInDemo;
+          alert(e.message || "Не удалось обновить демо");
+        } finally {
+          input.disabled = false;
+        }
+      });
       document.getElementById("adminModalDeletePropBtn")?.addEventListener("click", async (event) => {
         const id = event.currentTarget?.dataset?.id;
         if (!id || !window.confirm("Удалить объект из базы?")) return;
@@ -7378,6 +7437,28 @@ async function renderAdminPage() {
         await openAdminPropertyModal(id, { canDelete: true });
       });
     });
+    document.querySelectorAll(".admin-demo-flag").forEach((input) => {
+      input.addEventListener("change", async (event) => {
+        const el = event.currentTarget;
+        const id = el?.getAttribute("data-id");
+        if (!id) return;
+        const showInDemo = Boolean(el.checked);
+        el.disabled = true;
+        try {
+          await api(`/api/admin/properties/${encodeURIComponent(id)}/demo`, {
+            method: "PATCH",
+            body: JSON.stringify({ showInDemo })
+          });
+          const row = properties.find((item) => item.id === id);
+          if (row) row.showInDemo = showInDemo;
+        } catch (e) {
+          el.checked = !showInDemo;
+          alert(e.message || "Не удалось обновить демо");
+        } finally {
+          el.disabled = false;
+        }
+      });
+    });
     document.querySelectorAll(".admin-del-prop").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const id = btn.getAttribute("data-id");
@@ -7468,29 +7549,8 @@ async function renderAdminPage() {
     const tbody = document.getElementById("adminPropertyTableBody");
     if (!tbody) return;
     tbody.innerHTML = list.length
-      ? list
-          .map(
-            (p) => `<tr>
-          <td data-label="ID"><code>${escapeHtml(p.id)}</code></td>
-          <td data-label="Адрес">
-            <div class="admin-prop-cell">
-              <img class="admin-prop-thumb" src="${photoUrlWithFallback(getPropertyPreviewPhoto(p))}" onerror="${photoOnErrorAttr()}" alt="Фото объекта" />
-              <span>${escapeHtml(p.address || "—")}</span>
-            </div>
-          </td>
-          <td data-label="Цена">${money(p.price)} ₽</td>
-          <td data-label="Владелец">${escapeHtml(p.ownerEmail)}</td>
-          <td class="muted" data-label="Создан">${escapeHtml((p.createdAt || "").slice(0, 10))}</td>
-          <td data-label="Действия">
-            <div class="admin-row-actions">
-              <button class="btn admin-open-prop" data-id="${escapeHtml(p.id)}" type="button">Открыть</button>
-              <button class="btn danger-btn admin-del-prop" data-id="${escapeHtml(p.id)}" type="button">Удалить</button>
-            </div>
-          </td>
-        </tr>`
-          )
-          .join("")
-      : `<tr><td colspan="6" class="muted">Нет объектов</td></tr>`;
+      ? list.map((p) => adminPropertyTableRowHtml(p)).join("")
+      : `<tr><td colspan="7" class="muted">Нет объектов</td></tr>`;
     bindPropertyRowHandlers();
   };
 
@@ -7529,7 +7589,7 @@ async function router() {
   if (!state.token) {
     if (hash.startsWith("#/demo/property/")) {
       const id = decodeURIComponent(hash.split("/")[3] || "");
-      renderDemoPropertyPage(id);
+      await renderDemoPropertyPage(id);
       return;
     }
     if (hash === "#/cabinet" || hash === "#/cabinet/add" || hash === "#/cabinet/profile") {
@@ -7546,9 +7606,9 @@ async function router() {
     ) {
       if (overlayReturn.startsWith("#/demo/property/")) {
         const rid = decodeURIComponent(overlayReturn.split("/")[3] || "");
-        renderDemoPropertyPage(rid);
+        await renderDemoPropertyPage(rid);
       } else {
-        renderPublicDemoPage();
+        await renderPublicDemoPage();
       }
       renderDemoAuthOverlay(hash);
       return;
@@ -7566,7 +7626,7 @@ async function router() {
       }
       return;
     }
-    renderPublicDemoPage();
+    await renderPublicDemoPage();
     return;
   }
   if (!didSyncUserFromServer) {
@@ -7584,7 +7644,7 @@ async function router() {
       if (hashNow === "#/auth" || hashNow === "#/auth-form" || hashNow === "#/auth-register") {
         renderAuthPage();
       } else {
-        renderPublicDemoPage();
+        await renderPublicDemoPage();
       }
       return;
     }

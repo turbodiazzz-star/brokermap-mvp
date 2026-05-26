@@ -34,6 +34,8 @@ const {
   countAllUsers,
   stripContacts,
   listAllPropertiesForAdmin,
+  listPropertiesForPublicDemo,
+  setPropertyShowInDemo,
   deletePropertyById,
   deletePropertiesByOwner,
   reassignPropertiesToOwner,
@@ -1819,6 +1821,22 @@ app.delete("/api/admin/users/:id", auth, requireAdmin, (req, res) => {
 
 app.get("/api/admin/properties", auth, requireAdmin, (_req, res) => {
   return res.json(listAllPropertiesForAdmin());
+});
+
+app.patch("/api/admin/properties/:id/demo", auth, requireAdmin, (req, res) => {
+  const property = findPropertyById(req.params.id);
+  if (!property) {
+    return res.status(404).json({ message: "Объект не найден" });
+  }
+  const showInDemo = Boolean(req.body?.showInDemo);
+  if (!setPropertyShowInDemo(req.params.id, showInDemo)) {
+    return res.status(500).json({ message: "Не удалось обновить объект" });
+  }
+  return res.json({ success: true, showInDemo });
+});
+
+app.get("/api/demo/properties", (_req, res) => {
+  return res.json(listPropertiesForPublicDemo());
 });
 
 app.delete("/api/admin/properties/:id", auth, requireAdmin, (req, res) => {

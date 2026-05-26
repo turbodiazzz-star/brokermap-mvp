@@ -2558,6 +2558,27 @@ textarea {
   border-bottom: none;
 }
 
+.admin-demo-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.admin-demo-toggle input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.admin-demo-modal-row {
+  margin: 12px 0 0;
+}
+
 .admin-table code {
   font-size: 12px;
   word-break: break-all;
