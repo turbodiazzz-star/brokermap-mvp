@@ -438,7 +438,7 @@ body.view-map #app {
   flex-direction: column;
 }
 
-@media (min-width: 901px) {
+@media (min-width: 901px) and (pointer: fine) {
   .map-layout--app-sheet .map-wrap {
   display: grid;
     grid-template-columns: clamp(290px, 24vw, 380px) 1fr;
@@ -645,7 +645,7 @@ body.view-map #app {
   bottom: auto;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 900px), ((max-width: 1366px) and (pointer: coarse)) {
   .demo-page .map-wrap .map-draw-tools {
     top: 14px;
   }
@@ -1636,7 +1636,7 @@ textarea {
   margin-top: 2px;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 900px), ((max-width: 1366px) and (pointer: coarse)) {
   .sheet-property-popup {
     align-items: flex-end;
   }
@@ -1812,7 +1812,7 @@ textarea {
     margin-top: 0;
   }
 
-  /* Моб. шторка: без кнопки «Список» — только тянуть за блок (ручка/шапка/карточки). На десктопе кнопка в @media (min-width: 901px). */
+  /* Моб. шторка: без кнопки «Список» — только тянуть за блок (ручка/шапка/карточки). На десктопе кнопка в @media (min-width: 901px) and (pointer: fine). */
   .map-page .map-layout--app-sheet .map-wrap .open-left-panel-btn--sheet,
   .demo-page .map-layout--app-sheet .map-wrap .open-left-panel-btn--sheet {
     display: none !important;
@@ -2159,7 +2159,7 @@ textarea {
 }
 
 /* iPad / широкий «мобильный» режим: скролл списка внутри шторки вместо только transform-рулона */
-@media (max-width: 900px) and (min-width: 744px) {
+@media (max-width: 900px) and (min-width: 744px), ((max-width: 1366px) and (min-width: 744px) and (pointer: coarse)) {
   .map-page .map-layout--app-sheet .left-panel__track,
   .demo-page .map-layout--app-sheet .left-panel__track {
     transform: none !important;
@@ -2189,7 +2189,7 @@ textarea {
 }
 
 /* Широкий экран: кнопка свернуть слева, иконка ❯, без усыпки */
-@media (min-width: 901px) {
+@media (min-width: 901px) and (pointer: fine) {
   .map-sheet-peek {
     display: none !important;
   }
@@ -2236,7 +2236,7 @@ textarea {
 
   /**
    * Та же DOM-разметка (трек + scroll), что и на мобилке, но на широком экране — сетка и скролл списка, без transform-шторки.
-   * Сбрасываем стили из @media (max-width: 900px), иначе overflow-y: visible / touch-action: none ломают прокрутку карточек.
+   * Сбрасываем стили из @media (max-width: 900px), ((max-width: 1366px) and (pointer: coarse)), иначе overflow-y: visible / touch-action: none ломают прокрутку карточек.
    */
   .map-page .map-layout--app-sheet .left-panel,
   .demo-page .map-layout--app-sheet .left-panel {
@@ -2607,7 +2607,7 @@ textarea {
   border-color: #991b1b;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 900px), ((max-width: 1366px) and (pointer: coarse)) {
   .admin-page {
     margin: 10px auto;
     padding: 0 10px 18px;
@@ -2730,7 +2730,7 @@ textarea {
   }
 }
 
-@media (min-width: 901px) {
+@media (min-width: 901px) and (pointer: fine) {
   .auth-modal.active {
     align-items: center;
   }

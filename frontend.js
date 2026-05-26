@@ -87,6 +87,22 @@ function emptyFilters() {
 
 const CURRENT_DEMO_DATA_VERSION = 7;
 
+/** Телефон + iPad (в т.ч. альбомная ориентация >900px): шторка и моб. хром, не десктопная сетка. */
+const MQ_MOBILE_LAYOUT = "(max-width: 900px), ((max-width: 1366px) and (pointer: coarse))";
+const MQ_TABLET_FEED =
+  "(max-width: 900px) and (min-width: 744px), ((max-width: 1366px) and (min-width: 744px) and (pointer: coarse))";
+
+function isMobileLayout() {
+  if (typeof window === "undefined" || !window.matchMedia) return false;
+  return window.matchMedia(MQ_MOBILE_LAYOUT).matches;
+}
+
+function isIOSDevice() {
+  const ua = String(navigator.userAgent || "");
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  return /Macintosh/i.test(ua) && Number(navigator.maxTouchPoints || 0) > 1;
+}
+
 let didSyncUserFromServer = false;
 
 const app = document.getElementById("app");
@@ -954,7 +970,7 @@ function mapDrawToolsHtml() {
 }
 
 function updateMobileNavMetrics() {
-  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  if (!isMobileLayout()) return;
   const nav = document.querySelector(".mobile-map-bottom-nav");
   if (nav) {
     document.documentElement.style.setProperty("--mobile-bottom-nav-height", `${Math.round(nav.offsetHeight)}px`);
@@ -1238,7 +1254,7 @@ function endSheetRouteTransition() {
 }
 
 function captureSheetReturnStateFromPanel(panel, isDemo) {
-  if (!panel || !window.matchMedia("(max-width: 900px)").matches) return;
+  if (!panel || !isMobileLayout()) return;
   const sheet = getSheetNode(panel);
   if (!sheet) return;
   const layout = panel.closest(".map-layout");
@@ -1778,9 +1794,7 @@ function mobileViewportInnerHeight() {
  */
 function prefersTabletFeedInnerScroll() {
   if (typeof window === "undefined" || !window.matchMedia) return false;
-  return (
-    window.matchMedia("(max-width: 900px)").matches && window.matchMedia("(min-width: 744px)").matches
-  );
+  return window.matchMedia(MQ_TABLET_FEED).matches;
 }
 
 function syncAuthDemoSubmodalClass() {
@@ -1793,8 +1807,7 @@ function syncAuthDemoSubmodalClass() {
 
 function isAltIOSBrowser() {
   const ua = String(navigator.userAgent || "");
-  const isIOS = /iPhone|iPad|iPod/i.test(ua);
-  if (!isIOS) return false;
+  if (!isIOSDevice()) return false;
   return /CriOS|YaBrowser|YaApp_iOS|Yowser|FxiOS|EdgiOS|OPiOS/i.test(ua);
 }
 
@@ -1809,16 +1822,15 @@ function isChromeIOSBrowser() {
 }
 
 function mobileBrowserExtraBottomPad() {
-  if (!window.matchMedia("(max-width: 900px)").matches) return 0;
+  if (!isMobileLayout()) return 0;
   const ua = String(navigator.userAgent || "");
-  const isIOS = /iPhone|iPad|iPod/i.test(ua);
   const altIOS = isAltIOSBrowser();
-  const isSafariIOS = isIOS && /Safari/i.test(ua) && !altIOS;
+  const isSafariIOS = isIOSDevice() && /Safari/i.test(ua) && !altIOS;
   const vv = window.visualViewport;
   const browserUiBottom = vv
     ? Math.max(0, Math.round((window.innerHeight || 0) - (vv.height + vv.offsetTop)))
     : 0;
-  const uaPad = isIOS && altIOS ? 30 : 0;
+  const uaPad = isIOSDevice() && altIOS ? 30 : 0;
   if (isSafariIOS) return 0;
   return Math.min(34, Math.max(browserUiBottom, uaPad));
 }
@@ -1834,7 +1846,7 @@ function ensureMobileSheetVisualViewportReflow() {
     () => {
       window.clearTimeout(resizeTimer);
       resizeTimer = window.setTimeout(() => {
-        if (!window.matchMedia("(max-width: 900px)").matches) return;
+        if (!isMobileLayout()) return;
         const settle = (panel, layout) => {
           if (!panel || !layout || !layout.classList.contains("map-layout--app-sheet")) return;
           const node = getSheetNode(panel);
@@ -1850,7 +1862,7 @@ function ensureMobileSheetVisualViewportReflow() {
 }
 
 function refreshMobileSheetLayoutVars(panel) {
-  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  if (!isMobileLayout()) return;
   const root = document.documentElement;
   const navEl = document.querySelector(".mobile-map-bottom-nav");
   const navH = navEl
@@ -1887,7 +1899,7 @@ function refreshMobileSheetLayoutVars(panel) {
  * шторка как будто «не сворачивалась». Старт «~полэкрана»: t = H − targetVis по viewport/wrap, не процент от (yMax−yMin).
  */
 function getSheetGeometry(panel) {
-  if (!window.matchMedia("(max-width: 900px)").matches) return null;
+  if (!isMobileLayout()) return null;
   refreshMobileSheetLayoutVars(panel);
   const vh = mobileViewportInnerHeight();
   const track = panel.querySelector("[data-sheet-track]");
@@ -2034,7 +2046,7 @@ function getSheetGeometry(panel) {
 
 /** Сразу после innerHTML выставить translate, чтобы не было кадра с transform 0 (шторка «на весь рост»). */
 function primeMobileSheetAfterPanelHtml(panel) {
-  if (!panel || !window.matchMedia("(max-width: 900px)").matches) return;
+  if (!panel || !isMobileLayout()) return;
   const root = panel.closest(".map-layout");
   if (!root || !root.classList.contains("map-layout--app-sheet")) return;
   const s = getSheetNode(panel);
@@ -2087,7 +2099,7 @@ function clampSheetT(t, g) {
 
 function rememberSheetPosition(panel) {
   if (!panel) return;
-  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  if (!isMobileLayout()) return;
   if (state.panelCollapsed) return;
   const s = getSheetNode(panel);
   if (!s) return;
@@ -2103,7 +2115,7 @@ function rememberSheetPosition(panel) {
 
 /** Старт / возврат на карту или демо: всегда применяем «пол-экрана», не тянем старый translate с пустой панели. */
 function resetMobileSheetLandingState() {
-  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  if (!isMobileLayout()) return;
   if (state.skipSheetLandingResetOnce) {
     state.skipSheetLandingResetOnce = false;
     return;
@@ -2143,7 +2155,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   if (!panel || panel.dataset.mobileSheetBound === "1") return;
   const layout = () => document.getElementById(layoutId);
   const sheetNode = () => getSheetNode(panel);
-  const mq = () => window.matchMedia("(max-width: 900px)").matches;
+  const mq = () => isMobileLayout();
   const sheetPointerGestures = () => mq() && !prefersTabletFeedInnerScroll();
 
   let startY = 0;
@@ -2503,7 +2515,7 @@ function bindMobileBottomSheet({ panelId, layoutId, isDemo }) {
   ensureMobileSheetVisualViewportReflow();
   if (typeof window !== "undefined" && window.__bmTabletInnerScrollMqlBound !== "1") {
     window.__bmTabletInnerScrollMqlBound = "1";
-    const mqTablet = window.matchMedia("(max-width: 900px) and (min-width: 744px)");
+    const mqTablet = window.matchMedia(MQ_TABLET_FEED);
     const onChange = () => {
       scheduleMobileSheetReflow(document.getElementById("leftPanel"), document.getElementById("mapLayout"));
       scheduleMobileSheetReflow(document.getElementById("demoLeftPanel"), document.getElementById("demoMapLayout"));
@@ -2532,7 +2544,7 @@ function snapSheetToPeek(panelId, layoutId, isDemo) {
 function updateDemoOpenPanelButton() {
   const btn = document.getElementById("openDemoLeftPanelBtn");
   if (!btn) return;
-  if (window.matchMedia("(max-width: 900px)").matches) return;
+  if (isMobileLayout()) return;
   if (state.panelCollapsed) {
     btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("aria-hidden", "false");
@@ -2545,7 +2557,7 @@ function updateDemoOpenPanelButton() {
 function updateMapOpenPanelButton() {
   const btn = document.getElementById("openLeftPanelBtn");
   if (!btn) return;
-  if (window.matchMedia("(max-width: 900px)").matches) return;
+  if (isMobileLayout()) return;
   if (state.panelCollapsed) {
     btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("aria-hidden", "false");
@@ -2556,7 +2568,7 @@ function updateMapOpenPanelButton() {
 }
 
 function bindMapZoomGuards() {
-  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  if (!isMobileLayout()) return;
   const els = [document.getElementById("map"), document.getElementById("demoMap")].filter(Boolean);
   for (const el of els) {
     if (el.dataset.zoomGuardBound === "1") continue;
@@ -2644,7 +2656,7 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
   if (!s) return;
   if (!s.querySelector(".left-panel-head")) return;
   if (s.classList.contains("left-panel--sheet-live")) return;
-  if (!window.matchMedia("(max-width: 900px)").matches) {
+  if (!isMobileLayout()) {
     setPanelTranslateY(s, 0, false);
     return;
   }
@@ -2698,7 +2710,7 @@ function mobileSheetSettleAfterRender(panel, layout, animate = false) {
 
 /** Карта / flex после первого кадра меняют высоту .map-wrap — без повторного settle шторка остаётся с неверным translate (как в «старой» рабочей версии после reflow). */
 function scheduleMobileSheetReflow(panel, layout, opts = {}) {
-  if (!panel || !layout || !window.matchMedia("(max-width: 900px)").matches) return;
+  if (!panel || !layout || !isMobileLayout()) return;
   let landingResetOnce = opts.resetLandingOnce === true;
   const run = () => {
     const node = getSheetNode(panel);
@@ -2723,7 +2735,7 @@ function scheduleMobileSheetReflow(panel, layout, opts = {}) {
 
 /** После создания карты пересчитываем геометрию шторки с нуля (до этого был рендер без карты / с неверной высотой wrap). */
 function resetMobileSheetForMapReady() {
-  if (!window.matchMedia("(max-width: 900px)").matches) return;
+  if (!isMobileLayout()) return;
   state.panelSheetInitialized = false;
   state.panelSheetT = null;
   state.panelSheetOpenOffset = null;
@@ -2880,7 +2892,7 @@ function renderDemoPanel(list, title, opts = {}) {
     state.panelSheetT = null;
     state.panelSheetOpenOffset = null;
     state.panelSheetUserMoved = false;
-    if (window.matchMedia("(max-width: 900px)").matches) {
+    if (isMobileLayout()) {
       state.panelSheetInitialized = false;
     }
   }
@@ -2968,7 +2980,7 @@ function applyDemoFilters() {
 function renderPublicDemoPage() {
   setMapBodyClass(true);
   resetMobileSheetLandingState();
-  const isMobileSheet = window.matchMedia("(max-width: 900px)").matches;
+  const isMobileSheet = isMobileLayout();
   if (state.demoDataVersion !== CURRENT_DEMO_DATA_VERSION) {
     state.demoAllProperties = null;
     state.demoDataVersion = CURRENT_DEMO_DATA_VERSION;
@@ -3179,7 +3191,7 @@ function renderPublicDemoPage() {
 
   applyDemoFilters();
   /** Шторка: до готовности карты панель не заполнялась async initDemoMap — на мобилке пустой экран. */
-  if (window.matchMedia("(max-width: 900px)").matches) {
+  if (isMobileLayout()) {
     renderDemoViewportPanel();
   }
   function openDemoLeftPanel() {
@@ -3210,7 +3222,7 @@ function renderPublicDemoPage() {
 
   document.getElementById("openDemoLeftPanelBtn")?.addEventListener("click", openDemoLeftPanel);
   document.getElementById("demoLeftPanelScrim")?.addEventListener("click", () => {
-    if (window.matchMedia("(max-width: 900px)").matches) {
+    if (isMobileLayout()) {
       demoCollapseLeftPanel();
     }
   });
@@ -3379,7 +3391,7 @@ function renderDemoPropertyPage(id) {
 function renderMapPage() {
   setMapBodyClass(true);
   resetMobileSheetLandingState();
-  const isMobileSheet = window.matchMedia("(max-width: 900px)").matches;
+  const isMobileSheet = isMobileLayout();
   app.innerHTML = `
     <section class="map-page">
     ${topbar()}
@@ -3483,7 +3495,7 @@ function renderMapPage() {
   document.getElementById("closeLeftPanel")?.addEventListener("click", mapCollapseLeftPanel);
   document.getElementById("openLeftPanelBtn")?.addEventListener("click", openMapLeftPanel);
   document.getElementById("mapLeftPanelScrim")?.addEventListener("click", () => {
-    if (window.matchMedia("(max-width: 900px)").matches) {
+    if (isMobileLayout()) {
       mapCollapseLeftPanel();
     }
   });
@@ -3985,7 +3997,7 @@ function focusMapOnPlacemark(lat, lon, panelId = "leftPanel") {
   const map = state.mapInstance;
   if (!map || !Number.isFinite(lat) || !Number.isFinite(lon)) return;
 
-  const isMobile = window.matchMedia("(max-width: 900px)").matches;
+  const isMobile = isMobileLayout();
   const targetZoom = Math.max(map.getZoom(), 17);
 
   if (!isMobile) {
@@ -4044,7 +4056,7 @@ function showGroup(properties) {
   state.panelSheetT = null;
   state.panelSheetOpenOffset = null;
   state.panelSheetUserMoved = false;
-  if (window.matchMedia("(max-width: 900px)").matches) {
+  if (isMobileLayout()) {
     state.panelSheetInitialized = false;
   }
   properties.sort((a, b) => b.commissionPartner - a.commissionPartner);
@@ -4336,7 +4348,7 @@ async function renderPropertyPage(id) {
   const metroWalkMinutes = showMetroInfo ? propertyMetroWalkMinutesNumber(property) : null;
   const tg = telegramContactLink(property?.contacts?.telegram || "");
   app.innerHTML = `
-    ${topbar({ hideFilters: window.matchMedia("(max-width: 900px)").matches })}
+    ${topbar({ hideFilters: isMobileLayout() })}
     <section class="page">
       <p><button class="btn" id="goBack">← На карту</button></p>
       <div class="grid-2">
@@ -7564,6 +7576,16 @@ async function router() {
       state.user = me;
       localStorage.setItem("user", JSON.stringify(me));
     } catch {
+      didSyncUserFromServer = false;
+      if (state.token) {
+        await logout();
+      }
+      const hashNow = location.hash || "#/";
+      if (hashNow === "#/auth" || hashNow === "#/auth-form" || hashNow === "#/auth-register") {
+        renderAuthPage();
+      } else {
+        renderPublicDemoPage();
+      }
       return;
     }
   }
@@ -7618,7 +7640,7 @@ router();
       window.clearTimeout(mobileSheetResizeTimer);
       mobileSheetResizeTimer = window.setTimeout(() => {
         updateMobileNavMetrics();
-        if (!window.matchMedia("(max-width: 900px)").matches) return;
+        if (!isMobileLayout()) return;
         const lp = document.getElementById("leftPanel");
         const dm = document.getElementById("demoLeftPanel");
         if (lp?.querySelector("[data-sheet-track]")) mobileSheetSettleAfterRender(lp, document.getElementById("mapLayout"));
