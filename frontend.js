@@ -1062,7 +1062,104 @@ function setMapBodyClass(isMap) {
 const MOSCOW_DEFAULT_CENTER = [55.751244, 37.618423];
 const MOSCOW_DEFAULT_ZOOM = 11;
 
-/** Объекты для гостевой демо-карты — только с галочкой show_in_demo в админке. */
+const FALLBACK_MOSCOW_DEMO = [
+  { lat: 55.7527, lon: 37.6154, address: "Москва, улица Варварка, 4" },
+  { lat: 55.7895, lon: 37.5556, address: "Москва, Ленинградский проспект, 80" },
+  { lat: 55.6785, lon: 37.7125, address: "Москва, Нагатинская набережная, 10" }
+];
+
+function shuffleArrayInPlace(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function getMoscowRealDemoPicks() {
+  const g = typeof globalThis !== "undefined" ? globalThis : null;
+  if (g && Array.isArray(g.MOSCOW_REAL_DEMO_PICKS) && g.MOSCOW_REAL_DEMO_PICKS.length) {
+    return g.MOSCOW_REAL_DEMO_PICKS;
+  }
+  return FALLBACK_MOSCOW_DEMO;
+}
+
+function buildShuffledMoscowDemoSlots(count) {
+  const source = getMoscowRealDemoPicks().map((p) => ({ address: p.address, lat: p.lat, lon: p.lon }));
+  if (!source.length) return [];
+  const shuffled = shuffleArrayInPlace(source.slice());
+  const out = shuffled.slice(0, Math.min(count, shuffled.length));
+  while (out.length < count) {
+    const pick = shuffled[Math.floor(Math.random() * shuffled.length)];
+    out.push({ address: pick.address, lat: pick.lat, lon: pick.lon });
+  }
+  shuffleArrayInPlace(out);
+  return out.slice(0, count);
+}
+
+function priceRoundedThousands(value) {
+  return Math.round(Number(value) / 1000) * 1000;
+}
+
+function createDemoProperties(count = 100) {
+  const residentialPhotos = [
+    "https://images.unsplash.com/photo-1494526585095-c41746248156?w=1600",
+    "https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?w=1600",
+    "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=1600",
+    "https://images.unsplash.com/photo-1460317442991-0ec209397118?w=1600",
+    "https://images.unsplash.com/photo-1560185007-cde436f6a4d0?w=1600",
+    "https://images.unsplash.com/photo-1600607686527-6fb886090705?w=1600"
+  ];
+  const planPhotos = [
+    "https://images.unsplash.com/photo-1582407947304-fd86f028f716?w=1600",
+    "https://images.unsplash.com/photo-1600607687644-c7171b42498f?w=1600",
+    "https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?w=1600",
+    "https://images.unsplash.com/photo-1600585152220-90363fe7e115?w=1600"
+  ];
+  const finishingOptions = ["finished", "whitebox", "concrete"];
+  const readinessOptions = ["resale", "assignment"];
+  const slots = buildShuffledMoscowDemoSlots(count);
+  const demo = [];
+  for (let i = 0; i < count; i++) {
+    const { lat, lon, address } = slots[i] || slots[0];
+    const priceBase = priceRoundedThousands(12_000_000 + (i * 601_001) % 59_000_000);
+    const partnerPct = Number((1 + (i % 8) * 0.5).toFixed(1));
+    const daysAgo = 1 + (i % 120);
+    const pub = new Date();
+    pub.setDate(pub.getDate() - daysAgo);
+    demo.push({
+      id: `demo-${i + 1}`,
+      title: `Квартира в Москве #${i + 1}`,
+      address,
+      lat,
+      lon,
+      metro: nearestMoscowMetroName(lat, lon),
+      price: priceBase,
+      area: 28 + (i % 9) * 6,
+      bedrooms: (i % 4) + 1,
+      floor: 1 + (i % 20),
+      totalFloors: 9 + (i % 20),
+      ceilingHeight: Math.round((2.6 + (i % 5) * 0.1) * 10) / 10,
+      finishing: finishingOptions[i % finishingOptions.length],
+      readiness: readinessOptions[i % readinessOptions.length],
+      housingStatus: i % 4 === 0 ? "apartments" : "flat",
+      publishedAt: pub.toISOString(),
+      metroWalkMinutes: 3 + (i % 22),
+      commissionTotal: 3,
+      commissionPartner: partnerPct,
+      contacts: {
+        phone: "+7 (9••) •••-••-••",
+        telegram: "@••••••••"
+      },
+      description:
+        "Современный жилой комплекс в Москве. Панорамные окна, продуманная планировка, закрытый двор и развитая инфраструктура.",
+      photos: [residentialPhotos[i % residentialPhotos.length], planPhotos[i % planPhotos.length]]
+    });
+  }
+  return demo;
+}
+
+/** Объекты для гостевой демо-карты: из БД (show_in_demo), иначе 100 демо-объектов. */
 async function loadDemoCatalog(options = {}) {
   const force = options.force === true;
   if (!force && Array.isArray(state.demoAllProperties) && state.demoCatalogFetched) {
@@ -1078,6 +1175,9 @@ async function loadDemoCatalog(options = {}) {
     }
   } catch {
     /* сервер недоступен */
+  }
+  if (!list.length) {
+    list = createDemoProperties(100);
   }
   state.demoAllProperties = list;
   state.demoCatalogFetched = true;
