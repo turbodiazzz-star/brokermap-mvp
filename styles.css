@@ -1211,18 +1211,19 @@ body.sheet-property-popup-open {
   inset: 0;
   background: transparent;
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
   z-index: 2;
+  padding: 14px;
 }
 
 .auth-demo-overlay--submodal #registerModal.active .auth-modal-content,
 .auth-demo-overlay--submodal #resetModal.active .auth-modal-content {
-  width: 100%;
-  max-width: none;
-  align-self: stretch;
-  max-height: min(96dvh, 96vh);
-  border-radius: 18px 18px 0 0;
+  width: min(520px, calc(100% - 20px));
+  max-width: 520px;
+  align-self: center;
+  max-height: min(88dvh, 88vh);
+  border-radius: 16px;
 }
 
 .login-wrapper {
